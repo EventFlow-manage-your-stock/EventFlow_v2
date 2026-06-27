@@ -3,9 +3,15 @@ import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  
+  app.setGlobalPrefix('api');
 
-  app.setGlobalPrefix('api'); // Ustawiamy globalny prefiks dla wszystkich endpointów API
+  // To ustawienie wita naszego "zwiadowcę" i wpuszcza go do środka
+  app.enableCors({
+    origin: 'http://localhost:3000', 
+    credentials: true,
+  });
 
-  await app.listen(process.env.PORT ?? 3000);
+  await app.listen(3002);
 }
 bootstrap();
