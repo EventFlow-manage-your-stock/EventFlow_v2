@@ -8,9 +8,7 @@ export class WydarzeniaService {
   async findAll(id_organizacji: number) {
     return this.prisma.extendedClient.wydarzenie.findMany({
       where: { id_organizacji },
-      include: {
-        status: true,
-      },
+      include: { status: true },
       orderBy: { data_start: 'asc' },
     });
   }
@@ -33,13 +31,8 @@ export class WydarzeniaService {
 
     if (!event) throw new NotFoundException('Nie znaleziono wydarzenia');
 
-    // Pobieramy historię z polimorficznej tabeli logi_zmian
     const historia = await this.prisma.extendedClient.logZmian.findMany({
-      where: { 
-        id_organizacji, 
-        typ_obiektu: 'Wydarzenie', 
-        id_obiektu: id 
-      },
+      where: { id_organizacji, typ_obiektu: 'Wydarzenie', id_obiektu: id },
       orderBy: { data_utworzenia: 'desc' },
       include: { uzytkownik: true },
     });
@@ -61,16 +54,15 @@ export class WydarzeniaService {
           uwagi: dto.uwagi,
           id_organizacji: id_organizacji,
           id_tworcy: id_uzytkownika,
-          id_managera: dto.id_managera ? Number(dto.id_managera) : null,
-          id_statusu_wydarzenia: dto.id_statusu_wydarzenia ? Number(dto.id_statusu_wydarzenia) : null,
-          id_statusu_magazynowego: dto.id_statusu_magazynowego ? Number(dto.id_statusu_magazynowego) : null,
-          id_statusu_ksiegowego: dto.id_statusu_ksiegowego ? Number(dto.id_statusu_ksiegowego) : null,
-          id_kontrahenta: dto.id_kontrahenta ? Number(dto.id_kontrahenta) : null,
-          id_miejsca: dto.id_miejsca ? Number(dto.id_miejsca) : null,
+          id_managera: dto.id_managera,
+          id_statusu_wydarzenia: dto.id_statusu_wydarzenia,
+          id_statusu_magazynowego: dto.id_statusu_magazynowego,
+          id_statusu_ksiegowego: dto.id_statusu_ksiegowego,
+          id_kontrahenta: dto.id_kontrahenta,
+          id_miejsca: dto.id_miejsca,
         },
       });
 
-      // Zapisujemy audyt w głównej tabeli logów
       await tx.logZmian.create({
         data: {
           id_organizacji,
@@ -96,12 +88,12 @@ export class WydarzeniaService {
           data_koniec: dto.data_koniec,
           miesiac_ksiegowania: dto.miesiac_ksiegowania,
           uwagi: dto.uwagi,
-          id_managera: dto.id_managera ? Number(dto.id_managera) : null,
-          id_statusu_wydarzenia: dto.id_statusu_wydarzenia ? Number(dto.id_statusu_wydarzenia) : null,
-          id_statusu_magazynowego: dto.id_statusu_magazynowego ? Number(dto.id_statusu_magazynowego) : null,
-          id_statusu_ksiegowego: dto.id_statusu_ksiegowego ? Number(dto.id_statusu_ksiegowego) : null,
-          id_kontrahenta: dto.id_kontrahenta ? Number(dto.id_kontrahenta) : null,
-          id_miejsca: dto.id_miejsca ? Number(dto.id_miejsca) : null,
+          id_managera: dto.id_managera,
+          id_statusu_wydarzenia: dto.id_statusu_wydarzenia,
+          id_statusu_magazynowego: dto.id_statusu_magazynowego,
+          id_statusu_ksiegowego: dto.id_statusu_ksiegowego,
+          id_kontrahenta: dto.id_kontrahenta,
+          id_miejsca: dto.id_miejsca,
         },
       });
 

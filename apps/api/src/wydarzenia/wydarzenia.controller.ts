@@ -1,14 +1,10 @@
-import { 
-  Controller, Get, Post, Put, Delete, 
-  Body, Param, Req, UseGuards, ParseIntPipe 
-} from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Req, UseGuards, ParseIntPipe } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import type { Request } from 'express';
 import { WydarzeniaService } from './wydarzenia.service';
-import { CreateWydarzenieDto } from './dto/create-wydarzenie.dto';
 
-@Controller('events')
-@UseGuards(AuthGuard('jwt')) // Zabezpieczamy cały kontroler
+@Controller('api/wydarzenia')
+@UseGuards(AuthGuard('jwt'))
 export class WydarzeniaController {
   constructor(private readonly wydarzeniaService: WydarzeniaService) {}
 
@@ -25,31 +21,23 @@ export class WydarzeniaController {
   }
 
   @Post()
-  create(@Req() req: Request, @Body() createWydarzenieDto: CreateWydarzenieDto) {
-    // Mamy pewność, że req.user istnieje dzięki AuthGuard
+  create(@Body() dto: any, @Req() req: Request) {
     const id_organizacji = Number((req.user as any).id_organizacji);
-    const id_uzytkownika = Number((req.user as any).id); 
-    
-    return this.wydarzeniaService.create(createWydarzenieDto, id_organizacji, id_uzytkownika);
+    const id_uzytkownika = Number((req.user as any).id);
+    return this.wydarzeniaService.create(dto, id_organizacji, id_uzytkownika);
   }
 
   @Put(':id')
-  update(
-    @Param('id', ParseIntPipe) id: number, 
-    @Req() req: Request, 
-    @Body() updateWydarzenieDto: Partial<CreateWydarzenieDto>
-  ) {
+  update(@Param('id', ParseIntPipe) id: number, @Body() dto: any, @Req() req: Request) {
     const id_organizacji = Number((req.user as any).id_organizacji);
-    const id_uzytkownika = Number((req.user as any).id); 
-
-    return this.wydarzeniaService.update(id, updateWydarzenieDto, id_organizacji, id_uzytkownika);
+    const id_uzytkownika = Number((req.user as any).id);
+    return this.wydarzeniaService.update(id, dto, id_organizacji, id_uzytkownika);
   }
 
   @Delete(':id')
   remove(@Param('id', ParseIntPipe) id: number, @Req() req: Request) {
     const id_organizacji = Number((req.user as any).id_organizacji);
     const id_uzytkownika = Number((req.user as any).id);
-
     return this.wydarzeniaService.remove(id, id_organizacji, id_uzytkownika);
   }
 }
