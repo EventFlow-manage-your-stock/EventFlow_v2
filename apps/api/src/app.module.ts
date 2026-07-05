@@ -7,11 +7,12 @@ import { AuthModule } from './auth/auth.module';
 import { WydarzeniaModule } from './wydarzenia/wydarzenia.module';
 import { TenantMiddleware } from './prisma/tenant.middleware';
 import { SlownikiModule } from './slowniki/slowniki.module';
+import { MagazynModule } from './magazyn/magazyn.module';
 
 @Module({
   imports: [ConfigModule.forRoot({
       isGlobal: true,
-    }),PrismaModule, AuthModule, WydarzeniaModule, SlownikiModule],
+    }),PrismaModule, AuthModule, WydarzeniaModule, SlownikiModule, MagazynModule],
   controllers: [AppController],
   providers: [AppService],
 })

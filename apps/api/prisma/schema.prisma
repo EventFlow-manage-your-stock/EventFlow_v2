@@ -304,6 +304,11 @@ model ModelSprzetu {
   ceny             CenaSprzetu[]
   pozycje_ofert    PozycjaOferty[]
   pozycje_wynajmu  PozycjaWynajmu[]
+  typ_sprzetu        String    @default("sprzet") @db.VarChar(50) // np. sprzet, opakowanie, zestaw
+  ulubiony           Boolean   @default(false)
+  udostepniony_crn   Boolean   @default(false) // Udostępnienie w Cross Rental Network
+  kod_kreskowy       String?   @db.VarChar(100) // Domyślny SKU modelu
+  pobor_pradu        Decimal?  @db.Decimal(10, 2)
 
   @@index([id_kategorii])
   @@index([nazwa])
