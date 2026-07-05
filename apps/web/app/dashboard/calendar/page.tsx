@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation'; // <-- DODANO IMPORT ROUTERA
 import { 
   ChevronLeft, ChevronRight, Plus, Search, 
   Users, AlertTriangle, CheckCircle2,
@@ -13,17 +14,16 @@ import {
 } from 'date-fns';
 import { pl } from 'date-fns/locale';
 import { api } from '../../../lib/api';
-import { EventForm } from '../../../components/EventForm';
 
 // --- TYPY DANYCH ---
 type EventFlag = 'vehicle' | 'users' | 'unconfirmed' | 'warning' | 'checked';
 
 interface CalendarEvent {
-  id: string;
+  id: number | string; // Baza używa Int, ale w URL/kluczach reaguje również na string
   title: string;
   startDate: Date;
   endDate: Date;
-  colorHex: string; // <-- Zmiana z colorClass na wartość z bazy
+  colorHex: string;
   flags?: EventFlag[];
 }
 
@@ -34,7 +34,8 @@ interface ProcessedEvent extends CalendarEvent {
 const WEEKDAYS = ['PON', 'WT', 'ŚR', 'CZW', 'PT', 'SOB', 'NDZ'];
 
 export default function CalendarPage() {
-  const [currentDate, setCurrentDate] = useState(new Date()); // Startujemy od dzisiaj
+  const router = useRouter(); // <-- INICJALIZACJA ROUTERA
+  const [currentDate, setCurrentDate] = useState(new Date());
   const [view, setView] = useState<'month' | 'week' | 'day' | 'list'>('month');
   
   // --- STANY API I DANYCH ---
@@ -45,19 +46,18 @@ export default function CalendarPage() {
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  // --- STAN DLA FORMULARZA DODAWANIA WYDARZENIA ---
-  const [isFormOpen, setIsFormOpen] = useState(false);
-
   const fetchEvents = useCallback(async () => {
     try {
-      // Nie ustawiamy tu setIsLoading(true) przy każdym cichym odświeżeniu, 
-      // aby nie mrugać ekranem podczas auto-update'u.
-      const response = await api.get('/events');
+      // Poprawiona ścieżka zgodna z backendem NestJS
+      const response = await api.get('/api/wydarzenia');
       
       const parsedEvents = response.data.map((ev: any) => ({
         ...ev,
-        startDate: new Date(ev.startDate),
-        endDate: new Date(ev.endDate),
+        // Mapowanie pól z bazy danych do formatu oczekiwanego przez kalendarz
+        title: ev.nazwa,
+        startDate: new Date(ev.data_start),
+        endDate: new Date(ev.data_koniec),
+        colorHex: ev.status?.kolor || '#3b82f6', // Fallback na niebieski jeśli status nie ma koloru
       }));
       
       setEvents(parsedEvents);
@@ -66,15 +66,13 @@ export default function CalendarPage() {
     }
   }, []);
 
-  // --- POBIERANIE DANYCH Z BACKENDU ---
   useEffect(() => {
     setIsLoading(true);
     fetchEvents().finally(() => setIsLoading(false));
 
-    // Odświeżanie w tle co 3 minuty (180 000 ms)
     const interval = setInterval(fetchEvents, 3 * 60 * 1000);
     return () => clearInterval(interval);
-  }, [fetchEvents]); // W przyszłości możemy dodać tu currentDate jako zależność, by pobierać tylko dany miesiąc
+  }, [fetchEvents]); 
 
   const nextMonth = () => setCurrentDate(addMonths(currentDate, 1));
   const prevMonth = () => setCurrentDate(subMonths(currentDate, 1));
@@ -90,6 +88,19 @@ export default function CalendarPage() {
     setTimeout(() => setSelectedEvent(null), 200);
   };
 
+  const handleDeleteEvent = async () => {
+    if (!selectedEvent) return;
+    if (confirm('Czy na pewno chcesz usunąć to wydarzenie?')) {
+      try {
+        await api.delete(`/api/wydarzenia/${selectedEvent.id}`);
+        closeModal();
+        fetchEvents();
+      } catch (error) {
+        console.error('Błąd usuwania wydarzenia:', error);
+      }
+    }
+  };
+
   const calendarDays = useMemo(() => {
     const monthStart = startOfMonth(currentDate);
     const monthEnd = endOfMonth(monthStart);
@@ -98,7 +109,6 @@ export default function CalendarPage() {
     return eachDayOfInterval({ start: startDate, end: endDate });
   }, [currentDate]);
 
-  // Używamy teraz pobranego stanu `events` zamiast MOCK_EVENTS
   const processedEvents = useMemo(() => {
     const sorted = [...events].sort((a, b) => {
       const aStart = startOfDay(a.startDate).getTime();
@@ -108,13 +118,26 @@ export default function CalendarPage() {
     });
 
     const rowEndDates: number[] = [];
+    
     return sorted.map(event => {
       const start = startOfDay(event.startDate).getTime();
       const end = startOfDay(event.endDate).getTime();
       let rowIndex = 0;
-      while (rowEndDates[rowIndex] !== undefined && start <= rowEndDates[rowIndex]) {
+      
+      while (true) {
+        const currentRowEnd = rowEndDates[rowIndex];
+        
+        if (currentRowEnd === undefined) {
+          break;
+        }
+        
+        if (start > currentRowEnd) {
+          break;
+        }
+        
         rowIndex++;
       }
+      
       rowEndDates[rowIndex] = end;
       return { ...event, _row: rowIndex } as ProcessedEvent;
     });
@@ -158,20 +181,15 @@ export default function CalendarPage() {
         </div>
 
         <div className="flex items-center gap-3">
+          {/* PRZEKIEROWANIE DO PODSTRONY TWORZENIA NOWEGO WYDARZENIA */}
           <button 
-          onClick={() => setIsFormOpen(true)}
-          className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-md transition-all hover:bg-blue-700 hover:shadow-lg dark:shadow-none">
+            onClick={() => router.push('/dashboard/events/new')}
+            className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-md transition-all hover:bg-blue-700 hover:shadow-lg dark:shadow-none">
             <Plus size={16} /> Dodaj
           </button>
         </div>
       </div>
-      {/* MODAL DODAWANIA WYDARZENIA */}
-      {isFormOpen && (
-        <EventForm 
-          onClose={() => setIsFormOpen(false)} 
-          onSuccess={() => fetchEvents()}
-        />
-      )}
+
       {/* SIATKA KALENDARZA LUB LOADER */}
       <div className="flex flex-1 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-white/5 dark:bg-slate-900/50 relative">
         
@@ -246,7 +264,7 @@ export default function CalendarPage() {
                         onClick={(e) => handleEventClick(event, e)}
                         className={`group relative flex h-6 items-center px-1.5 text-[10px] font-medium text-white cursor-pointer transition hover:brightness-110 hover:shadow-sm ${radiusClass}`}
                         style={{
-                          backgroundColor: event.colorHex, // <-- Dynamiczny kolor z bazy (HEX)
+                          backgroundColor: event.colorHex,
                           marginLeft: isStart ? '2px' : '-5px',
                           marginRight: isEnd ? '2px' : '-5px',
                           zIndex: 10
@@ -275,11 +293,10 @@ export default function CalendarPage() {
         </div>
       </div>
 
-      {/* MODAL SZCZEGÓŁÓW (Zachowany bez zmian, dodano style tła nagłówka) */}
+      {/* MODAL SZCZEGÓŁÓW Z PRZEKIEROWANIEM DO EDYCJI */}
       {isModalOpen && selectedEvent && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm transition-opacity p-4" onClick={closeModal}>
           <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden dark:border-white/10 dark:bg-slate-900" onClick={(e) => e.stopPropagation()}>
-            {/* Header modala */}
             <div className="h-3 w-full" style={{ backgroundColor: selectedEvent.colorHex }}></div>
             
             <div className="p-6">
@@ -300,7 +317,7 @@ export default function CalendarPage() {
                   <div className="flex flex-col">
                     <span className="font-medium">Czas trwania</span>
                     <span>
-                      {format(selectedEvent.startDate, 'd MMMM yyyy', { locale: pl })} - {format(selectedEvent.endDate, 'd MMMM yyyy', { locale: pl })}
+                      {format(selectedEvent.startDate, 'd MMMM yyyy HH:mm', { locale: pl })} - {format(selectedEvent.endDate, 'd MMMM yyyy HH:mm', { locale: pl })}
                     </span>
                   </div>
                 </div>
@@ -324,13 +341,21 @@ export default function CalendarPage() {
             </div>
 
             <div className="flex items-center justify-end gap-3 border-t border-slate-100 bg-slate-50 p-4 dark:border-white/5 dark:bg-black/20">
-              <button className="flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 transition-colors dark:text-red-400 dark:hover:bg-red-500/10">
+              <button 
+                onClick={handleDeleteEvent}
+                className="flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 transition-colors dark:text-red-400 dark:hover:bg-red-500/10"
+              >
                 <Trash2 size={16} />
                 Usuń
               </button>
-              <button className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-md hover:bg-blue-700 transition-colors dark:shadow-none">
+              
+              {/* PRZEKIEROWANIE DO PODSTRONY EDYCJI KONKRETNEGO WYDARZENIA */}
+              <button 
+                onClick={() => router.push(`/dashboard/events/${selectedEvent.id}`)}
+                className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-md hover:bg-blue-700 transition-colors dark:shadow-none"
+              >
                 <Edit2 size={16} />
-                Edytuj
+                Pełna Edycja
               </button>
             </div>
           </div>

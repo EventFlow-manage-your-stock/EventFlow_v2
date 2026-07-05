@@ -70,6 +70,8 @@ model Organizacja {
   wydarzenia_pojazdy  WydarzeniePojazd[]
   zadania             Zadanie[]
   nieobecnosci        Nieobecnosc[]
+  statusy_magazynowe  StatusMagazynowy[]
+  statusy_ksiegowe    StatusKsiegowy[]
 
   @@map("organizacje")
 }
@@ -119,6 +121,7 @@ model Uzytkownik {
   przypisania_do_wydarzen   WydarzenieUzytkownik[]
   przypisane_zadania        Zadanie[]
   nieobecnosci              Nieobecnosc[]
+  utworzone_wydarzenia      Wydarzenie[] @relation("TworcaWydarzenia")
 
   @@unique([id_organizacji, email])
   @@map("uzytkownicy")
@@ -446,6 +449,11 @@ model Wydarzenie {
   data_utworzenia  DateTime  @default(now())
   data_aktualizacji DateTime @updatedAt
   data_usuniecia   DateTime?
+  miesiac_ksiegowania     String?  @db.VarChar(20)
+  uwagi                   String?  @db.Text
+  id_tworcy               Int?
+  id_statusu_magazynowego Int?
+  id_statusu_ksiegowego   Int?
 
   organizacja      Organizacja       @relation(fields: [id_organizacji], references: [id])
   typ              TypWydarzenia?    @relation(fields: [id_typu_wydarzenia], references: [id])
@@ -460,9 +468,46 @@ model Wydarzenie {
   wynajmy          Wynajem[]
   ekipa            WydarzenieUzytkownik[] // Nowa relacja
   pojazdy          WydarzeniePojazd[]     // Nowa relacja
+  tworca                  Uzytkownik?       @relation("TworcaWydarzenia", fields: [id_tworcy], references: [id])
+  status_magazynowy       StatusMagazynowy? @relation(fields: [id_statusu_magazynowego], references: [id])
+  status_ksiegowy         StatusKsiegowy?   @relation(fields: [id_statusu_ksiegowego], references: [id])
 
   @@index([data_start, data_koniec])
   @@map("wydarzenia")
+}
+
+model StatusMagazynowy {
+  id               Int       @id @default(autoincrement())
+  id_organizacji   Int
+  nazwa            String    @db.VarChar(150)
+  kolor            String?   @db.VarChar(20)
+  kolejnosc        Int       @default(0)
+  aktywny          Boolean   @default(true)
+  data_utworzenia  DateTime  @default(now())
+  data_aktualizacji DateTime @updatedAt
+  data_usuniecia   DateTime?
+
+  organizacja      Organizacja @relation(fields: [id_organizacji], references: [id])
+  wydarzenia       Wydarzenie[]
+
+  @@map("statusy_magazynowe")
+}
+
+model StatusKsiegowy {
+  id               Int       @id @default(autoincrement())
+  id_organizacji   Int
+  nazwa            String    @db.VarChar(150)
+  kolor            String?   @db.VarChar(20)
+  kolejnosc        Int       @default(0)
+  aktywny          Boolean   @default(true)
+  data_utworzenia  DateTime  @default(now())
+  data_aktualizacji DateTime @updatedAt
+  data_usuniecia   DateTime?
+
+  organizacja      Organizacja @relation(fields: [id_organizacji], references: [id])
+  wydarzenia       Wydarzenie[]
+
+  @@map("statusy_ksiegowe")
 }
 
 model TypEtapu {
