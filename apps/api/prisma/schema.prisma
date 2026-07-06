@@ -316,37 +316,39 @@ model ModelSprzetu {
 }
 
 model Egzemplarz {
-  id               Int       @id @default(autoincrement())
-  id_organizacji   Int
-  id_modelu        Int
-  id_magazynu      Int?
-  nazwa            String?   @db.VarChar(200)
-  sn               String?   @db.VarChar(200)
-  qr_kod           String?   @db.VarChar(255)
-  kod_kreskowy     String?   @db.VarChar(100)
-  miejsce_w_mag    String?   @db.VarChar(200)
-  id_case          Int?
+  id                 Int       @id @default(autoincrement())
+  id_organizacji     Int
+  id_modelu          Int
+  id_magazynu        Int?
+  nazwa              String?   @db.VarChar(200)
+  sn                 String?   @db.VarChar(200)
+  qr_kod             String?   @db.VarChar(255)
+  kod_kreskowy       String?   @db.VarChar(100)
+  miejsce_w_mag      String?   @db.VarChar(200)
+  id_case            Int?
   id_statusu_egzemplarza Int?
-  szerokosc        Decimal?  @db.Decimal(10, 2)
-  wysokosc         Decimal?  @db.Decimal(10, 2)
-  glebokosc        Decimal?  @db.Decimal(10, 2)
-  objetosc         Decimal?  @db.Decimal(10, 2)
-  waga             Decimal?  @db.Decimal(10, 2)
-  wartosc          Decimal?  @db.Decimal(12, 2)
-  notatki_wewnetrzne String? @db.Text
-  zdjecie          String?   @db.VarChar(500)
-  aktywny          Boolean   @default(true)
-  data_utworzenia  DateTime  @default(now())
-  data_aktualizacji DateTime @updatedAt
-  data_usuniecia   DateTime?
+  szerokosc          Decimal?  @db.Decimal(10, 2)
+  wysokosc           Decimal?  @db.Decimal(10, 2)
+  glebokosc          Decimal?  @db.Decimal(10, 2)
+  objetosc           Decimal?  @db.Decimal(10, 2)
+  waga               Decimal?  @db.Decimal(10, 2)
+  wartosc            Decimal?  @db.Decimal(12, 2)
+  notatki_wewnetrzne String?   @db.Text
+  zdjecie            String?   @db.VarChar(500)
+  aktywny            Boolean   @default(true)
+  data_utworzenia    DateTime  @default(now())
+  data_aktualizacji  DateTime  @updatedAt
+  data_usuniecia     DateTime?
 
+  // --- NOWE POLA DLA KARTY EGZEMPLARZA (WMS) ---
   numer_urzadzenia    String?   @db.VarChar(100)
   data_produkcji      DateTime? @db.Date
   cena_zakupu         Decimal?  @db.Decimal(12, 2)
   pakowany_pojedynczo Boolean   @default(false)
   opis                String?   @db.Text
-  status_serwisowy    String    @default("Działa") @db.VarChar(50)
+  status_serwisowy    String    @default("Działa") @db.VarChar(50) 
 
+  // Relacje
   organizacja      Organizacja   @relation(fields: [id_organizacji], references: [id])
   model            ModelSprzetu  @relation(fields: [id_modelu], references: [id])
   magazyn          Magazyn?      @relation(fields: [id_magazynu], references: [id])
