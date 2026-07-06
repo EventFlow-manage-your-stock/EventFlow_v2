@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { X, Save, Loader2, Bold, Italic, Strikethrough, Link as LinkIcon, List, ListOrdered, Calendar as CalendarIcon } from 'lucide-react';
+import { X, Save, Loader2, Bold, Italic, Strikethrough, Link as LinkIcon, List, ListOrdered } from 'lucide-react';
 import { api } from '../lib/api';
 
 interface ItemModalProps {
@@ -15,13 +15,14 @@ interface ItemModalProps {
 }
 
 export default function ItemModal({ isOpen, onClose, onSuccess, modelId, modelName, initialData }: ItemModalProps) {
-  const { register, handleSubmit, reset, formState: { errors, isSubmitting } } = useForm();
+  const { register, handleSubmit, reset, formState: { isSubmitting } } = useForm();
   const [magazyny, setMagazyny] = useState<any[]>([]);
+  const [dostepneCase, setDostepneCase] = useState<any[]>([]);
   const isEdit = !!initialData;
 
   useEffect(() => {
     if (isOpen) {
-      fetchMagazyny();
+      fetchDictionaries();
       if (initialData) {
         reset({
           ...initialData,
@@ -37,22 +38,46 @@ export default function ItemModal({ isOpen, onClose, onSuccess, modelId, modelNa
     }
   }, [isOpen, initialData, modelName]);
 
-  const fetchMagazyny = async () => {
+  const fetchDictionaries = async () => {
     try {
-      const res = await api.get('/api/magazyn/slowniki/magazyny');
-      setMagazyny(res.data);
+      const [magazynyRes, casesRes] = await Promise.all([
+        api.get('/api/magazyn/slowniki/magazyny'),
+        api.get('/api/magazyn/slowniki/cases')
+      ]);
+      setMagazyny(magazynyRes.data);
+      setDostepneCase(casesRes.data);
     } catch (error) {
-      console.error('Błąd pobierania magazynów:', error);
+      console.error('Błąd pobierania słowników:', error);
     }
   };
 
   const onSubmit = async (data: any) => {
     try {
+      const cleanNumber = (val: any) => (val === "" || val === undefined || val === null) ? null : Number(val);
+      const cleanString = (val: any) => (val === "" || val === undefined || val === null) ? null : String(val);
+
+      const payload = {
+        ...data,
+        id_magazynu: cleanNumber(data.id_magazynu),
+        id_case: cleanNumber(data.id_case),
+        cena_zakupu: cleanNumber(data.cena_zakupu),
+        data_produkcji: data.data_produkcji ? new Date(data.data_produkcji).toISOString() : null,
+        pakowany_pojedynczo: !!data.pakowany_pojedynczo,
+        nazwa: cleanString(data.nazwa) || modelName,
+        numer_urzadzenia: cleanString(data.numer_urzadzenia),
+        sn: cleanString(data.sn),
+        miejsce_w_mag: cleanString(data.miejsce_w_mag),
+        opis: cleanString(data.opis),
+        status_serwisowy: cleanString(data.status_serwisowy) || 'Działa',
+        kod_kreskowy: cleanString(data.kod_kreskowy),
+      };
+
       if (isEdit) {
-        await api.put(`/api/magazyn/egzemplarze/${initialData.id}`, data);
+        await api.put(`/api/magazyn/egzemplarze/${initialData.id}`, payload);
       } else {
-        await api.post(`/api/magazyn/modele/${modelId}/egzemplarze`, data);
+        await api.post(`/api/magazyn/modele/${modelId}/egzemplarze`, payload);
       }
+      
       onSuccess();
       onClose();
     } catch (error) {
@@ -67,7 +92,6 @@ export default function ItemModal({ isOpen, onClose, onSuccess, modelId, modelNa
       <div className="absolute inset-0" onClick={onClose} />
       
       <div className="relative w-full max-w-[850px] bg-white shadow-2xl flex flex-col rounded-xl overflow-hidden z-10 animate-fade-in-up">
-        {/* HEADER MODALA */}
         <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-white">
           <h2 className="text-lg font-bold text-slate-800">
             {isEdit ? 'Edycja egzemplarza' : 'Dodaj nowy egzemplarz'}
@@ -84,55 +108,32 @@ export default function ItemModal({ isOpen, onClose, onSuccess, modelId, modelNa
             <div className="space-y-4">
               <div>
                 <label className="block text-[13px] font-bold text-slate-600 mb-1.5">Model</label>
-                <input
-                  disabled
-                  value={modelName}
-                  className="w-full px-3 py-2 bg-slate-100 border border-slate-200 rounded-md text-sm text-slate-500 cursor-not-allowed outline-none"
-                />
+                <input disabled value={modelName} className="w-full px-3 py-2 bg-slate-100 border border-slate-200 rounded-md text-sm text-slate-500 cursor-not-allowed outline-none" />
               </div>
 
               <div>
-                <label className="block text-[13px] font-bold text-slate-600 mb-1.5">Nazwa</label>
-                <input
-                  type="text"
-                  {...register('nazwa')}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-md focus:border-blue-500 outline-none text-sm bg-white"
-                />
+                <label className="block text-[13px] font-bold text-slate-600 mb-1.5">Nazwa (opcjonalnie własna)</label>
+                <input type="text" {...register('nazwa')} className="w-full px-3 py-2 border border-slate-300 rounded-md focus:border-blue-500 outline-none text-sm bg-white" />
               </div>
 
               <div>
-                <label className="block text-[13px] font-bold text-slate-600 mb-1.5">Numer urządzenia</label>
-                <input
-                  type="text"
-                  {...register('numer_urzadzenia')}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-md focus:border-blue-500 outline-none text-sm bg-blue-50/50"
-                />
+                <label className="block text-[13px] font-bold text-slate-600 mb-1.5">Numer urządzenia (np. 1, 2, A, B)</label>
+                <input type="text" {...register('numer_urzadzenia')} className="w-full px-3 py-2 border border-slate-300 rounded-md focus:border-blue-500 outline-none text-sm bg-blue-50/50 font-bold" />
               </div>
 
               <div>
                 <label className="block text-[13px] font-bold text-slate-600 mb-1.5">Numer seryjny (SN)</label>
-                <input
-                  type="text"
-                  {...register('sn')}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-md focus:border-blue-500 outline-none text-sm font-mono bg-blue-50/50"
-                />
+                <input type="text" {...register('sn')} className="w-full px-3 py-2 border border-slate-300 rounded-md focus:border-blue-500 outline-none text-sm font-mono bg-blue-50/50" />
               </div>
 
               <div className="relative">
                 <label className="block text-[13px] font-bold text-slate-600 mb-1.5">Data produkcji</label>
-                <input
-                  type="date"
-                  {...register('data_produkcji')}
-                  className="w-full pl-3 pr-10 py-2 border border-slate-300 rounded-md focus:border-blue-500 outline-none text-sm text-slate-700 bg-white"
-                />
+                <input type="date" {...register('data_produkcji')} className="w-full pl-3 pr-10 py-2 border border-slate-300 rounded-md focus:border-blue-500 outline-none text-sm text-slate-700 bg-white" />
               </div>
 
               <div>
-                <label className="block text-[13px] font-bold text-slate-600 mb-1.5">Magazyn</label>
-                <select
-                  {...register('id_magazynu')}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-md focus:border-blue-500 outline-none text-sm bg-white cursor-pointer"
-                >
+                <label className="block text-[13px] font-bold text-slate-600 mb-1.5">Magazyn fizyczny</label>
+                <select {...register('id_magazynu')} className="w-full px-3 py-2 border border-slate-300 rounded-md focus:border-blue-500 outline-none text-sm bg-white cursor-pointer">
                   <option value="">Wybierz...</option>
                   {magazyny.map(m => <option key={m.id} value={m.id}>{m.nazwa}</option>)}
                 </select>
@@ -140,15 +141,11 @@ export default function ItemModal({ isOpen, onClose, onSuccess, modelId, modelNa
 
               <div>
                 <label className="block text-[13px] font-bold text-slate-600 mb-1.5">Miejsce w magazynie</label>
-                <input
-                  type="text"
-                  {...register('miejsce_w_mag')}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-md focus:border-blue-500 outline-none text-sm bg-blue-50/50 uppercase"
-                />
+                <input type="text" {...register('miejsce_w_mag')} className="w-full px-3 py-2 border border-slate-300 rounded-md focus:border-blue-500 outline-none text-sm bg-blue-50/50 uppercase" />
               </div>
 
               <div>
-                <label className="block text-[13px] font-bold text-slate-600 mb-1.5">Opis (Notatki usterkowe)</label>
+                <label className="block text-[13px] font-bold text-slate-600 mb-1.5">Opis (Notatki usterkowe/uwagi)</label>
                 <div className="border border-slate-300 rounded-md overflow-hidden bg-white">
                   <div className="flex items-center gap-1 p-2 border-b border-slate-200">
                     <button type="button" className="p-1 hover:bg-slate-100 rounded text-slate-500"><Bold size={14}/></button>
@@ -160,12 +157,7 @@ export default function ItemModal({ isOpen, onClose, onSuccess, modelId, modelNa
                     <div className="w-px h-4 bg-slate-300 mx-1"></div>
                     <button type="button" className="p-1 hover:bg-slate-100 rounded text-slate-500"><LinkIcon size={14}/></button>
                   </div>
-                  <textarea
-                    {...register('opis')}
-                    rows={4}
-                    placeholder="Brak kabla zasilającego"
-                    className="w-full p-3 text-sm outline-none resize-none"
-                  />
+                  <textarea {...register('opis')} rows={3} placeholder="np. Pęknięta obudowa z prawej strony" className="w-full p-3 text-sm outline-none resize-none" />
                 </div>
               </div>
             </div>
@@ -173,33 +165,18 @@ export default function ItemModal({ isOpen, onClose, onSuccess, modelId, modelNa
             {/* KOLUMNA PRAWA */}
             <div className="space-y-5">
               <div className="flex items-center gap-2 bg-slate-100/50 px-3 py-3 rounded-md border border-slate-200">
-                <input
-                  type="checkbox"
-                  id="pakowany"
-                  {...register('pakowany_pojedynczo')}
-                  className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                />
-                <label htmlFor="pakowany" className="text-[13px] font-bold text-slate-700 cursor-pointer select-none">
-                  Pakowany pojedynczo
-                </label>
+                <input type="checkbox" id="pakowany" {...register('pakowany_pojedynczo')} className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer" />
+                <label htmlFor="pakowany" className="text-[13px] font-bold text-slate-700 cursor-pointer select-none">Pakowany pojedynczo</label>
               </div>
 
               <div>
                 <label className="block text-[13px] font-bold text-slate-600 mb-1.5">Cena zakupu [PLN]</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  {...register('cena_zakupu')}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-md focus:border-blue-500 outline-none text-sm bg-white"
-                />
+                <input type="number" step="0.01" {...register('cena_zakupu')} className="w-full px-3 py-2 border border-slate-300 rounded-md focus:border-blue-500 outline-none text-sm bg-white" />
               </div>
 
               <div>
                 <label className="block text-[13px] font-bold text-slate-600 mb-1.5">Status Serwisowy (Kondycja)</label>
-                <select
-                  {...register('status_serwisowy')}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-md focus:border-blue-500 outline-none text-sm bg-white cursor-pointer font-medium"
-                >
+                <select {...register('status_serwisowy')} className="w-full px-3 py-2 border border-slate-300 rounded-md focus:border-blue-500 outline-none text-sm bg-white cursor-pointer font-medium">
                   <option value="Działa" className="text-slate-800">Działa</option>
                   <option value="Wymaga serwisu (działa)" className="text-slate-800">Wymaga serwisu (działa)</option>
                   <option value="Wymaga serwisu (nie działa)" className="text-slate-800">Wymaga serwisu (nie działa)</option>
@@ -209,26 +186,28 @@ export default function ItemModal({ isOpen, onClose, onSuccess, modelId, modelNa
               </div>
 
               <div>
-                <label className="block text-[13px] font-bold text-slate-600 mb-1.5">Przypisz do zbiorczego Case'a</label>
-                <select
-                  {...register('id_case')}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm bg-slate-50 opacity-60 cursor-not-allowed"
-                  disabled
+                <label className="block text-[13px] font-bold text-sky-600 mb-1.5">Włóż do skrzyni (Przypisz Case)</label>
+                <select 
+                  {...register('id_case')} 
+                  className="w-full px-3 py-2 border-2 border-sky-100 rounded-md focus:border-sky-500 outline-none text-sm bg-white cursor-pointer font-medium shadow-sm"
                 >
-                  <option value="">Wybierz skrzynię/case...</option>
+                  <option value="">Luzem (Brak skrzyni)</option>
+                  {dostepneCase
+                    .filter(c => c.id !== initialData?.id) // Nie można przypisać case'a do samego siebie
+                    .map(c => (
+                    <option key={c.id} value={c.id}>
+                      {c.model?.nazwa} {c.numer_urzadzenia ? `[#${c.numer_urzadzenia}]` : ''} {c.sn ? `(SN: ${c.sn})` : ''} - W środku: {c._count?.zawartosc_case || 0} szt.
+                    </option>
+                  ))}
                 </select>
+                <p className="text-[11px] text-slate-400 mt-1">Zeskanowanie skrzyni w przyszłości wyda całą jej zawartość.</p>
               </div>
               
               <div>
                 <label className="block text-[13px] font-bold text-slate-600 mb-1.5">Zewnętrzny Kod Kreskowy / QR</label>
-                <input
-                  type="text"
-                  {...register('kod_kreskowy')}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-md focus:border-blue-500 outline-none text-sm font-mono bg-blue-50/50"
-                />
+                <input type="text" {...register('kod_kreskowy')} placeholder="Zeskanuj czytnikiem..." className="w-full px-3 py-2 border border-slate-300 rounded-md focus:border-blue-500 outline-none text-sm font-mono bg-blue-50/50" />
               </div>
 
-              {/* SYMULACJA KODU QR */}
               <div className="pt-6 flex justify-end">
                 <div className="w-32 h-32 bg-white border border-slate-200 p-2 shadow-sm rounded-lg">
                   <div className="w-full h-full bg-[url('https://upload.wikimedia.org/wikipedia/commons/d/d0/QR_code_for_mobile_English_Wikipedia.svg')] bg-cover opacity-80 mix-blend-multiply"></div>
@@ -241,9 +220,10 @@ export default function ItemModal({ isOpen, onClose, onSuccess, modelId, modelNa
             <button
               type="submit"
               disabled={isSubmitting}
-              className="px-6 py-2 text-[13px] font-bold text-emerald-600 border border-emerald-500 rounded bg-white hover:bg-emerald-50 transition shadow-sm disabled:opacity-50"
+              className="px-6 py-2 text-[13px] font-bold text-emerald-600 border border-emerald-500 rounded bg-white hover:bg-emerald-50 transition shadow-sm disabled:opacity-50 flex items-center gap-2"
             >
-              {isSubmitting ? 'Zapisywanie...' : 'Zapisz egzemplarz'}
+              {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+              {isEdit ? 'Zapisz zmiany' : 'Zapisz egzemplarz'}
             </button>
           </div>
         </form>

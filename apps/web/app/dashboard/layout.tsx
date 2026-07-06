@@ -47,7 +47,7 @@ const menuConfig = [
       { label: 'Niezwrócony sprzęt', icon: ArrowRight },
       { label: 'Modele', icon: Monitor },
       { label: 'Egzemplarze', icon: Plug },
-      { label: 'Opakowania', icon: Box },
+      { label: 'Opakowania', href: '/dashboard/warehouse/packages', icon: Box },
       { label: 'Typy opakowań', icon: Box },
       { label: 'Zestawy', icon: Layers },
       { label: 'Kategorie', icon: ListIcon },

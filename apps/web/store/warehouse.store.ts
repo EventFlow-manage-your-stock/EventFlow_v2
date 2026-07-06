@@ -28,8 +28,9 @@ interface EquipmentModel {
 }
 
 interface WarehouseState {
-  categories: Category[];
-  models: EquipmentModel[];
+  categories: any[];
+  models: any[];
+  packages: any[]; // <-- NOWY STAN DLA OPAKOWAŃ
   isLoading: boolean;
   isFetchingNextPage: boolean;
   hasMore: boolean;
@@ -40,12 +41,14 @@ interface WarehouseState {
   };
   fetchCategories: () => Promise<void>;
   fetchModels: (reset?: boolean) => Promise<void>;
+  fetchPackages: () => Promise<void>; // <-- NOWA FUNKCJA
   setFilter: (key: 'search' | 'kategoriaId', value: any) => void;
 }
 
 export const useWarehouseStore = create<WarehouseState>((set, get) => ({
   categories: [],
   models: [],
+  packages: [],
   isLoading: false,
   isFetchingNextPage: false,
   hasMore: true,
@@ -66,7 +69,7 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
 
   fetchModels: async (reset = false) => {
     const { page, filters, models, isFetchingNextPage } = get();
-    if (isFetchingNextPage) return; // Zabezpieczenie przed podwójnym strzałem
+    if (isFetchingNextPage) return; 
 
     const currentPage = reset ? 1 : page;
     
@@ -88,7 +91,7 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
       const newModels = res.data;
       set({ 
         models: reset ? newModels : [...models, ...newModels],
-        hasMore: newModels.length === 20, // Jeśli przyszło mniej niż limit, to koniec
+        hasMore: newModels.length === 20, 
         page: currentPage + 1,
         isLoading: false,
         isFetchingNextPage: false,
@@ -99,10 +102,22 @@ export const useWarehouseStore = create<WarehouseState>((set, get) => ({
     }
   },
 
+  // NOWA FUNKCJA DO POBIERANIA OPAKOWAŃ Z ZAWARTOŚCIĄ
+  fetchPackages: async () => {
+    set({ isLoading: true });
+    try {
+      const res = await api.get('/api/magazyn/opakowania');
+      set({ packages: res.data, isLoading: false });
+    } catch (error) {
+      console.error('Failed to fetch packages', error);
+      set({ isLoading: false });
+    }
+  },
+
   setFilter: (key, value) => {
     set((state) => ({
       filters: { ...state.filters, [key]: value },
     }));
-    get().fetchModels(true); // Reset list on filter change
+    get().fetchModels(true); 
   },
 }));

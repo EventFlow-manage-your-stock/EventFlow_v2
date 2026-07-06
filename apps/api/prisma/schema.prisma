@@ -72,6 +72,7 @@ model Organizacja {
   nieobecnosci        Nieobecnosc[]
   statusy_magazynowe  StatusMagazynowy[]
   statusy_ksiegowe    StatusKsiegowy[]
+  ceny_modeli          CenaModelu[]
 
   @@map("organizacje")
 }
@@ -309,6 +310,7 @@ model ModelSprzetu {
   udostepniony_crn   Boolean   @default(false) // Udostępnienie w Cross Rental Network
   kod_kreskowy       String?   @db.VarChar(100) // Domyślny SKU modelu
   pobor_pradu        Decimal?  @db.Decimal(10, 2)
+  stawki             CenaModelu[] @relation("ModelStawki")
 
   @@index([id_kategorii])
   @@index([nazwa])
@@ -362,6 +364,26 @@ model Egzemplarz {
   @@index([qr_kod])
   @@index([kod_kreskowy])
   @@map("egzemplarze")
+}
+
+model CenaModelu {
+  id                 Int          @id @default(autoincrement())
+  id_organizacji     Int
+  id_modelu          Int
+  nazwa_stawki       String       @default("Podstawowa (PLN)") @db.VarChar(100)
+  cena_netto         Decimal?     @db.Decimal(10, 2)
+  koszt              Decimal?     @db.Decimal(10, 2)
+  nazwa_kosztu       String?      @db.VarChar(100)
+  mnoz_koszt         Boolean      @default(false)
+  aktywny            Boolean      @default(true)
+  data_utworzenia    DateTime     @default(now())
+  data_aktualizacji  DateTime     @updatedAt
+
+  organizacja        Organizacja  @relation(fields: [id_organizacji], references: [id])
+  model              ModelSprzetu @relation("ModelStawki", fields: [id_modelu], references: [id], onDelete: Cascade)
+
+  @@index([id_modelu])
+  @@map("ceny_modeli")
 }
 
 model Cennik {

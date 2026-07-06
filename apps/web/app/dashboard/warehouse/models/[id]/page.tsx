@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { 
   ChevronRight, Edit2, Copy, Trash2, X, Image as ImageIcon, 
@@ -46,9 +46,11 @@ const getStatusConfig = (status: string) => {
 export default function ModelDetailsPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const isNew = params.id === 'new';
 
-  const [activeTab, setActiveTab] = useState('egzemplarze');
+  const defaultTab = searchParams.get('tab') || 'egzemplarze';
+  const [activeTab, setActiveTab] = useState(defaultTab);
   const [modelData, setModelData] = useState<any>(null);
   const [isEditMode, setIsEditMode] = useState(isNew);
   const [isLoading, setIsLoading] = useState(!isNew);
@@ -383,6 +385,7 @@ export default function ModelDetailsPage() {
                      <th className="p-3">Numer seryjny (SN)</th>
                      <th className="p-3">Magazyn docelowy</th>
                      <th className="p-3">Miejsce w mag.</th>
+                     <th className="p-3">Case</th>
                      <th className="p-3">Status serwisowy</th>
                      <th className="p-3">Kod kreskowy</th>
                      <th className="p-3">Uwagi</th>
@@ -400,11 +403,38 @@ export default function ModelDetailsPage() {
                             onChange={() => toggleSelect(egz.id)}
                           />
                         </td>
-                        <td className="p-3 text-sky-500 font-medium cursor-pointer" onClick={() => handleEditItem(egz)}>{egz.nazwa || modelData.nazwa}</td>
+                        <td className="p-3 text-sky-500 font-medium cursor-pointer" onClick={() => handleEditItem(egz)}>
+                          {egz.nazwa || modelData.nazwa}
+                        </td>
                         <td className="p-3 text-slate-600 font-bold">{egz.numer_urzadzenia || '-'}</td>
                         <td className="p-3 font-mono text-slate-700">{egz.sn || '-'}</td>
-                        <td className="p-3 text-sky-600">{egz.magazyn?.nazwa || 'Nie przypisano'}</td>
+                        <td className="p-3 text-sky-600">{egz.magazyn?.nazwa || 'Luzem'}</td>
                         <td className="p-3 text-slate-600 uppercase">{egz.miejsce_w_mag || modelData.miejsce_w_mag || '-'}</td>
+                        
+                        <td className="p-3">
+                          {modelData.typ_sprzetu === 'opakowanie' ? (
+                            <span 
+                              onClick={() => router.push(`/dashboard/warehouse/items/${egz.id}`)}
+                              className="text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100 cursor-pointer hover:bg-emerald-100 transition"
+                            >
+                              Zawiera: {egz._count?.zawartosc_case || 0} szt.
+                            </span>
+                          ) : (
+                            egz.case ? (
+                              <span 
+                                onClick={() => router.push(`/dashboard/warehouse/items/${egz.case.id}`)}
+                                className="text-sky-600 font-semibold text-xs border border-sky-200 bg-sky-50 px-2 py-1 rounded cursor-pointer hover:bg-sky-100 transition" 
+                                title="Kliknij, aby otworzyć Case"
+                              >
+                                {egz.case.numer_urzadzenia ? `[#${egz.case.numer_urzadzenia}] ` : ''} 
+                                {egz.case.nazwa || 'Case'}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400">-</span>
+                            )
+                          )}
+                        </td>
+
                         <td className="p-3">
                            <span className={`px-2 py-1 rounded text-[11px] font-bold shadow-sm ${getStatusConfig(egz.status_serwisowy)}`}>
                              {egz.status_serwisowy}
@@ -422,21 +452,112 @@ export default function ModelDetailsPage() {
                         </td>
                      </tr>
                    ))}
-                   {(!modelData?.egzemplarze || modelData.egzemplarze.length === 0) && !isNew && (
-                     <tr>
-                        <td colSpan={10} className="p-6 text-center text-slate-400 text-sm">Brak utworzonych egzemplarzy dla tego modelu. Kliknij "Dodaj egzemplarz" powyżej.</td>
-                     </tr>
-                   )}
-                   {isNew && (
-                     <tr>
-                        <td colSpan={10} className="p-6 text-center text-slate-400 text-sm">Najpierw zapisz model sprzętu (górny przycisk Zapisz), aby móc do niego dodać fizyczne egzemplarze.</td>
-                     </tr>
-                   )}
                  </tbody>
                </table>
              </div>
           </div>
         )}
+        {/* ZAWARTOŚĆ ZAKŁADKI: STAWKI */}
+        {activeTab === 'stawki' && (
+          <div className="mt-6 border border-slate-200 rounded-lg shadow-sm bg-white overflow-hidden p-6">
+            <h3 className="text-[15px] font-bold text-slate-800 mb-4">Stawki</h3>
+            
+            {/* Odsłonięty Formularz szybkiego dodawania */}
+            <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 mb-6">
+              <div className="grid grid-cols-5 gap-4 items-end">
+                 <div>
+                   <label className="block text-xs font-bold text-slate-600 mb-1">Nazwa stawki</label>
+                   <input id="new_nazwa" type="text" defaultValue="Podstawowa (PLN)" className="w-full px-3 py-2 border border-slate-300 rounded text-sm focus:border-sky-500 outline-none" />
+                 </div>
+                 <div>
+                   <label className="block text-xs font-bold text-slate-600 mb-1">Cena netto</label>
+                   <input id="new_cena" type="number" step="0.01" className="w-full px-3 py-2 border border-slate-300 rounded text-sm focus:border-sky-500 outline-none" />
+                 </div>
+                 <div>
+                   <label className="block text-xs font-bold text-slate-600 mb-1">Koszt</label>
+                   <input id="new_koszt" type="number" step="0.01" className="w-full px-3 py-2 border border-slate-300 rounded text-sm focus:border-sky-500 outline-none" />
+                 </div>
+                 <div>
+                   <label className="block text-xs font-bold text-slate-600 mb-1">Nazwa kosztu</label>
+                   <input id="new_nazwak" type="text" className="w-full px-3 py-2 border border-slate-300 rounded text-sm focus:border-sky-500 outline-none" />
+                 </div>
+                 <div className="flex items-center h-full pb-2">
+                   <input id="new_mnoz" type="checkbox" className="w-4 h-4 rounded border-slate-300 text-sky-600 cursor-pointer mr-2" />
+                   <label className="text-xs font-semibold text-slate-700 cursor-pointer select-none">Mnóż koszt przez przelicznik</label>
+                 </div>
+              </div>
+              <div className="mt-4">
+                 <button 
+                   type="button"
+                   onClick={async () => {
+                     const payload = {
+                       nazwa_stawki: (document.getElementById('new_nazwa') as HTMLInputElement).value,
+                       cena_netto: (document.getElementById('new_cena') as HTMLInputElement).value,
+                       koszt: (document.getElementById('new_koszt') as HTMLInputElement).value,
+                       nazwa_kosztu: (document.getElementById('new_nazwak') as HTMLInputElement).value,
+                       mnoz_koszt: (document.getElementById('new_mnoz') as HTMLInputElement).checked
+                     };
+                     await api.post(`/api/magazyn/modele/${modelData.id}/stawki`, payload);
+                     fetchModelData(); // Przeładuj
+                   }}
+                   className="border border-emerald-500 text-emerald-600 font-bold px-6 py-2 rounded text-sm hover:bg-emerald-50 transition shadow-sm"
+                 >
+                   Dodaj zapisz
+                 </button>
+              </div>
+            </div>
+
+            {/* Lista zapisanych stawek */}
+            <div className="border border-slate-200 rounded-lg overflow-hidden">
+               <table className="w-full text-left text-sm whitespace-nowrap">
+                 <thead className="bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-700">
+                   <tr>
+                     <th className="p-3 w-10"></th>
+                     <th className="p-3">Nazwa stawki</th>
+                     <th className="p-3">Cena</th>
+                     <th className="p-3">Koszt</th>
+                     <th className="p-3">Nazwa kosztu</th>
+                     <th className="p-3 text-center">Mnóż koszt</th>
+                     <th className="p-3 text-right">Akcje</th>
+                   </tr>
+                 </thead>
+                 <tbody className="divide-y divide-slate-100">
+                   {modelData?.stawki?.map((cena: any) => (
+                     <tr key={cena.id} className="hover:bg-slate-50 transition">
+                       <td className="p-3"><List size={16} className="text-slate-300 cursor-move"/></td>
+                       <td className="p-3 font-semibold text-slate-700">{cena.nazwa_stawki}</td>
+                       <td className="p-3 font-mono">{cena.cena_netto || '0.00'} PLN</td>
+                       <td className="p-3 text-slate-500">{cena.koszt ? `${cena.koszt} PLN` : '-'}</td>
+                       <td className="p-3 text-slate-500">{cena.nazwa_kosztu || '-'}</td>
+                       <td className="p-3 text-center">
+                         <input type="checkbox" checked={cena.mnoz_koszt} readOnly className="rounded border-slate-300 text-sky-600" />
+                       </td>
+                       <td className="p-3 flex justify-end gap-2 text-slate-400">
+                         <button type="button" onClick={async () => {
+                           if(confirm('Usunąć tę stawkę?')) {
+                             await api.delete(`/api/magazyn/stawki/${cena.id}`);
+                             fetchModelData();
+                           }
+                         }} className="hover:text-red-500 p-1 rounded transition"><Trash2 size={16}/></button>
+                       </td>
+                     </tr>
+                   ))}
+                   {(!modelData?.ceny || modelData.ceny.length === 0) && (
+                     <tr><td colSpan={7} className="p-6 text-center text-slate-400 text-sm">Brak zdefiniowanych stawek. Utwórz pierwszą powyżej.</td></tr>
+                   )}
+                 </tbody>
+               </table>
+            </div>
+          </div>
+        )}
+
+        {/* ... (Domyślny fallback dla pustych tabów na dole) */}
+        {activeTab !== 'egzemplarze' && activeTab !== 'stawki' && (
+           <div className="mt-10 text-center text-slate-400 text-sm font-medium">
+             Sekcja <span className="uppercase text-slate-600 font-bold">{activeTab}</span> w przygotowaniu.
+           </div>
+        )}
+
       </form>
     </div>
   );

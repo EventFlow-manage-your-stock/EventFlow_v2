@@ -28,17 +28,24 @@ export class MagazynService {
     return val === true || val === 'true' || val === 1 || val === '1';
   }
 
-  // --- MODELE SPRZĘTU ---
+  // --- KATEGORIE ---
   async getKategorie(id_organizacji: number) {
     return this.prisma.extendedClient.kategoria.findMany({
       where: { id_organizacji, id_rodzica: null, aktywny: true },
-      include: { dzieci: { where: { aktywny: true }, orderBy: { kolejnosc: 'asc' } } },
+      include: {
+        dzieci: {
+          where: { aktywny: true },
+          orderBy: { kolejnosc: 'asc' }
+        }
+      },
       orderBy: { kolejnosc: 'asc' },
     });
   }
 
+  // --- MODELE SPRZĘTU ---
   async getModeleSprzetu(id_organizacji: number, page: number = 1, limit: number = 20, kategoriaId?: number, search?: string) {
     const skip = (page - 1) * limit;
+
     const where: any = { id_organizacji, aktywny: true };
     if (kategoriaId) where.id_kategorii = kategoriaId;
     if (search) {
@@ -49,10 +56,15 @@ export class MagazynService {
     }
 
     const modele = await this.prisma.extendedClient.modelSprzetu.findMany({
-      where, skip, take: limit,
+      where,
+      skip,
+      take: limit,
       include: {
         kategoria: true,
-        ceny: { where: { aktywny: true }, take: 1 },
+        stawki: {
+          where: { aktywny: true, nazwa_stawki: 'Podstawowa (PLN)' },
+          take: 1
+        },
         egzemplarze: {
           where: { aktywny: true },
           select: { id_statusu_egzemplarza: true, status_serwisowy: true }
@@ -75,10 +87,16 @@ export class MagazynService {
         kod_kreskowy: model.kod_kreskowy,
         ulubiony: model.ulubiony,
         udostepniony_crn: model.udostepniony_crn,
-        cena_podstawowa: model.ceny[0]?.cena_netto || 0,
+        cena_podstawowa: model.stawki?.[0]?.cena_netto || 0,
         uwagi: model.notatki_wewnetrzne,
         zdjecie: model.zdjecie,
-        stan: { total: totalStanie, magazyn: wMagazynie, eventy: naEventach > 0 ? naEventach : 0, serwis: wSerwisie, rack: 0 },
+        stan: {
+          total: totalStanie,
+          magazyn: wMagazynie,
+          eventy: naEventach > 0 ? naEventach : 0,
+          serwis: wSerwisie,
+          rack: 0 
+        },
         dostepnych: wMagazynie
       };
     });
@@ -111,11 +129,15 @@ export class MagazynService {
       where: { id, id_organizacji, aktywny: true },
       include: {
         kategoria: true,
-        ceny: { where: { aktywny: true } },
+        stawki: { where: { aktywny: true }, orderBy: { id: 'asc' } },
         egzemplarze: {
           where: { aktywny: true },
           orderBy: { id: 'asc' },
-          include: { magazyn: true }
+          include: { 
+            magazyn: true,
+            case: { select: { id: true, nazwa: true, numer_urzadzenia: true, model: { select: { nazwa: true } } } },
+            _count: { select: { zawartosc_case: { where: { aktywny: true } } } }
+          }
         }
       }
     });
@@ -149,7 +171,7 @@ export class MagazynService {
     });
   }
 
-  // --- EGZEMPLARZE SPRZĘTU ---
+  // --- EGZEMPLARZE SPRZĘTU I CASE ---
   async getMagazyny(id_organizacji: number) {
     return this.prisma.extendedClient.magazyn.findMany({
       where: { id_organizacji, aktywny: true },
@@ -252,6 +274,194 @@ export class MagazynService {
       });
 
       return egzemplarz;
+    });
+  }
+
+  async getFizyczneCase(id_organizacji: number) {
+    return this.prisma.extendedClient.egzemplarz.findMany({
+      where: { 
+        id_organizacji, 
+        aktywny: true,
+        model: { typ_sprzetu: 'opakowanie' } 
+      },
+      include: {
+        model: { select: { nazwa: true } },
+        _count: { select: { zawartosc_case: { where: { aktywny: true } } } }
+      },
+      orderBy: { nazwa: 'asc' }
+    });
+  }
+
+  async getEgzemplarzById(id: number, id_organizacji: number) {
+    return this.prisma.extendedClient.egzemplarz.findFirst({
+      where: { id, id_organizacji, aktywny: true },
+      include: {
+        model: true,
+        magazyn: true,
+        case: { select: { id: true, nazwa: true, numer_urzadzenia: true } },
+        zawartosc_case: {
+          where: { aktywny: true },
+          include: { model: true, magazyn: true },
+          orderBy: { nazwa: 'asc' }
+        }
+      }
+    });
+  }
+
+  async getDostepneDoCase(id_organizacji: number, id_case: number) {
+    return this.prisma.extendedClient.egzemplarz.findMany({
+      where: {
+        id_organizacji,
+        aktywny: true,
+        id_case: null,
+        id: { not: id_case },
+        model: { typ_sprzetu: 'sprzet' } 
+      },
+      include: { model: true },
+      orderBy: { nazwa: 'asc' }
+    });
+  }
+
+  async modyfikujZawartoscCase(id_case: number, itemIds: number[], akcja: 'add' | 'remove', id_organizacji: number, id_uzytkownika: number | null) {
+    const safeUserId = isNaN(Number(id_uzytkownika)) ? null : Number(id_uzytkownika);
+
+    return this.prisma.extendedClient.$transaction(async (tx) => {
+      const skrzynia = await tx.egzemplarz.findFirst({
+        where: { id: id_case, id_organizacji, aktywny: true }
+      });
+
+      if (!skrzynia) throw new NotFoundException('Nie znaleziono skrzyni');
+
+      await tx.egzemplarz.updateMany({
+        where: { id: { in: itemIds }, id_organizacji },
+        data: { id_case: akcja === 'add' ? id_case : null }
+      });
+
+      for (const itemId of itemIds) {
+        await tx.logZmian.create({
+          data: {
+            id_organizacji,
+            id_uzytkownika: safeUserId,
+            typ_obiektu: 'Egzemplarz',
+            id_obiektu: itemId,
+            akcja: akcja === 'add' ? 'ZAPAKOWANIE_DO_CASE' : 'WYJECIE_Z_CASE',
+            nowa_wartosc: JSON.stringify({ id_case: akcja === 'add' ? id_case : null }),
+          },
+        });
+      }
+
+      return { success: true, updatedCount: itemIds.length };
+    });
+  }
+
+  async getListaOpakowan(id_organizacji: number) {
+    return this.prisma.extendedClient.egzemplarz.findMany({
+      where: {
+        id_organizacji,
+        aktywny: true,
+        model: { typ_sprzetu: 'opakowanie' }
+      },
+      include: {
+        model: {
+          include: { kategoria: true }
+        },
+        magazyn: true,
+        zawartosc_case: {
+          where: { aktywny: true },
+          include: {
+            model: true,
+            magazyn: true
+          },
+          orderBy: { nazwa: 'asc' }
+        }
+      },
+      orderBy: { nazwa: 'asc' }
+    });
+  }
+
+  // --- CENNIK I STAWKI ---
+  async getCennikGlobalny(id_organizacji: number, kategoriaId?: number, search?: string) {
+    const where: any = { id_organizacji, aktywny: true };
+    if (kategoriaId) where.id_kategorii = kategoriaId;
+    if (search) {
+      where.OR = [
+        { nazwa: { contains: search, mode: 'insensitive' } },
+      ];
+    }
+
+    return this.prisma.extendedClient.modelSprzetu.findMany({
+      where,
+      include: {
+        kategoria: true,
+        stawki: {
+          where: { aktywny: true, nazwa_stawki: 'Podstawowa (PLN)' },
+          take: 1
+        }
+      },
+      orderBy: { nazwa: 'asc' }
+    });
+  }
+
+  async updateCenyMasowo(updates: { id_modelu: number, cena: number | null }[], id_organizacji: number) {
+    return this.prisma.extendedClient.$transaction(async (tx) => {
+      let zaktualizowano = 0;
+      for (const update of updates) {
+        const istniejaca = await tx.cenaModelu.findFirst({
+          where: { id_modelu: update.id_modelu, id_organizacji, nazwa_stawki: 'Podstawowa (PLN)', aktywny: true }
+        });
+
+        if (istniejaca) {
+          await tx.cenaModelu.update({
+            where: { id: istniejaca.id },
+            data: { cena_netto: update.cena }
+          });
+        } else {
+          await tx.cenaModelu.create({
+            data: {
+              id_organizacji,
+              id_modelu: update.id_modelu,
+              nazwa_stawki: 'Podstawowa (PLN)',
+              cena_netto: update.cena
+            }
+          });
+        }
+        zaktualizowano++;
+      }
+      return { success: true, count: zaktualizowano };
+    });
+  }
+
+  async addStawkaToModel(id_modelu: number, dto: any, id_organizacji: number) {
+    return this.prisma.extendedClient.cenaModelu.create({
+      data: {
+        id_organizacji,
+        id_modelu,
+        nazwa_stawki: this.cleanString(dto.nazwa_stawki) || 'Nowa stawka',
+        cena_netto: this.cleanNumber(dto.cena_netto),
+        koszt: this.cleanNumber(dto.koszt),
+        nazwa_kosztu: this.cleanString(dto.nazwa_kosztu),
+        mnoz_koszt: this.cleanBoolean(dto.mnoz_koszt)
+      }
+    });
+  }
+
+  async updateStawka(id: number, dto: any, id_organizacji: number) {
+    return this.prisma.extendedClient.cenaModelu.update({
+      where: { id, id_organizacji },
+      data: {
+        nazwa_stawki: this.cleanString(dto.nazwa_stawki),
+        cena_netto: this.cleanNumber(dto.cena_netto),
+        koszt: this.cleanNumber(dto.koszt),
+        nazwa_kosztu: this.cleanString(dto.nazwa_kosztu),
+        mnoz_koszt: this.cleanBoolean(dto.mnoz_koszt)
+      }
+    });
+  }
+
+  async deleteStawka(id: number, id_organizacji: number) {
+    return this.prisma.extendedClient.cenaModelu.update({
+      where: { id, id_organizacji },
+      data: { aktywny: false }
     });
   }
 }
