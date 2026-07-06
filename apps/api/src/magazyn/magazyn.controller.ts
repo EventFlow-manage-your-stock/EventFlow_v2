@@ -55,4 +55,40 @@ export class MagazynController {
     const id_organizacji = Number((req.user as any).id_organizacji);
     return this.magazynService.deleteModel(id, id_organizacji);
   }
+
+  @Get('slowniki/magazyny')
+  async getMagazyny(@Req() req: Request) {
+    const id_organizacji = Number((req.user as any).id_organizacji);
+    return this.magazynService.getMagazyny(id_organizacji);
+  }
+
+  // --- ZABEZPIECZONE ENDPOINTY EGZEMPLARZY ---
+
+  @Post('modele/:modelId/egzemplarze')
+  async createEgzemplarz(@Param('modelId', ParseIntPipe) modelId: number, @Body() dto: any, @Req() req: Request) {
+    const id_organizacji = Number((req.user as any).id_organizacji);
+    // Bezpieczne pobieranie ID użytkownika (obsługa fallbacku 'sub' dla JWT)
+    const rawUserId = (req.user as any).id || (req.user as any).sub;
+    const id_uzytkownika = rawUserId ? Number(rawUserId) : null;
+    
+    return this.magazynService.createEgzemplarz(modelId, dto, id_organizacji, id_uzytkownika);
+  }
+
+  @Put('egzemplarze/:id')
+  async updateEgzemplarz(@Param('id', ParseIntPipe) id: number, @Body() dto: any, @Req() req: Request) {
+    const id_organizacji = Number((req.user as any).id_organizacji);
+    const rawUserId = (req.user as any).id || (req.user as any).sub;
+    const id_uzytkownika = rawUserId ? Number(rawUserId) : null;
+
+    return this.magazynService.updateEgzemplarz(id, dto, id_organizacji, id_uzytkownika);
+  }
+
+  @Delete('egzemplarze/:id')
+  async deleteEgzemplarz(@Param('id', ParseIntPipe) id: number, @Req() req: Request) {
+    const id_organizacji = Number((req.user as any).id_organizacji);
+    const rawUserId = (req.user as any).id || (req.user as any).sub;
+    const id_uzytkownika = rawUserId ? Number(rawUserId) : null;
+
+    return this.magazynService.deleteEgzemplarz(id, id_organizacji, id_uzytkownika);
+  }
 }

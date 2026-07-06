@@ -7,10 +7,10 @@ import {
   ChevronRight, Edit2, Copy, Trash2, X, Image as ImageIcon, 
   Calendar, List, Share2, Printer, MapPin, Grid, Layers, 
   FileArchive, History, Wrench, Info, FileText, MessageSquare, 
-  CheckSquare, DollarSign, Globe, Plus, Search, Eye, Barcode, Loader2, // <-- DODANO Barcode i Loader2
-  Save
+  CheckSquare, DollarSign, Globe, Plus, Search, Eye, Barcode, Loader2, Save
 } from 'lucide-react';
 import { api } from '../../../../../lib/api';
+import ItemModal from '../../../../../components/ItemModal'; // <-- IMPORT NOWEGO MODALA
 
 const TABS = [
   { id: 'egzemplarze', label: 'Egzemplarze', icon: Grid },
@@ -31,6 +31,18 @@ const TABS = [
 function ArrowRightLeftIcon(props: any) { return <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m16 3 4 4-4 4"/><path d="M20 7H4"/><path d="m8 21-4-4 4-4"/><path d="M4 17h16"/></svg>; }
 function BoxIcon(props: any) { return <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>; }
 
+// Helper do kolorowania statusów serwisowych z bazy
+const getStatusConfig = (status: string) => {
+  switch (status) {
+    case 'Działa': return 'bg-emerald-500 text-white';
+    case 'Wymaga serwisu (działa)': return 'bg-amber-500 text-white';
+    case 'Wymaga serwisu (nie działa)': return 'bg-red-500 text-white';
+    case 'W serwisie': return 'bg-sky-500 text-white';
+    case 'Naprawiony': return 'bg-indigo-500 text-white';
+    default: return 'bg-slate-400 text-white';
+  }
+};
+
 export default function ModelDetailsPage() {
   const params = useParams();
   const router = useRouter();
@@ -41,6 +53,13 @@ export default function ModelDetailsPage() {
   const [isEditMode, setIsEditMode] = useState(isNew);
   const [isLoading, setIsLoading] = useState(!isNew);
   const [kategorie, setKategorie] = useState<any[]>([]);
+
+  // Stany dla Modala Egzemplarza
+  const [isItemModalOpen, setIsItemModalOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState<any>(null);
+
+  // Stany dla Tabeli Egzemplarzy
+  const [selectedItems, setSelectedItems] = useState<number[]>([]);
 
   const { register, handleSubmit, reset, formState: { isSubmitting } } = useForm();
 
@@ -53,7 +72,7 @@ export default function ModelDetailsPage() {
 
   const fetchKategorie = async () => {
     try {
-      const res = await api.get('/api/magazyn/kategorie'); // <-- POPRAWKA
+      const res = await api.get('/api/magazyn/kategorie');
       const flattened = res.data.flatMap((kat: any) => [kat, ...(kat.dzieci || [])]);
       setKategorie(flattened);
     } catch (error) {
@@ -64,9 +83,10 @@ export default function ModelDetailsPage() {
   const fetchModelData = async () => {
     setIsLoading(true);
     try {
-      const res = await api.get(`/api/magazyn/modele/${params.id}`); // <-- POPRAWKA
+      const res = await api.get(`/api/magazyn/modele/${params.id}`);
       setModelData(res.data);
       reset(res.data);
+      setSelectedItems([]); // Czyszczenie zaznaczeń po przeładowaniu
     } catch (error) {
       console.error(error);
     } finally {
@@ -74,53 +94,98 @@ export default function ModelDetailsPage() {
     }
   };
 
-  const onSubmit = async (data: any) => {
+  const onSubmitModel = async (data: any) => {
     try {
-      const cleanNumber = (val: any) => (val === "" || val === undefined || val === null) ? null : Number(val);
-
-      // Zabezpieczenie payloadu - wszystko, co jest w bazie jako Int lub Decimal, parsujemy przez cleanNumber
-      const payload = {
-        ...data,
-        szerokosc: cleanNumber(data.szerokosc),
-        glebokosc: cleanNumber(data.glebokosc),
-        wysokosc: cleanNumber(data.wysokosc),
-        objetosc: cleanNumber(data.objetosc),
-        waga: cleanNumber(data.waga),
-        pobor_pradu: cleanNumber(data.pobor_pradu),
-        id_kategorii: cleanNumber(data.id_kategorii)
-      };
-
       if (isNew) {
-        // Tu ścieżka z /api/ jak wymusiłeś wcześniej
-        const res = await api.post('/api/magazyn/modele', payload); 
+        const res = await api.post('/api/magazyn/modele', data);
         router.push(`/dashboard/warehouse/models/${res.data.id}`);
       } else {
-        await api.put(`/api/magazyn/modele/${params.id}`, payload); 
+        await api.put(`/api/magazyn/modele/${params.id}`, data);
         setIsEditMode(false);
         fetchModelData();
       }
     } catch (error) {
-      console.error('Błąd podczas zapisu formularza:', error);
+      console.error(error);
     }
   };
 
-  const handleDelete = async () => {
+  const handleDeleteModel = async () => {
     if (confirm('Usunąć ten model sprzętu?')) {
-      await api.delete(`/api/magazyn/modele/${params.id}`); // <-- POPRAWKA
+      await api.delete(`/api/magazyn/modele/${params.id}`);
       router.push('/dashboard/warehouse');
     }
   };
 
+  const handleOpenNewItemModal = () => {
+    if (isNew) return alert("Najpierw zapisz model główny!");
+    setEditingItem(null);
+    setIsItemModalOpen(true);
+  };
+
+  const handleEditItem = (item: any) => {
+    setEditingItem(item);
+    setIsItemModalOpen(true);
+  };
+
+  const handleDeleteItem = async (itemId: number) => {
+    if (confirm('Usunąć ten egzemplarz na stałe?')) {
+      try {
+        await api.delete(`/api/magazyn/egzemplarze/${itemId}`);
+        fetchModelData();
+      } catch (error) {
+        console.error("Błąd usuwania egzemplarza", error);
+      }
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedItems.length === 0) return alert("Wybierz co najmniej jeden egzemplarz.");
+    if (confirm(`Czy na pewno chcesz usunąć zaznaczone egzemplarze (${selectedItems.length})?`)) {
+      try {
+        await Promise.all(selectedItems.map(id => api.delete(`/api/magazyn/egzemplarze/${id}`)));
+        fetchModelData();
+      } catch (error) {
+        console.error("Błąd masowego usuwania", error);
+      }
+    }
+  };
+
+  const toggleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedItems(modelData?.egzemplarze.map((e: any) => e.id) || []);
+    } else {
+      setSelectedItems([]);
+    }
+  };
+
+  const toggleSelect = (id: number) => {
+    if (selectedItems.includes(id)) {
+      setSelectedItems(prev => prev.filter(item => item !== id));
+    } else {
+      setSelectedItems(prev => [...prev, id]);
+    }
+  };
+
   const totalStock = modelData?.egzemplarze?.length || 0;
-  const inStock = Math.floor(totalStock * 0.8);
-  const onEvents = Math.floor(totalStock * 0.1);
-  const inRack = totalStock - inStock - onEvents;
+  const inStock = modelData?.egzemplarze?.filter((e:any) => e.status_serwisowy === 'Działa' || e.status_serwisowy === 'Naprawiony').length || 0;
+  const inService = modelData?.egzemplarze?.filter((e:any) => e.status_serwisowy?.includes('Wymaga') || e.status_serwisowy === 'W serwisie').length || 0;
 
   if (isLoading) return <div className="p-8 text-slate-500">Wczytywanie karty modelu...</div>;
 
   return (
     <div className="flex h-full flex-col bg-white overflow-y-auto custom-scrollbar">
       
+      {/* --- MODAL EGZEMPLARZA --- */}
+      <ItemModal 
+        isOpen={isItemModalOpen}
+        onClose={() => setIsItemModalOpen(false)}
+        onSuccess={fetchModelData}
+        modelId={modelData?.id}
+        modelName={modelData?.nazwa}
+        initialData={editingItem}
+      />
+
+      {/* BREADCRUMBS */}
       <div className="flex items-center px-6 py-4 bg-slate-50 border-b border-slate-200">
         <div className="flex items-center text-sm text-slate-500 gap-2 flex-1">
           <span className="cursor-pointer hover:text-blue-600" onClick={() => router.push('/dashboard')}>Kokpit</span> <ChevronRight size={14} />
@@ -130,8 +195,9 @@ export default function ModelDetailsPage() {
         </div>
       </div>
 
-      <form onSubmit={handleSubmit(onSubmit)} className="p-6">
+      <form onSubmit={handleSubmit(onSubmitModel)} className="p-6">
         
+        {/* UPPER DASHBOARD (HEADER) - Zgodny z wcześniejszym kodem */}
         <div className="relative border border-slate-200 rounded-xl p-6 bg-slate-50/50 shadow-sm flex flex-col lg:flex-row gap-8">
           
           <div className="absolute top-4 right-4 flex gap-2">
@@ -145,7 +211,7 @@ export default function ModelDetailsPage() {
               <button type="button" onClick={() => setIsEditMode(false)} className="w-10 h-10 rounded-full border border-slate-300 flex items-center justify-center text-slate-600 hover:bg-slate-100 bg-white shadow-sm transition"><X size={16} /></button>
             )}
             {!isNew && (
-               <button type="button" onClick={handleDelete} className="w-10 h-10 rounded-full border border-red-200 flex items-center justify-center text-red-500 hover:bg-red-50 bg-white shadow-sm transition"><Trash2 size={16} /></button>
+               <button type="button" onClick={handleDeleteModel} className="w-10 h-10 rounded-full border border-red-200 flex items-center justify-center text-red-500 hover:bg-red-50 bg-white shadow-sm transition"><Trash2 size={16} /></button>
             )}
           </div>
 
@@ -199,9 +265,6 @@ export default function ModelDetailsPage() {
               <span className="text-right text-slate-500 font-semibold pr-3">Wysokość:</span>
               {isEditMode ? <input {...register('wysokosc')} type="number" step="0.01" className="border border-slate-200 w-24 px-1 rounded text-xs"/> : <span className="font-medium text-slate-800">{modelData?.wysokosc || '0.00'} cm</span>}
               
-              <span className="text-right text-slate-500 font-semibold pr-3">Objętość:</span>
-              {isEditMode ? <input {...register('objetosc')} type="number" step="0.01" className="border border-slate-200 w-24 px-1 rounded text-xs"/> : <span className="font-medium text-slate-800">{modelData?.objetosc || '0.00'} m³</span>}
-              
               <span className="text-right text-slate-500 font-semibold pr-3">Waga[kg]:</span>
               {isEditMode ? <input {...register('waga')} type="number" step="0.01" className="border border-slate-200 w-24 px-1 rounded text-xs"/> : <span className="font-medium text-slate-800">{modelData?.waga || '0.00'} kg</span>}
               
@@ -213,17 +276,11 @@ export default function ModelDetailsPage() {
           <div className="flex-1 min-w-[200px]">
             <h3 className="text-sm font-bold text-slate-700 mb-3 ml-24">Magazyny</h3>
             <div className="grid grid-cols-[140px_1fr] gap-y-1.5 text-sm">
-              <span className="text-right text-slate-500 font-semibold pr-3">Magazyn:</span>
-              <span className="font-bold text-slate-800 flex items-center gap-1"><span className="bg-slate-700 text-white text-[10px] px-1.5 py-0.5 rounded">1</span> Magazyn</span>
+              <span className="text-right text-slate-500 font-semibold pr-3">W magazynie (Dostępne):</span>
+              <span className="font-bold text-emerald-600">{inStock} szt.</span>
               
-              <span className="text-right text-slate-500 font-semibold pr-3">Na eventach:</span>
-              <span className="font-bold text-blue-500">{onEvents}szt.</span>
-              
-              <span className="text-right text-slate-500 font-semibold pr-3">W rackach:</span>
-              <span className="font-bold text-blue-500">{inRack}szt.</span>
-
-              <span className="text-right text-slate-500 font-semibold pr-3">W kablarkach:</span>
-              <span className="font-bold text-blue-500">0szt.</span>
+              <span className="text-right text-slate-500 font-semibold pr-3">Wymaga uwagi/serwis:</span>
+              <span className="font-bold text-red-500">{inService} szt.</span>
 
               <span className="text-right text-slate-500 font-semibold pr-3">Miejsce w mag:</span>
               {isEditMode ? <input {...register('miejsce_w_mag')} className="border border-slate-200 w-24 px-1 rounded text-xs uppercase"/> : <span className="font-bold text-slate-600 uppercase">{modelData?.miejsce_w_mag || '-'}</span>}
@@ -236,30 +293,32 @@ export default function ModelDetailsPage() {
               <div className="flex items-center gap-2">
                  <span className="text-slate-500 font-semibold">Kod kreskowy:</span>
                  {isEditMode ? <input {...register('kod_kreskowy')} className="border border-slate-200 w-32 px-1 rounded text-xs"/> : <span className="font-mono text-slate-800">{modelData?.kod_kreskowy || '-'}</span>}
-                 <Copy size={14} className="text-slate-400 cursor-pointer hover:text-slate-700"/>
-              </div>
-              <div className="flex items-start gap-2 mt-2">
-                 <span className="text-slate-500 font-semibold mt-1">QR code</span>
-                 <Copy size={14} className="text-slate-400 cursor-pointer hover:text-slate-700 mt-1"/>
-                 <div className="w-20 h-20 bg-slate-100 border border-slate-200 ml-4 p-1">
-                   <div className="w-full h-full bg-[url('https://upload.wikimedia.org/wikipedia/commons/d/d0/QR_code_for_mobile_English_Wikipedia.svg')] bg-cover opacity-50 mix-blend-multiply"></div>
-                 </div>
               </div>
             </div>
           </div>
         </div>
+
+        {/* AKCJE DODATKOWE (Zapisz dla Modele, Generuj kody itp) */}
+        {isEditMode && (
+          <div className="mt-6 flex justify-end gap-3 pb-6 border-b border-slate-200">
+            <button type="button" onClick={() => {setIsEditMode(false); reset(modelData);}} className="px-6 py-2 border border-slate-300 rounded shadow-sm text-sm font-bold text-slate-600 hover:bg-slate-50 transition">Anuluj</button>
+            <button type="submit" disabled={isSubmitting} className="flex items-center gap-2 bg-emerald-500 text-white px-8 py-2 rounded shadow-md text-sm font-bold hover:bg-emerald-600 transition disabled:opacity-50">
+              {isSubmitting ? <Loader2 size={16} className="animate-spin"/> : <Save size={16}/>}
+              Zapisz model
+            </button>
+          </div>
+        )}
 
         <div className="mt-4 flex flex-wrap gap-3">
           <button type="button" className="px-4 py-2 border border-slate-300 text-slate-600 font-semibold text-xs rounded shadow-sm hover:bg-slate-50">Zarządzaj tagami</button>
           <div className="w-full h-0"></div>
           <button type="button" className="flex items-center gap-2 px-4 py-2 border border-slate-300 text-sky-600 font-semibold text-xs rounded shadow-sm hover:bg-sky-50"><Calendar size={14}/> Kalendarz dostępności</button>
           <button type="button" className="flex items-center gap-2 px-4 py-2 border border-slate-300 text-emerald-600 font-semibold text-xs rounded shadow-sm hover:bg-emerald-50"><List size={14}/> Arkusz dostępności</button>
-          <button type="button" className="flex items-center gap-2 px-4 py-2 border border-slate-300 text-slate-700 font-semibold text-xs rounded shadow-sm hover:bg-slate-50"><Share2 size={14}/> Udostępnij sprzęt w Cross Rental Network</button>
+          <button type="button" className="flex items-center gap-2 px-4 py-2 border border-slate-300 text-slate-700 font-semibold text-xs rounded shadow-sm hover:bg-slate-50"><Share2 size={14}/> Udostępnij w Cross Rental</button>
           <button type="button" className="flex items-center gap-2 px-4 py-2 border border-slate-300 text-slate-700 font-semibold text-xs rounded shadow-sm hover:bg-slate-50"><Printer size={14}/> Generuj naklejki QR (A4)</button>
-          <button type="button" className="flex items-center gap-2 px-4 py-2 border border-slate-300 text-slate-700 font-semibold text-xs rounded shadow-sm hover:bg-slate-50"><Printer size={14}/> Generuj naklejki QR</button>
-          <button type="button" className="flex items-center gap-2 px-4 py-2 border border-slate-300 text-slate-400 font-semibold text-xs rounded shadow-sm cursor-not-allowed"><Layers size={14}/> Organizuj</button>
         </div>
 
+        {/* ZAKŁADKI */}
         <div className="mt-8 border-b border-slate-200">
            <div className="flex overflow-x-auto custom-scrollbar">
              {TABS.map(tab => {
@@ -280,36 +339,50 @@ export default function ModelDetailsPage() {
            </div>
         </div>
 
+        {/* ZAWARTOŚĆ ZAKŁADKI: EGZEMPLARZE */}
         {activeTab === 'egzemplarze' && (
           <div className="mt-6 border border-slate-200 rounded-lg shadow-sm bg-white overflow-hidden">
+             
+             {/* Pasek akcji masowych na egzemplarzach */}
              <div className="p-4 border-b border-slate-200 bg-slate-50/50 flex flex-wrap items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
                   <div className="relative">
                     <Search size={14} className="absolute left-3 top-2.5 text-slate-400" />
-                    <input type="text" className="pl-8 pr-8 py-2 border border-slate-300 rounded text-sm w-64 focus:border-sky-500 outline-none" placeholder="Szukaj..." />
-                    <X size={14} className="absolute right-3 top-2.5 text-red-500 cursor-pointer" />
+                    <input type="text" className="pl-8 pr-8 py-2 border border-slate-300 rounded text-sm w-64 focus:border-sky-500 outline-none" placeholder="Szukaj egzemplarza..." />
                   </div>
-                  <button type="button" className="flex items-center gap-2 bg-slate-700 text-white px-4 py-2 rounded text-xs font-bold hover:bg-slate-800 shadow-sm transition"><Plus size={14}/> Dodaj egzemplarz</button>
+                  
+                  <button type="button" onClick={handleOpenNewItemModal} className="flex items-center gap-2 bg-slate-700 text-white px-4 py-2 rounded text-xs font-bold hover:bg-slate-800 shadow-sm transition">
+                    <Plus size={14}/> Dodaj egzemplarz
+                  </button>
+                  
                   <button type="button" className="flex items-center gap-2 bg-white border border-slate-300 text-slate-600 px-4 py-2 rounded text-xs font-bold hover:bg-slate-50 shadow-sm transition"><Wrench size={14}/> Wyślij na serwis</button>
-                  <button type="button" className="flex items-center gap-2 bg-white border border-slate-300 text-slate-600 px-4 py-2 rounded text-xs font-bold hover:bg-slate-50 shadow-sm transition"><MessageSquare size={14}/> Dodaj uwagi</button>
-                  <button type="button" className="flex items-center gap-2 bg-white border border-slate-300 text-slate-600 px-4 py-2 rounded text-xs font-bold hover:bg-slate-50 shadow-sm transition"><FileText size={14}/> Exportuj</button>
-                  <button type="button" className="flex items-center gap-2 bg-white border border-slate-300 text-slate-600 px-4 py-2 rounded text-xs font-bold hover:bg-slate-50 shadow-sm transition"><FileText size={14}/> Exportuj Excel</button>
                   <button type="button" className="flex items-center gap-2 bg-white border border-slate-300 text-slate-600 px-4 py-2 rounded text-xs font-bold hover:bg-slate-50 shadow-sm transition"><Barcode size={14}/> Skanuj</button>
                 </div>
-                <button type="button" className="flex items-center gap-2 bg-white border border-slate-300 text-slate-600 px-4 py-2 rounded text-xs font-bold hover:bg-slate-50 shadow-sm transition"><Trash2 size={14}/> Usuń</button>
+
+                {selectedItems.length > 0 && (
+                  <button type="button" onClick={handleBulkDelete} className="flex items-center gap-2 bg-white border border-red-300 text-red-600 px-4 py-2 rounded text-xs font-bold hover:bg-red-50 shadow-sm transition">
+                    <Trash2 size={14}/> Usuń zaznaczone ({selectedItems.length})
+                  </button>
+                )}
              </div>
 
              <div className="overflow-x-auto">
                <table className="w-full text-left text-sm whitespace-nowrap">
                  <thead className="bg-white border-b border-slate-200 text-xs font-bold text-slate-700">
                    <tr>
-                     <th className="p-3 w-10"><input type="checkbox" className="rounded border-slate-300" /></th>
+                     <th className="p-3 w-10">
+                       <input 
+                         type="checkbox" 
+                         className="rounded border-slate-300 cursor-pointer" 
+                         checked={modelData?.egzemplarze?.length > 0 && selectedItems.length === modelData?.egzemplarze?.length}
+                         onChange={(e) => toggleSelectAll(e.target.checked)}
+                       />
+                     </th>
                      <th className="p-3">Nazwa</th>
-                     <th className="p-3">Numer</th>
-                     <th className="p-3">Numer seryjny</th>
-                     <th className="p-3">Zróbłowy</th>
-                     <th className="p-3">Miejsce w magazynie</th>
-                     <th className="p-3">Case</th>
+                     <th className="p-3">Numer urz.</th>
+                     <th className="p-3">Numer seryjny (SN)</th>
+                     <th className="p-3">Magazyn docelowy</th>
+                     <th className="p-3">Miejsce w mag.</th>
                      <th className="p-3">Status serwisowy</th>
                      <th className="p-3">Kod kreskowy</th>
                      <th className="p-3">Uwagi</th>
@@ -317,56 +390,51 @@ export default function ModelDetailsPage() {
                    </tr>
                  </thead>
                  <tbody className="divide-y divide-slate-100 bg-white">
-                   {modelData?.egzemplarze?.map((egz: any, idx: number) => (
-                     <tr key={egz.id} className="hover:bg-sky-50/30 transition">
-                        <td className="p-3"><input type="checkbox" className="rounded border-slate-300" /></td>
-                        <td className="p-3 text-sky-500 font-medium cursor-pointer">{modelData.nazwa}</td>
-                        <td className="p-3 text-slate-600">{idx + 1}</td>
-                        <td className="p-3 font-mono text-slate-700 flex items-center gap-2">{egz.sn || '-'} <Copy size={12} className="text-slate-400 cursor-pointer"/></td>
-                        <td className="p-3 text-sky-500">{egz.magazyn?.nazwa || 'Magazyn główny'}</td>
-                        <td className="p-3 text-slate-600 uppercase">{egz.miejsce_w_mag || modelData.miejsce_w_mag || 'PIETRO'}</td>
-                        <td className="p-3 text-slate-400">-</td>
+                   {modelData?.egzemplarze?.map((egz: any) => (
+                     <tr key={egz.id} className={`${selectedItems.includes(egz.id) ? 'bg-blue-50/50' : 'hover:bg-slate-50'} transition`}>
                         <td className="p-3">
-                           <span className="bg-emerald-500 text-white px-2 py-1 rounded text-[11px] font-bold shadow-sm">Sprawny</span>
+                          <input 
+                            type="checkbox" 
+                            className="rounded border-slate-300 cursor-pointer"
+                            checked={selectedItems.includes(egz.id)}
+                            onChange={() => toggleSelect(egz.id)}
+                          />
                         </td>
-                        <td className="p-3 font-mono text-slate-700 flex items-center gap-2">{egz.kod_kreskowy || '-'} <Copy size={12} className="text-slate-400 cursor-pointer"/></td>
-                        <td className="p-3 text-slate-400"><MessageSquare size={16} /></td>
+                        <td className="p-3 text-sky-500 font-medium cursor-pointer" onClick={() => handleEditItem(egz)}>{egz.nazwa || modelData.nazwa}</td>
+                        <td className="p-3 text-slate-600 font-bold">{egz.numer_urzadzenia || '-'}</td>
+                        <td className="p-3 font-mono text-slate-700">{egz.sn || '-'}</td>
+                        <td className="p-3 text-sky-600">{egz.magazyn?.nazwa || 'Nie przypisano'}</td>
+                        <td className="p-3 text-slate-600 uppercase">{egz.miejsce_w_mag || modelData.miejsce_w_mag || '-'}</td>
+                        <td className="p-3">
+                           <span className={`px-2 py-1 rounded text-[11px] font-bold shadow-sm ${getStatusConfig(egz.status_serwisowy)}`}>
+                             {egz.status_serwisowy}
+                           </span>
+                        </td>
+                        <td className="p-3 font-mono text-slate-500">{egz.kod_kreskowy || '-'}</td>
+                        <td className="p-3 text-slate-400">
+                          {egz.opis ? <MessageSquare size={16} className="text-amber-500" title={egz.opis} /> : '-'}
+                        </td>
                         <td className="p-3 flex items-center justify-end gap-3 text-slate-400">
-                          <Eye size={16} className="cursor-pointer hover:text-sky-500" />
-                          <div className="w-6 h-6 bg-slate-700 rounded text-white flex items-center justify-center cursor-pointer hover:bg-slate-800"><Edit2 size={12} /></div>
-                          <X size={20} className="cursor-pointer font-bold text-slate-800 hover:text-red-500" />
+                          <div onClick={() => handleEditItem(egz)} className="w-6 h-6 bg-slate-700 rounded text-white flex items-center justify-center cursor-pointer hover:bg-slate-800">
+                            <Edit2 size={12} />
+                          </div>
+                          <Trash2 size={16} className="cursor-pointer hover:text-red-500" onClick={() => handleDeleteItem(egz.id)} />
                         </td>
                      </tr>
                    ))}
                    {(!modelData?.egzemplarze || modelData.egzemplarze.length === 0) && !isNew && (
                      <tr>
-                        <td colSpan={11} className="p-6 text-center text-slate-400 text-sm">Brak utworzonych egzemplarzy dla tego modelu.</td>
+                        <td colSpan={10} className="p-6 text-center text-slate-400 text-sm">Brak utworzonych egzemplarzy dla tego modelu. Kliknij "Dodaj egzemplarz" powyżej.</td>
                      </tr>
                    )}
                    {isNew && (
                      <tr>
-                        <td colSpan={11} className="p-6 text-center text-slate-400 text-sm">Zapisz model sprzętu, aby dodać pierwsze egzemplarze.</td>
+                        <td colSpan={10} className="p-6 text-center text-slate-400 text-sm">Najpierw zapisz model sprzętu (górny przycisk Zapisz), aby móc do niego dodać fizyczne egzemplarze.</td>
                      </tr>
                    )}
                  </tbody>
                </table>
              </div>
-          </div>
-        )}
-
-        {activeTab !== 'egzemplarze' && (
-           <div className="mt-10 text-center text-slate-400 text-sm font-medium">
-             Sekcja <span className="uppercase text-slate-600 font-bold">{activeTab}</span> w przygotowaniu.
-           </div>
-        )}
-
-        {isEditMode && (
-          <div className="mt-8 flex justify-end gap-3 pt-6 border-t border-slate-200">
-            <button type="button" onClick={() => {setIsEditMode(false); reset(modelData);}} className="px-6 py-2 border border-slate-300 rounded shadow-sm text-sm font-bold text-slate-600 hover:bg-slate-50 transition">Anuluj</button>
-            <button type="submit" disabled={isSubmitting} className="flex items-center gap-2 bg-emerald-500 text-white px-8 py-2 rounded shadow-md text-sm font-bold hover:bg-emerald-600 transition disabled:opacity-50">
-              {isSubmitting ? <Loader2 size={16} className="animate-spin"/> : <Save size={16}/>}
-              Zapisz model
-            </button>
           </div>
         )}
       </form>

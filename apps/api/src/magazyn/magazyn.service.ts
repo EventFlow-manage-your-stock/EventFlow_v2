@@ -86,7 +86,7 @@ export class MagazynService {
   }
 
   async createModelSprzetu(dto: any, id_organizacji: number) {
-    const cleanNumber = (val: any) => (val === "" || val === undefined || val === null) ? null : Number(val);
+    const cleanNumber = (val: any) => (val === "" || val === undefined || val === null || isNaN(Number(val))) ? null : Number(val);
 
     return this.prisma.extendedClient.modelSprzetu.create({
       data: {
@@ -125,7 +125,7 @@ export class MagazynService {
   }
 
   async updateModel(id: number, dto: any, id_organizacji: number) {
-    const cleanNumber = (val: any) => (val === "" || val === undefined || val === null) ? null : Number(val);
+    const cleanNumber = (val: any) => (val === "" || val === undefined || val === null || isNaN(Number(val))) ? null : Number(val);
 
     return this.prisma.extendedClient.modelSprzetu.update({
       where: { id, id_organizacji },
@@ -148,10 +148,116 @@ export class MagazynService {
   }
 
   async deleteModel(id: number, id_organizacji: number) {
-    // Soft delete sprzętu
     return this.prisma.extendedClient.modelSprzetu.update({
       where: { id, id_organizacji },
       data: { aktywny: false }
+    });
+  }
+
+  async getMagazyny(id_organizacji: number) {
+    return this.prisma.extendedClient.magazyn.findMany({
+      where: { id_organizacji, aktywny: true },
+      orderBy: { nazwa: 'asc' },
+    });
+  }
+
+  async createEgzemplarz(id_modelu: number, dto: any, id_organizacji: number, id_uzytkownika: number | null) {
+    const cleanNumber = (val: any) => (val === "" || val === undefined || val === null || isNaN(Number(val))) ? null : Number(val);
+    const safeUserId = (id_uzytkownika && !isNaN(id_uzytkownika)) ? id_uzytkownika : null;
+
+    return this.prisma.extendedClient.$transaction(async (tx) => {
+      const egzemplarz = await tx.egzemplarz.create({
+        data: {
+          id_organizacji,
+          id_modelu,
+          nazwa: dto.nazwa,
+          numer_urzadzenia: dto.numer_urzadzenia,
+          sn: dto.sn,
+          data_produkcji: dto.data_produkcji ? new Date(dto.data_produkcji) : null,
+          id_magazynu: cleanNumber(dto.id_magazynu),
+          miejsce_w_mag: dto.miejsce_w_mag,
+          opis: dto.opis,
+          pakowany_pojedynczo: dto.pakowany_pojedynczo === true || String(dto.pakowany_pojedynczo) === 'true',
+          cena_zakupu: cleanNumber(dto.cena_zakupu),
+          id_case: cleanNumber(dto.id_case),
+          status_serwisowy: dto.status_serwisowy || "Działa",
+          kod_kreskowy: dto.kod_kreskowy || `SN-${Date.now()}`
+        }
+      });
+
+      await tx.logZmian.create({
+        data: {
+          id_organizacji,
+          id_uzytkownika: safeUserId, // Bezpieczne logowanie
+          typ_obiektu: 'Egzemplarz',
+          id_obiektu: egzemplarz.id,
+          akcja: 'UTWORZENIE',
+          nowa_wartosc: JSON.stringify(dto),
+        },
+      });
+
+      return egzemplarz;
+    });
+  }
+
+  async updateEgzemplarz(id: number, dto: any, id_organizacji: number, id_uzytkownika: number | null) {
+    const cleanNumber = (val: any) => (val === "" || val === undefined || val === null || isNaN(Number(val))) ? null : Number(val);
+    const safeUserId = (id_uzytkownika && !isNaN(id_uzytkownika)) ? id_uzytkownika : null;
+
+    return this.prisma.extendedClient.$transaction(async (tx) => {
+      const egzemplarz = await tx.egzemplarz.update({
+        where: { id, id_organizacji },
+        data: {
+          nazwa: dto.nazwa,
+          numer_urzadzenia: dto.numer_urzadzenia,
+          sn: dto.sn,
+          data_produkcji: dto.data_produkcji ? new Date(dto.data_produkcji) : null,
+          id_magazynu: cleanNumber(dto.id_magazynu),
+          miejsce_w_mag: dto.miejsce_w_mag,
+          opis: dto.opis,
+          pakowany_pojedynczo: dto.pakowany_pojedynczo === true || String(dto.pakowany_pojedynczo) === 'true',
+          cena_zakupu: cleanNumber(dto.cena_zakupu),
+          id_case: cleanNumber(dto.id_case),
+          status_serwisowy: dto.status_serwisowy,
+          kod_kreskowy: dto.kod_kreskowy,
+        }
+      });
+
+      await tx.logZmian.create({
+        data: {
+          id_organizacji,
+          id_uzytkownika: safeUserId,
+          typ_obiektu: 'Egzemplarz',
+          id_obiektu: id,
+          akcja: 'EDYCJA',
+          nowa_wartosc: JSON.stringify(dto),
+        },
+      });
+
+      return egzemplarz;
+    });
+  }
+
+  async deleteEgzemplarz(id: number, id_organizacji: number, id_uzytkownika: number | null) {
+    const safeUserId = (id_uzytkownika && !isNaN(id_uzytkownika)) ? id_uzytkownika : null;
+
+    return this.prisma.extendedClient.$transaction(async (tx) => {
+      const egzemplarz = await tx.egzemplarz.update({
+        where: { id, id_organizacji },
+        data: { aktywny: false }
+      });
+
+      await tx.logZmian.create({
+        data: {
+          id_organizacji,
+          id_uzytkownika: safeUserId,
+          typ_obiektu: 'Egzemplarz',
+          id_obiektu: id,
+          akcja: 'USUNIECIE'
+        },
+      });
+
+      return egzemplarz;
     });
   }
 }

@@ -340,6 +340,13 @@ model Egzemplarz {
   data_aktualizacji DateTime @updatedAt
   data_usuniecia   DateTime?
 
+  numer_urzadzenia    String?   @db.VarChar(100)
+  data_produkcji      DateTime? @db.Date
+  cena_zakupu         Decimal?  @db.Decimal(12, 2)
+  pakowany_pojedynczo Boolean   @default(false)
+  opis                String?   @db.Text
+  status_serwisowy    String    @default("Działa") @db.VarChar(50)
+
   organizacja      Organizacja   @relation(fields: [id_organizacji], references: [id])
   model            ModelSprzetu  @relation(fields: [id_modelu], references: [id])
   magazyn          Magazyn?      @relation(fields: [id_magazynu], references: [id])
