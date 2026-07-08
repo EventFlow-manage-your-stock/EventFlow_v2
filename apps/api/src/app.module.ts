@@ -10,11 +10,12 @@ import { SlownikiModule } from './slowniki/slowniki.module';
 import { MagazynModule } from './magazyn/magazyn.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { SerwisModule } from './serwis/serwis.module';
+import { CrmModule } from './crm/crm.module';
 
 @Module({
   imports: [ConfigModule.forRoot({
       isGlobal: true,
-    }),PrismaModule, AuthModule, WydarzeniaModule, SlownikiModule, MagazynModule, DashboardModule, SerwisModule],
+    }),PrismaModule, AuthModule, WydarzeniaModule, SlownikiModule, MagazynModule, DashboardModule, SerwisModule, CrmModule],
   controllers: [AppController],
   providers: [AppService],
 })

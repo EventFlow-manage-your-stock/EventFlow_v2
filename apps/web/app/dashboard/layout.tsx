@@ -6,7 +6,7 @@ import {
   Globe, Box, Wrench, UsersRound, Truck, Settings, ChevronDown, 
   Search, Bell, LogOut, Menu, Plus, Moon, Sun, CalendarDays, FileText, 
   AlertTriangle, BarChart3, FileCheck, DollarSign, History, Briefcase,
-  ArrowRight, ArrowLeft, Monitor, Plug, Layers, Paperclip, Server, Building2, CheckCircle2
+  ArrowRight, ArrowLeft, Monitor, Plug, Layers, Paperclip, Server, Building2, CheckCircle2, Coffee, Palmtree, List
 } from 'lucide-react';
 import { useAuthStore } from '../../store/auth.store';
 import { useRouter, usePathname } from 'next/navigation';
@@ -21,13 +21,21 @@ const menuConfig = [
   { 
     icon: Star, label: 'Wydarzenia', isExpandable: true, 
     subItems: [
-      { label: 'Wydarzenia' }, { label: 'Grupy sprzętowe' }, { label: 'Spotkania' }, 
-      { label: 'Wydarzenia prywatne' }, { label: 'Wypożyczenia' }, { label: 'Urlopy' }
+      { label: 'Wydarzenia', href: '/dashboard/events', icon: Star },
+      { label: 'Grupy sprzętowe', icon: Star }, 
+      { label: 'Spotkania', icon: Coffee }, 
+      { label: 'Wydarzenia prywatne', icon: Star }, 
+      { label: 'Wypożyczenia', icon: List }, 
+      { label: 'Urlopy', icon: Palmtree }
     ] 
   },
   { 
     icon: Users, label: 'Kontrahenci', isExpandable: true, 
-    subItems: [{ label: 'Lista kontrahentów' }, { label: 'Grupy' }] 
+    subItems: 
+    [
+      { label: 'Lista kontrahentów', href: '/dashboard/crm', icon: Users }, 
+      { label: 'Grupy' }
+    ] 
   },
   { 
     icon: MapPin, label: 'Miejsca', isExpandable: true, 

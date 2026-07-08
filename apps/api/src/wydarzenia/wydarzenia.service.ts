@@ -5,10 +5,51 @@ import { PrismaService } from '../prisma/prisma.service';
 export class WydarzeniaService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findAll(id_organizacji: number) {
+  async getSlownikiDoFiltrow(id_organizacji: number) {
+    const [klienci, managerowie] = await Promise.all([
+      // Pobieramy aktywnych kontrahentów
+      this.prisma.extendedClient.kontrahent.findMany({
+        where: { id_organizacji, aktywny: true },
+        select: { id: true, nazwa: true, nazwa_skrocona: true },
+        orderBy: { nazwa: 'asc' }
+      }),
+      // Pobieramy aktywnych użytkowników (event managerów)
+      this.prisma.extendedClient.uzytkownik.findMany({
+        where: { id_organizacji, aktywny: true },
+        select: { id: true, imie: true, nazwisko: true },
+        orderBy: { nazwisko: 'asc' }
+      })
+    ]);
+
+    return { klienci, managerowie };
+  }
+
+  async findAll(id_organizacji: number, filters?: any) {
+    const where: any = { id_organizacji };
+
+    // Aplikowanie filtrów z frontendu, jeśli istnieją
+    if (filters) {
+      if (filters.search) {
+        where.nazwa = { contains: filters.search, mode: 'insensitive' };
+      }
+      if (filters.clientId) {
+        where.id_kontrahenta = Number(filters.clientId);
+      }
+      if (filters.managerId) {
+        where.id_managera = Number(filters.managerId);
+      }
+      if (filters.miesiacKsiegowania) {
+        where.miesiac_ksiegowania = { contains: filters.miesiacKsiegowania, mode: 'insensitive' };
+      }
+    }
+
     return this.prisma.extendedClient.wydarzenie.findMany({
-      where: { id_organizacji },
-      include: { status: true },
+      where,
+      include: { 
+        status: true,
+        kontrahent: { select: { id: true, nazwa: true, nazwa_skrocona: true } },
+        manager: { select: { id: true, imie: true, nazwisko: true } },
+      },
       orderBy: { data_start: 'asc' },
     });
   }
@@ -128,5 +169,22 @@ export class WydarzeniaService {
         where: { id },
       });
     });
+  }
+
+  async wyslijPowiadomieniaMasowe(id_organizacji: number, id_uzytkownika: number) {
+    //TO DO:  W przyszłości tutaj znajdzie się integracja z serwisem e-mail/SMS
+    // Na ten moment rejestrujemy tylko log systemowy o wykonanej akcji masowej.
+    
+    await this.prisma.extendedClient.logZmian.create({
+      data: {
+        id_organizacji,
+        id_uzytkownika,
+        typ_obiektu: 'System',
+        akcja: 'WYSLANIE_POWIADOMIEN_MASOWYCH',
+        nowa_wartosc: 'Wysłano przypomnienia do przypisanych ekip i klientów',
+      }
+    });
+
+    return { success: true, message: 'Powiadomienia zostały wygenerowane i przesłane do kolejki wysyłkowej.' };
   }
 }

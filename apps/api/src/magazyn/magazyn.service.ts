@@ -198,7 +198,17 @@ export class MagazynService {
           cena_zakupu: this.cleanNumber(dto.cena_zakupu),
           id_case: this.cleanNumber(dto.id_case),
           status_serwisowy: this.cleanString(dto.status_serwisowy) || "Działa",
-          kod_kreskowy: this.cleanString(dto.kod_kreskowy) || `SN-${Date.now()}`
+          kod_kreskowy: this.cleanString(dto.kod_kreskowy) || `SN-${Date.now()}`,
+          
+          // DODANE POLA Z NOWEGO MODALA:
+          szerokosc: this.cleanNumber(dto.szerokosc),
+          wysokosc: this.cleanNumber(dto.wysokosc),
+          glebokosc: this.cleanNumber(dto.glebokosc),
+          waga: this.cleanNumber(dto.waga),
+          objetosc: this.cleanNumber(dto.objetosc),
+          wartosc: this.cleanNumber(dto.wartosc),
+          qr_kod: this.cleanString(dto.qr_kod),
+          notatki_wewnetrzne: this.cleanString(dto.notatki_wewnetrzne)
         }
       });
 
@@ -213,7 +223,7 @@ export class MagazynService {
         },
       });
 
-      // --- NOWA LOGIKA AUTOMATYCZNEGO ZGŁOSZENIA ---
+      // ZGŁOSZENIE SERWISOWE
       if (dto.tworz_zgloszenie && dto.tytul_usterki && dto.id_statusu_serwisu && safeUserId) {
         await tx.serwisSprzetu.create({
           data: {
@@ -250,6 +260,16 @@ export class MagazynService {
           id_case: this.cleanNumber(dto.id_case),
           status_serwisowy: this.cleanString(dto.status_serwisowy) || "Działa",
           kod_kreskowy: this.cleanString(dto.kod_kreskowy),
+
+          // DODANE POLA Z NOWEGO MODALA:
+          szerokosc: this.cleanNumber(dto.szerokosc),
+          wysokosc: this.cleanNumber(dto.wysokosc),
+          glebokosc: this.cleanNumber(dto.glebokosc),
+          waga: this.cleanNumber(dto.waga),
+          objetosc: this.cleanNumber(dto.objetosc),
+          wartosc: this.cleanNumber(dto.wartosc),
+          qr_kod: this.cleanString(dto.qr_kod),
+          notatki_wewnetrzne: this.cleanString(dto.notatki_wewnetrzne)
         }
       });
 
@@ -264,7 +284,7 @@ export class MagazynService {
         },
       });
 
-      // --- NOWA LOGIKA AUTOMATYCZNEGO ZGŁOSZENIA ---
+      // ZGŁOSZENIE SERWISOWE
       if (dto.tworz_zgloszenie && dto.tytul_usterki && dto.id_statusu_serwisu && safeUserId) {
         await tx.serwisSprzetu.create({
           data: {

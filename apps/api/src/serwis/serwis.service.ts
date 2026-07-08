@@ -46,9 +46,44 @@ export class SerwisService {
   }
 
   async getStatusy(id_organizacji: number) {
-    return this.prisma.extendedClient.statusSerwisu.findMany({
+    let statusy = await this.prisma.extendedClient.statusSerwisu.findMany({
       where: { id_organizacji, aktywny: true },
       orderBy: { kolejnosc: 'asc' }
+    });
+
+    if (statusy.length === 0) {
+      await this.prisma.extendedClient.statusSerwisu.createMany({
+        data: [
+          { id_organizacji, nazwa: 'Nowe zgłoszenie', kolor: '#64748b', kolejnosc: 1 },
+          { id_organizacji, nazwa: 'Pilne', kolor: '#ef4444', kolejnosc: 2 },
+          { id_organizacji, nazwa: 'W trakcie diagnozy', kolor: '#f59e0b', kolejnosc: 3 },
+          { id_organizacji, nazwa: 'Oczekuje na części', kolor: '#f97316', kolejnosc: 4 },
+        ]
+      });
+
+      statusy = await this.prisma.extendedClient.statusSerwisu.findMany({
+        where: { id_organizacji, aktywny: true },
+        orderBy: { kolejnosc: 'asc' }
+      });
+    }
+
+    return statusy;
+  }
+
+  async getZgloszeniaDlaModelu(id_modelu: number, id_organizacji: number) {
+    return this.prisma.extendedClient.serwisSprzetu.findMany({
+      where: {
+        id_organizacji,
+        aktywny: true,
+        egzemplarz: { id_modelu }
+      },
+      include: {
+        egzemplarz: true,
+        status: true,
+        zglosil: { select: { imie: true, nazwisko: true } },
+        rozwiazal: { select: { imie: true, nazwisko: true } }
+      },
+      orderBy: { data_zgloszenia: 'desc' }
     });
   }
 
@@ -63,11 +98,9 @@ export class SerwisService {
 
       if (!existing) throw new NotFoundException('Zgłoszenie nie istnieje');
 
-      // Jeśli status sugeruje rozwiązanie, a nie ma daty, ustawiamy obecną
       let dataRozwiazania = existing.data_rozwiazania;
       let rozwiazal = existing.id_uzytkownika_rozwiazal;
 
-      // Zakładamy, że frontend wyśle np. status "Naprawiony"
       if (dto.czy_rozwiazane && !dataRozwiazania) {
         dataRozwiazania = new Date();
         rozwiazal = id_uzytkownika;
@@ -88,7 +121,14 @@ export class SerwisService {
         }
       });
 
-      // Zapisujemy zmianę w logach
+      // --- ZMIANA: Aktualizacja samego Egzemplarza (Sprzętu) z poziomu serwisu ---
+      if (dto.status_serwisowy_sprzetu) {
+        await tx.egzemplarz.update({
+          where: { id: existing.id_egzemplarza, id_organizacji },
+          data: { status_serwisowy: cleanString(dto.status_serwisowy_sprzetu) }
+        });
+      }
+
       await tx.logZmian.create({
         data: {
           id_organizacji,
@@ -96,28 +136,11 @@ export class SerwisService {
           typ_obiektu: 'SerwisSprzetu',
           id_obiektu: id,
           akcja: 'EDYCJA_ZGLOSZENIA',
-          nowa_wartosc: JSON.stringify({ status: updated.id_statusu_serwisu, rozwiazanie: updated.rozwiazanie })
+          nowa_wartosc: JSON.stringify({ status: updated.id_statusu_serwisu, status_sprzetu: dto.status_serwisowy_sprzetu })
         }
       });
 
       return updated;
-    });
-  }
-
-  async getZgloszeniaDlaModelu(id_modelu: number, id_organizacji: number) {
-    return this.prisma.extendedClient.serwisSprzetu.findMany({
-      where: {
-        id_organizacji,
-        aktywny: true,
-        egzemplarz: { id_modelu }
-      },
-      include: {
-        egzemplarz: true,
-        status: true,
-        zglosil: { select: { imie: true, nazwisko: true } },
-        rozwiazal: { select: { imie: true, nazwisko: true } }
-      },
-      orderBy: { data_zgloszenia: 'desc' }
     });
   }
 }

@@ -15,13 +15,20 @@ export default function ServiceDetailPage() {
   const [ticket, setTicket] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   
-  const { register, handleSubmit, reset, watch, formState: { isSubmitting } } = useForm();
+  const { register, handleSubmit, reset, watch, setValue, formState: { isSubmitting } } = useForm();
   const isResolvedWatcher = watch('czy_rozwiazane');
 
   useEffect(() => {
     fetchStatuses();
     fetchTicket();
   }, [params.id]);
+
+  // Automatyczne ustawienie statusu sprzętu na 'Naprawiony', jeśli rozwiązano zgłoszenie
+  useEffect(() => {
+    if (isResolvedWatcher) {
+      setValue('status_serwisowy_sprzetu', 'Naprawiony');
+    }
+  }, [isResolvedWatcher, setValue]);
 
   const fetchTicket = async () => {
     try {
@@ -32,7 +39,8 @@ export default function ServiceDetailPage() {
         opis: res.data.opis,
         rozwiazanie: res.data.rozwiazanie,
         id_statusu_serwisu: res.data.id_statusu_serwisu,
-        czy_rozwiazane: !!res.data.data_rozwiazania
+        czy_rozwiazane: !!res.data.data_rozwiazania,
+        status_serwisowy_sprzetu: res.data.egzemplarz?.status_serwisowy || 'Działa' // Załadowanie obecnego statusu egzemplarza do formularza
       });
     } catch (error) {
       console.error(error);
@@ -106,7 +114,7 @@ export default function ServiceDetailPage() {
                 <Info size={16} className="text-sky-500"/> Urządzenie
               </h3>
               
-              <div className="space-y-3 text-sm">
+              <div className="space-y-4 text-sm">
                 <div>
                   <p className="text-[11px] font-bold text-slate-400 uppercase">Model</p>
                   <p className="font-semibold text-slate-700 cursor-pointer hover:text-sky-600 transition" onClick={() => router.push(`/dashboard/warehouse/models/${sprzet?.id_modelu}`)}>
@@ -114,14 +122,21 @@ export default function ServiceDetailPage() {
                   </p>
                 </div>
                 <div>
-                  <p className="text-[11px] font-bold text-slate-400 uppercase">Numer boczny</p>
+                  <p className="text-[11px] font-bold text-slate-400 uppercase">Numer boczny / SN</p>
                   <p className="font-mono font-bold text-slate-800">{sprzet?.numer_urzadzenia || sprzet?.sn || '-'}</p>
                 </div>
                 <div>
-                  <p className="text-[11px] font-bold text-slate-400 uppercase">Obecny status sprzętu</p>
-                  <p className="font-bold text-slate-700 mt-1">
-                    <span className="bg-slate-100 px-2 py-1 rounded border border-slate-200">{sprzet?.status_serwisowy || 'Działa'}</span>
-                  </p>
+                  <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1.5">Obecny status sprzętu</label>
+                  <select 
+                    {...register('status_serwisowy_sprzetu')} 
+                    className="w-full px-3 py-2 border-2 border-slate-200 rounded-lg focus:border-sky-500 outline-none text-sm bg-white cursor-pointer font-bold shadow-sm"
+                  >
+                    <option value="Działa" className="text-emerald-600">Działa</option>
+                    <option value="Wymaga serwisu (działa)" className="text-amber-600">Wymaga serwisu (działa)</option>
+                    <option value="Wymaga serwisu (nie działa)" className="text-red-600">Wymaga serwisu (nie działa)</option>
+                    <option value="W serwisie" className="text-sky-600">W serwisie</option>
+                    <option value="Naprawiony" className="text-emerald-600">Naprawiony</option>
+                  </select>
                 </div>
               </div>
             </div>

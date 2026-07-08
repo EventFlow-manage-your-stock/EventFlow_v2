@@ -173,6 +173,10 @@ model Kontrahent {
   data_utworzenia  DateTime  @default(now())
   data_aktualizacji DateTime @updatedAt
   data_usuniecia   DateTime?
+  czy_klient       Boolean   @default(true)
+  czy_dostawca     Boolean   @default(false)
+  nr_konta         String?   @db.VarChar(100)
+
 
   organizacja      Organizacja @relation(fields: [id_organizacji], references: [id])
   kontakty         KontaktKontrahenta[]
