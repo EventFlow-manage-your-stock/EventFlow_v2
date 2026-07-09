@@ -14,22 +14,16 @@ export class MagazynController {
     return this.magazynService.getKategorie(id_organizacji);
   }
 
-  @Get('modele')
-  async getModele(
-    @Req() req: Request,
-    @Query('page') page?: string,
-    @Query('limit') limit?: string,
-    @Query('kategoriaId') kategoriaId?: string,
-    @Query('search') search?: string,
-  ) {
+  @Get('wszystkie-egzemplarze')
+  async getWszystkieEgzemplarze(@Req() req: Request, @Query() query: any) {
     const id_organizacji = Number((req.user as any).id_organizacji);
-    return this.magazynService.getModeleSprzetu(
-      id_organizacji,
-      page ? parseInt(page) : 1,
-      limit ? parseInt(limit) : 20,
-      kategoriaId ? parseInt(kategoriaId) : undefined,
-      search
-    );
+    return this.magazynService.getWszystkieEgzemplarze(id_organizacji, query);
+  }
+
+  @Get('modele')
+  async getModele(@Req() req: Request, @Query() query: any) {
+    const id_organizacji = Number((req.user as any).id_organizacji);
+    return this.magazynService.getModeleSprzetu(id_organizacji, query);
   }
 
   @Post('modele')
@@ -53,7 +47,9 @@ export class MagazynController {
   @Delete('modele/:id')
   async deleteModel(@Param('id', ParseIntPipe) id: number, @Req() req: Request) {
     const id_organizacji = Number((req.user as any).id_organizacji);
-    return this.magazynService.deleteModel(id, id_organizacji);
+    const rawUserId = (req.user as any).id || (req.user as any).sub;
+    const id_uzytkownika = rawUserId ? Number(rawUserId) : null;
+    return this.magazynService.usunModelSoft(id, id_organizacji, id_uzytkownika as number);
   }
 
   @Get('slowniki/magazyny')
@@ -122,8 +118,6 @@ export class MagazynController {
     return this.magazynService.modyfikujZawartoscCase(id_case, body.itemIds, body.action, id_organizacji, id_uzytkownika as number);
   }
 
-  // --- CENNIK ---
-  
   @Get('cennik')
   async getCennikGlobalny(@Req() req: Request, @Query('kategoriaId') kategoriaId?: string, @Query('search') search?: string) {
     const id_organizacji = Number((req.user as any).id_organizacji);

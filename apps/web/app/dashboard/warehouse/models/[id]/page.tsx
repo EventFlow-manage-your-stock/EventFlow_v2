@@ -7,7 +7,7 @@ import {
   ChevronRight, Edit2, Copy, Trash2, X, Image as ImageIcon, 
   Calendar, List, Share2, Printer, MapPin, Grid, Layers, 
   FileArchive, History, Wrench, Info, FileText, MessageSquare, 
-  CheckSquare, DollarSign, Globe, Plus, Search, Barcode, Loader2
+  CheckSquare, DollarSign, Globe, Plus, Search, Barcode, Loader2, Save
 } from 'lucide-react';
 import { api } from '../../../../../lib/api';
 import ItemModal from '../../../../../components/ItemModal';

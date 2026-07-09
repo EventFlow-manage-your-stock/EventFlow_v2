@@ -5,7 +5,6 @@ import { PrismaService } from '../prisma/prisma.service';
 export class MagazynService {
   constructor(private readonly prisma: PrismaService) {}
 
-  // --- HELPERY DO BEZPIECZNEGO PARSOWANIA DANYCH ---
   private cleanNumber(val: any): number | null {
     if (val === "" || val === null || val === undefined) return null;
     const parsed = Number(val);
@@ -28,7 +27,6 @@ export class MagazynService {
     return val === true || val === 'true' || val === 1 || val === '1';
   }
 
-  // --- KATEGORIE ---
   async getKategorie(id_organizacji: number) {
     return this.prisma.extendedClient.kategoria.findMany({
       where: { id_organizacji, id_rodzica: null, aktywny: true },
@@ -42,17 +40,24 @@ export class MagazynService {
     });
   }
 
-  // --- MODELE SPRZĘTU ---
-  async getModeleSprzetu(id_organizacji: number, page: number = 1, limit: number = 20, kategoriaId?: number, search?: string) {
+  async getModeleSprzetu(id_organizacji: number, filters: any = {}) {
+    const page = filters.page ? parseInt(filters.page) : 1;
+    const limit = filters.limit ? parseInt(filters.limit) : 1000;
     const skip = (page - 1) * limit;
 
     const where: any = { id_organizacji, aktywny: true };
-    if (kategoriaId) where.id_kategorii = kategoriaId;
-    if (search) {
+    if (filters.kategoriaId) where.id_kategorii = Number(filters.kategoriaId);
+    if (filters.search) {
       where.OR = [
-        { nazwa: { contains: search, mode: 'insensitive' } },
-        { kod_kreskowy: { contains: search, mode: 'insensitive' } },
+        { nazwa: { contains: filters.search, mode: 'insensitive' } },
+        { kod_kreskowy: { contains: filters.search, mode: 'insensitive' } },
       ];
+    }
+    if (filters.widocznyWMag) {
+      where.widoczny_w_mag = filters.widocznyWMag === 'TAK';
+    }
+    if (filters.widocznyWOfercie) {
+      where.widoczny_w_ofercie = filters.widocznyWOfercie === 'TAK';
     }
 
     const modele = await this.prisma.extendedClient.modelSprzetu.findMany({
@@ -84,12 +89,16 @@ export class MagazynService {
         nazwa: model.nazwa,
         typ_sprzetu: model.typ_sprzetu,
         kategoria_nazwa: model.kategoria?.nazwa || '-',
+        kategoria: model.kategoria,
         kod_kreskowy: model.kod_kreskowy,
         ulubiony: model.ulubiony,
         udostepniony_crn: model.udostepniony_crn,
+        widoczny_w_mag: model.widoczny_w_mag,
+        widoczny_w_ofercie: model.widoczny_w_ofercie,
         cena_podstawowa: model.stawki?.[0]?.cena_netto || 0,
         uwagi: model.notatki_wewnetrzne,
         zdjecie: model.zdjecie,
+        _count: { egzemplarze: totalStanie },
         stan: {
           total: totalStanie,
           magazyn: wMagazynie,
@@ -164,14 +173,28 @@ export class MagazynService {
     });
   }
 
-  async deleteModel(id: number, id_organizacji: number) {
-    return this.prisma.extendedClient.modelSprzetu.update({
-      where: { id, id_organizacji },
-      data: { aktywny: false }
+  async usunModelSoft(id: number, id_organizacji: number, id_uzytkownika: number | null) {
+    const safeUserId = isNaN(Number(id_uzytkownika)) ? null : Number(id_uzytkownika);
+    return this.prisma.extendedClient.$transaction(async (tx) => {
+      const model = await tx.modelSprzetu.update({
+        where: { id, id_organizacji },
+        data: { aktywny: false, data_usuniecia: new Date() }
+      });
+
+      await tx.logZmian.create({
+        data: {
+          id_organizacji,
+          id_uzytkownika: safeUserId,
+          typ_obiektu: 'ModelSprzetu',
+          id_obiektu: id,
+          akcja: 'USUNIECIE',
+        },
+      });
+
+      return model;
     });
   }
 
-  // --- EGZEMPLARZE SPRZĘTU I CASE ---
   async getMagazyny(id_organizacji: number) {
     return this.prisma.extendedClient.magazyn.findMany({
       where: { id_organizacji, aktywny: true },
@@ -200,7 +223,6 @@ export class MagazynService {
           status_serwisowy: this.cleanString(dto.status_serwisowy) || "Działa",
           kod_kreskowy: this.cleanString(dto.kod_kreskowy) || `SN-${Date.now()}`,
           
-          // DODANE POLA Z NOWEGO MODALA:
           szerokosc: this.cleanNumber(dto.szerokosc),
           wysokosc: this.cleanNumber(dto.wysokosc),
           glebokosc: this.cleanNumber(dto.glebokosc),
@@ -223,7 +245,6 @@ export class MagazynService {
         },
       });
 
-      // ZGŁOSZENIE SERWISOWE
       if (dto.tworz_zgloszenie && dto.tytul_usterki && dto.id_statusu_serwisu && safeUserId) {
         await tx.serwisSprzetu.create({
           data: {
@@ -261,7 +282,6 @@ export class MagazynService {
           status_serwisowy: this.cleanString(dto.status_serwisowy) || "Działa",
           kod_kreskowy: this.cleanString(dto.kod_kreskowy),
 
-          // DODANE POLA Z NOWEGO MODALA:
           szerokosc: this.cleanNumber(dto.szerokosc),
           wysokosc: this.cleanNumber(dto.wysokosc),
           glebokosc: this.cleanNumber(dto.glebokosc),
@@ -284,7 +304,6 @@ export class MagazynService {
         },
       });
 
-      // ZGŁOSZENIE SERWISOWE
       if (dto.tworz_zgloszenie && dto.tytul_usterki && dto.id_statusu_serwisu && safeUserId) {
         await tx.serwisSprzetu.create({
           data: {
@@ -427,7 +446,6 @@ export class MagazynService {
     });
   }
 
-  // --- CENNIK I STAWKI ---
   async getCennikGlobalny(id_organizacji: number, kategoriaId?: number, search?: string) {
     const where: any = { id_organizacji, aktywny: true };
     if (kategoriaId) where.id_kategorii = kategoriaId;
@@ -510,6 +528,42 @@ export class MagazynService {
     return this.prisma.extendedClient.cenaModelu.update({
       where: { id, id_organizacji },
       data: { aktywny: false }
+    });
+  }
+
+  // --- ZAKŁADKA "EGZEMPLARZE" - Pełna lista wszystkich sztuk fizycznych ---
+  async getWszystkieEgzemplarze(id_organizacji: number, filters: any = {}) {
+    const where: any = { id_organizacji, aktywny: true };
+
+    if (filters.searchItem) {
+      where.OR = [
+        { nazwa: { contains: filters.searchItem, mode: 'insensitive' } },
+        { sn: { contains: filters.searchItem, mode: 'insensitive' } },
+        { kod_kreskowy: { contains: filters.searchItem, mode: 'insensitive' } },
+        { numer_urzadzenia: { contains: filters.searchItem, mode: 'insensitive' } },
+      ];
+    }
+    
+    if (filters.searchModel) {
+      where.model = { nazwa: { contains: filters.searchModel, mode: 'insensitive' } };
+    }
+
+    if (filters.searchCategory) {
+      where.model = {
+        ...where.model,
+        kategoria: { nazwa: { contains: filters.searchCategory, mode: 'insensitive' } }
+      };
+    }
+
+    return this.prisma.extendedClient.egzemplarz.findMany({
+      where,
+      include: {
+        model: {
+          include: { kategoria: true }
+        },
+        magazyn: true
+      },
+      orderBy: { data_utworzenia: 'desc' }
     });
   }
 }
