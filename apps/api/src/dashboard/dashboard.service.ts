@@ -14,60 +14,48 @@ export class DashboardService {
     const startOfWeek = new Date(today);
     startOfWeek.setDate(today.getDate() - today.getDay() + 1);
     const endOfWeek = new Date(startOfWeek);
-    endOfWeek.setDate(startOfWeek.getDate() + 6);
+    endOfWeek.setDate(startOfWeek.getDate() + 7);
 
-    // 1. KPI: Wydarzenia w tym tygodniu
-    const wydarzeniaTygodnia = await this.prisma.extendedClient.wydarzenie.count({
-      where: {
-        id_organizacji,
-        aktywny: true,
-        data_start: { gte: startOfWeek, lte: endOfWeek },
-      },
-    });
-
-    // 2. KPI: Sprzęt dostępny
-    const totalSprzet = await this.prisma.extendedClient.egzemplarz.count({
-      where: { id_organizacji, aktywny: true },
-    });
-    const dzialajacySprzet = await this.prisma.extendedClient.egzemplarz.count({
-      where: {
-        id_organizacji,
-        aktywny: true,
-        status_serwisowy: { in: ['Działa', 'Naprawiony'] },
-      },
-    });
-    const procentDostepnosci = totalSprzet > 0 ? Math.round((dzialajacySprzet / totalSprzet) * 100) : 0;
-
-    // 3. KPI: Oferty otwarte
-    const aktywneOferty = await this.prisma.extendedClient.oferta.count({
-      where: { id_organizacji, aktywny: true },
-    });
-
-    // 4. KPI: Przychód (suma_netto z zaakceptowanych/aktywnych ofert)
-    const ofertyPrzychodu = await this.prisma.extendedClient.oferta.findMany({
-      where: { id_organizacji, aktywny: true },
-      select: { suma_netto: true },
-    });
-    const planowanyPrzychod = ofertyPrzychodu.reduce((acc, curr) => acc + Number(curr.suma_netto || 0), 0);
-
-    // 5. WYDARZENIA DZISIAJ
-    const dzisiejszeWydarzeniaRaw = await this.prisma.extendedClient.wydarzenie.findMany({
-      where: {
-        id_organizacji,
-        aktywny: true,
-        data_start: { lte: today },
-        data_koniec: { gte: today },
-      },
-      include: {
-        miejsce: true,
-        kontrahent: true,
-        status: true,
-        manager: true,
-      },
-    });
+    // EVENTFLOW_PRODUCT_POLISH_V3:
+    // Zgodnie z listą poprawek zostawiamy KPI "wydarzenia w tym tygodniu"
+    // i dodajemy KPI aktywnego serwisu. Stare KPI ofert/przychodu/sprzętu
+    // nie są usuwane z bazy, tylko nie są już zwracane jako główne kafelki kokpitu.
+    const [wydarzeniaTygodnia, aktywneSerwisy, dzisiejszeWydarzeniaRaw, serwisy] = await Promise.all([
+      this.prisma.extendedClient.wydarzenie.count({
+        where: {
+          id_organizacji,
+          aktywny: true,
+          data_start: { gte: startOfWeek, lt: endOfWeek },
+        },
+      }),
+      this.prisma.extendedClient.serwisSprzetu.count({
+        where: { id_organizacji, aktywny: true, data_rozwiazania: null },
+      }),
+      this.prisma.extendedClient.wydarzenie.findMany({
+        where: {
+          id_organizacji,
+          aktywny: true,
+          data_start: { lt: tomorrow },
+          data_koniec: { gte: today },
+        },
+        include: {
+          miejsce: true,
+          kontrahent: true,
+          status: true,
+          typ: true,
+          manager: true,
+        },
+        orderBy: { data_start: 'asc' },
+      }),
+      this.prisma.extendedClient.serwisSprzetu.findMany({
+        where: { id_organizacji, aktywny: true, data_rozwiazania: null },
+        include: { egzemplarz: { include: { model: true } }, status: true },
+        take: 5,
+        orderBy: { data_zgloszenia: 'desc' },
+      }),
+    ]);
 
     const todaysEvents = dzisiejszeWydarzeniaRaw.map((event) => {
-      // Obliczanie postępu wydarzenia w ciągu dnia (w uproszczeniu dla UI)
       const startHour = event.data_start ? event.data_start.getHours() : 8;
       const currentHour = new Date().getHours();
       let progress = ((currentHour - startHour) / 12) * 100;
@@ -77,63 +65,36 @@ export class DashboardService {
       return {
         id: event.id,
         title: event.nazwa,
+        type: event.typ?.nazwa ?? 'Wydarzenie',
+        typeColor: event.typ?.kolor ?? '#06B6D4',
+        statusIcon: (event.status as any)?.ikona ?? '●',
         location: event.miejsce ? event.miejsce.nazwa : event.kontrahent?.nazwa || 'Lokalizacja nieznana',
         status: event.status?.nazwa || 'W trakcie',
-        time: event.data_start && event.data_koniec 
+        time: event.data_start && event.data_koniec
           ? `${event.data_start.toLocaleTimeString('pl-PL', {hour: '2-digit', minute:'2-digit'})} - ${event.data_koniec.toLocaleTimeString('pl-PL', {hour: '2-digit', minute:'2-digit'})}`
           : 'Cały dzień',
-        revenue: event.budzet_netto ? `${Number(event.budzet_netto).toLocaleString('pl-PL')} zł` : 'Brak danych',
         progress,
         manager: event.manager ? `${event.manager.imie.charAt(0)}${event.manager.nazwisko.charAt(0)}` : 'SYS'
       };
     });
 
-    // 6. ALERTY / SMART FLOW
-    // NAPRAWA: Zdefiniowanie typu tablicy (likwidacja błędu TS2345 / never[])
     const alerts: Array<{ id: string; type: string; message: string; actionText?: string }> = [];
-    
-    // Alert budżetowy
-    const overBudgetOffers = await this.prisma.extendedClient.oferta.findMany({
-      where: { id_organizacji, aktywny: true, budzet_netto: { gt: 0 } },
-      select: { id: true, numer: true, nazwa: true, suma_netto: true, budzet_netto: true }
-    });
-    
-    for (const o of overBudgetOffers) {
-      if (Number(o.suma_netto) > Number(o.budzet_netto)) {
-        const roznica = Number(o.suma_netto) - Number(o.budzet_netto);
-        alerts.push({
-          id: `oferta-${o.id}`,
-          type: 'smart-flow',
-          message: `Oferta ${o.numer || o.nazwa} przekracza budżet o ${roznica.toLocaleString('pl-PL')} zł. Możesz obniżyć ceny proporcjonalnie lub tylko w wybranych sekcjach.`,
-          actionText: 'Dopasuj do budżetu'
-        });
-      }
-    }
-
-    // Alerty serwisowe
-    const serwisy = await this.prisma.extendedClient.serwisSprzetu.findMany({
-      where: { id_organizacji, aktywny: true, data_rozwiazania: null },
-      include: { egzemplarz: true },
-      take: 5
-    });
-
     for (const s of serwisy) {
       alerts.push({
         id: `serwis-${s.id}`,
         type: 'warning',
-        message: `${s.egzemplarz?.nazwa || 'Nieznany sprzęt'} (${s.egzemplarz?.numer_urzadzenia || s.egzemplarz?.sn || '-'}) zgłoszony do serwisu: ${s.tytul}`
+        message: `${s.egzemplarz?.model?.nazwa || s.egzemplarz?.nazwa || 'Sprzęt'}: ${s.tytul} (${s.status?.nazwa || 'serwis'})`,
+        actionText: 'Otwórz serwis',
       });
     }
 
     return {
       kpis: {
         eventsThisWeek: wydarzeniaTygodnia,
-        availableEquipmentPercent: procentDostepnosci,
-        openOffers: aktywneOferty,
-        plannedRevenue: planowanyPrzychod >= 1000 ? `${(planowanyPrzychod / 1000).toFixed(1)}k` : planowanyPrzychod
+        activeService: aktywneSerwisy,
       },
       todaysEvents,
-      alerts
+      alerts,
     };
   }
 }

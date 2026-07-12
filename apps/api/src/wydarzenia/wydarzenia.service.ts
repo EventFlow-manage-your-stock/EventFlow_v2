@@ -5,6 +5,12 @@ import { PrismaService } from '../prisma/prisma.service';
 export class WydarzeniaService {
   constructor(private readonly prisma: PrismaService) {}
 
+  // EVENTFLOW_PRODUCT_POLISH_V6: normalizacja wartości z formularza, żeby przycisk Zapisz
+  // w edycji wydarzenia nie wysyłał pustych stringów do pól relacyjnych/DateTime.
+  private n(v: any) { return v === '' || v === undefined || v === null ? null : Number(v); }
+  private d(v: any) { return v === '' || v === undefined || v === null ? null : new Date(v); }
+  private s(v: any) { return v === '' || v === undefined || v === null ? null : String(v); }
+
   async getSlownikiDoFiltrow(id_organizacji: number) {
     const [klienci, managerowie] = await Promise.all([
       // Pobieramy aktywnych kontrahentów
@@ -38,15 +44,25 @@ export class WydarzeniaService {
       if (filters.managerId) {
         where.id_managera = Number(filters.managerId);
       }
-      if (filters.miesiacKsiegowania) {
-        where.miesiac_ksiegowania = { contains: filters.miesiacKsiegowania, mode: 'insensitive' };
+      // EVENTFLOW_PRODUCT_POLISH_V3:
+      // Filtr miesiaca księgowania zostawiamy nieaktywny, bo pole zostało usunięte z UI dodawania wydarzenia.
+      // if (filters.miesiacKsiegowania) {
+      //   where.miesiac_ksiegowania = { contains: filters.miesiacKsiegowania, mode: 'insensitive' };
+      // }
+      if (filters.typId) {
+        where.id_typu_wydarzenia = Number(filters.typId);
       }
     }
 
     return this.prisma.extendedClient.wydarzenie.findMany({
       where,
       include: { 
+        typ: true,
         status: true,
+        // EVENTFLOW_PRODUCT_POLISH_V12: statusy poboczne mają być widoczne również na listach wydarzeń.
+        status_magazynowy: true,
+        status_ksiegowy: true,
+        oferta_glowna: true,
         kontrahent: { select: { id: true, nazwa: true, nazwa_skrocona: true } },
         manager: { select: { id: true, imie: true, nazwisko: true } },
       },
@@ -58,6 +74,7 @@ export class WydarzeniaService {
     const event = await this.prisma.extendedClient.wydarzenie.findFirst({
       where: { id, id_organizacji },
       include: {
+        typ: true,
         kontrahent: true,
         miejsce: true,
         manager: true,
@@ -65,8 +82,17 @@ export class WydarzeniaService {
         status: true,
         status_magazynowy: true,
         status_ksiegowy: true,
+        oferta_glowna: true,
         etapy: { orderBy: { kolejnosc: 'asc' } },
+        oferty: {
+          where: { aktywny: true },
+          include: { status: true, wersje: { take: 1, orderBy: { numer_wersji: 'desc' } } },
+          orderBy: { data_utworzenia: 'desc' },
+        },
+        // EVENTFLOW_PRODUCT_POLISH_V28: wynajem jest osobnym bytem, nie częścią wydarzenia.
+        // Wydanie sprzętu do wydarzenia obsługuje moduł WZ/PZ, nie tworzymy ani nie pokazujemy tu wynajmów.
         ekipa: { include: { uzytkownik: true } },
+        pojazdy: { include: { pojazd: true } },
       },
     });
 
@@ -87,20 +113,27 @@ export class WydarzeniaService {
     return this.prisma.extendedClient.$transaction(async (tx) => {
       const wydarzenie = await tx.wydarzenie.create({
         data: {
-          nazwa: dto.nazwa,
+          nazwa: this.s(dto.nazwa) || 'Bez nazwy',
           numer: numer,
-          data_start: dto.data_start,
-          data_koniec: dto.data_koniec,
-          miesiac_ksiegowania: dto.miesiac_ksiegowania,
-          uwagi: dto.uwagi,
+          data_start: this.d(dto.data_start),
+          data_koniec: this.d(dto.data_koniec),
+          // EVENTFLOW_PRODUCT_POLISH_V3: miesiąc księgowania nie jest już zbierany w formularzu wydarzenia.
+          // miesiac_ksiegowania: dto.miesiac_ksiegowania,
+          // uwagi zostają w bazie historycznie, ale UI korzysta z pola opis.
+          opis: this.s(dto.opis),
+          id_typu_wydarzenia: this.n(dto.id_typu_wydarzenia),
+          miejsce_reczne: this.s(dto.miejsce_reczne),
+          adres_reczny: this.s(dto.adres_reczny),
+          link_google_maps: this.s(dto.adres_reczny) ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(this.s(dto.adres_reczny) || '')}` : this.s(dto.link_google_maps),
           id_organizacji: id_organizacji,
           id_tworcy: id_uzytkownika,
-          id_managera: dto.id_managera,
-          id_statusu_wydarzenia: dto.id_statusu_wydarzenia,
-          id_statusu_magazynowego: dto.id_statusu_magazynowego,
-          id_statusu_ksiegowego: dto.id_statusu_ksiegowego,
-          id_kontrahenta: dto.id_kontrahenta,
-          id_miejsca: dto.id_miejsca,
+          id_managera: this.n(dto.id_managera),
+          id_statusu_wydarzenia: this.n(dto.id_statusu_wydarzenia),
+          id_statusu_magazynowego: this.n(dto.id_statusu_magazynowego),
+          id_statusu_ksiegowego: this.n(dto.id_statusu_ksiegowego),
+          id_oferty_glownej: this.n(dto.id_oferty_glownej),
+          id_kontrahenta: this.n(dto.id_kontrahenta),
+          id_miejsca: this.n(dto.id_miejsca),
         },
       });
 
@@ -124,17 +157,24 @@ export class WydarzeniaService {
       const wydarzenie = await tx.wydarzenie.update({
         where: { id },
         data: {
-          nazwa: dto.nazwa,
-          data_start: dto.data_start,
-          data_koniec: dto.data_koniec,
-          miesiac_ksiegowania: dto.miesiac_ksiegowania,
-          uwagi: dto.uwagi,
-          id_managera: dto.id_managera,
-          id_statusu_wydarzenia: dto.id_statusu_wydarzenia,
-          id_statusu_magazynowego: dto.id_statusu_magazynowego,
-          id_statusu_ksiegowego: dto.id_statusu_ksiegowego,
-          id_kontrahenta: dto.id_kontrahenta,
-          id_miejsca: dto.id_miejsca,
+          nazwa: this.s(dto.nazwa) || 'Bez nazwy',
+          data_start: this.d(dto.data_start),
+          data_koniec: this.d(dto.data_koniec),
+          // EVENTFLOW_PRODUCT_POLISH_V3: miesiąc księgowania nie jest już zbierany w formularzu wydarzenia.
+          // miesiac_ksiegowania: dto.miesiac_ksiegowania,
+          // uwagi zostają w bazie historycznie, ale UI korzysta z pola opis.
+          opis: this.s(dto.opis),
+          id_typu_wydarzenia: this.n(dto.id_typu_wydarzenia),
+          miejsce_reczne: this.s(dto.miejsce_reczne),
+          adres_reczny: this.s(dto.adres_reczny),
+          link_google_maps: this.s(dto.adres_reczny) ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(this.s(dto.adres_reczny) || '')}` : this.s(dto.link_google_maps),
+          id_managera: this.n(dto.id_managera),
+          id_statusu_wydarzenia: this.n(dto.id_statusu_wydarzenia),
+          id_statusu_magazynowego: this.n(dto.id_statusu_magazynowego),
+          id_statusu_ksiegowego: this.n(dto.id_statusu_ksiegowego),
+          id_oferty_glownej: this.n(dto.id_oferty_glownej),
+          id_kontrahenta: this.n(dto.id_kontrahenta),
+          id_miejsca: this.n(dto.id_miejsca),
         },
       });
 
@@ -174,7 +214,7 @@ export class WydarzeniaService {
   async wyslijPowiadomieniaMasowe(id_organizacji: number, id_uzytkownika: number) {
     //TO DO:  W przyszłości tutaj znajdzie się integracja z serwisem e-mail/SMS
     // Na ten moment rejestrujemy tylko log systemowy o wykonanej akcji masowej.
-    
+
     await this.prisma.extendedClient.logZmian.create({
       data: {
         id_organizacji,

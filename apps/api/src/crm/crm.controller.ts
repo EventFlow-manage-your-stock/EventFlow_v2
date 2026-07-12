@@ -3,38 +3,58 @@ import { AuthGuard } from '@nestjs/passport';
 import type { Request } from 'express';
 import { CrmService } from './crm.service';
 
-@Controller('api/crm/kontrahenci')
+@Controller('crm')
 @UseGuards(AuthGuard('jwt'))
 export class CrmController {
   constructor(private readonly crmService: CrmService) {}
 
-  @Get()
+  @Get('kontrahenci')
   findAll(@Req() req: Request, @Query('search') search?: string) {
-    const id_organizacji = Number((req.user as any).id_organizacji);
-    return this.crmService.findAll(id_organizacji, search);
+    return this.crmService.findAll(Number((req.user as any).id_organizacji), search);
   }
 
-  @Get(':id')
+  @Get('kontrahenci/:id')
   findOne(@Param('id', ParseIntPipe) id: number, @Req() req: Request) {
-    const id_organizacji = Number((req.user as any).id_organizacji);
-    return this.crmService.findOne(id, id_organizacji);
+    return this.crmService.findOne(id, Number((req.user as any).id_organizacji));
   }
 
-  @Post()
+  @Post('kontrahenci')
   create(@Body() dto: any, @Req() req: Request) {
-    const id_organizacji = Number((req.user as any).id_organizacji);
-    return this.crmService.create(dto, id_organizacji);
+    return this.crmService.create(dto, Number((req.user as any).id_organizacji));
   }
 
-  @Put(':id')
+  @Put('kontrahenci/:id')
   update(@Param('id', ParseIntPipe) id: number, @Body() dto: any, @Req() req: Request) {
-    const id_organizacji = Number((req.user as any).id_organizacji);
-    return this.crmService.update(id, dto, id_organizacji);
+    return this.crmService.update(id, dto, Number((req.user as any).id_organizacji));
   }
 
-  @Delete(':id')
+  @Delete('kontrahenci/:id')
   remove(@Param('id', ParseIntPipe) id: number, @Req() req: Request) {
-    const id_organizacji = Number((req.user as any).id_organizacji);
-    return this.crmService.remove(id, id_organizacji);
+    return this.crmService.remove(id, Number((req.user as any).id_organizacji));
+  }
+
+  @Get('kontakty')
+  contacts(@Req() req: Request, @Query('kontrahentId') kontrahentId?: string) {
+    return this.crmService.getContacts(Number((req.user as any).id_organizacji), kontrahentId ? Number(kontrahentId) : undefined);
+  }
+
+  @Get('kontakty/:id')
+  getContactById(@Param('id', ParseIntPipe) id: number, @Req() req: Request) {
+    return this.crmService.getContactById(id, Number((req.user as any).id_organizacji));
+  }
+
+  @Post('kontakty')
+  createContact(@Body() dto: any, @Req() req: Request) {
+    return this.crmService.createContact(dto, Number((req.user as any).id_organizacji));
+  }
+
+  @Put('kontakty/:id')
+  updateContact(@Param('id', ParseIntPipe) id: number, @Body() dto: any, @Req() req: Request) {
+    return this.crmService.updateContact(id, dto, Number((req.user as any).id_organizacji));
+  }
+
+  @Delete('kontakty/:id')
+  removeContact(@Param('id', ParseIntPipe) id: number, @Req() req: Request) {
+    return this.crmService.removeContact(id, Number((req.user as any).id_organizacji));
   }
 }

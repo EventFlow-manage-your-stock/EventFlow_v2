@@ -1,668 +1,286 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
-import { useForm } from 'react-hook-form';
-import { 
-  ChevronRight, Edit2, Copy, Trash2, X, Image as ImageIcon, 
-  Calendar, List, Share2, Printer, MapPin, Grid, Layers, 
-  FileArchive, History, Wrench, Info, FileText, MessageSquare, 
-  CheckSquare, DollarSign, Globe, Plus, Search, Barcode, Loader2, Save
-} from 'lucide-react';
+import { ArrowLeft, CalendarDays, Check, ImageIcon, Pencil, Plus, QrCode, Trash2, X } from 'lucide-react';
 import { api } from '../../../../../lib/api';
-import ItemModal from '../../../../../components/ItemModal';
+import { Button, Card, Field, inputClass, PageTitle } from '../../../../../components/ProductUI';
+import { DataTable } from '../../../../../components/DataTable';
+import { SimpleModal } from '../../../../../components/SimpleModal';
+import { openLabelsPage } from '../../../../../lib/labels';
 
-const TABS = [
-  { id: 'egzemplarze', label: 'Egzemplarze', icon: Grid },
-  { id: 'powiazane', label: 'Powiązane', icon: Layers },
-  { id: 'zamienniki', label: 'Zamienniki', icon: ArrowRightLeftIcon },
-  { id: 'opakowania', label: 'Opakowania', icon: BoxIcon },
-  { id: 'historia', label: 'Historia', icon: History },
-  { id: 'serwis', label: 'Serwis', icon: Wrench },
-  { id: 'informacje', label: 'Informacje', icon: Info },
-  { id: 'zalaczniki', label: 'Załączniki', icon: FileArchive },
-  { id: 'uwagi', label: 'Uwagi', icon: MessageSquare },
-  { id: 'notatki', label: 'Notatki', icon: FileText },
-  { id: 'zadania', label: 'Zadania', icon: CheckSquare },
-  { id: 'stawki', label: 'Stawki', icon: DollarSign },
-  { id: 'tlumaczenia', label: 'Tłumaczenia', icon: Globe },
-];
+function readImageAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
 
-function ArrowRightLeftIcon(props: any) { return <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m16 3 4 4-4 4"/><path d="M20 7H4"/><path d="m8 21-4-4 4-4"/><path d="M4 17h16"/></svg>; }
-function BoxIcon(props: any) { return <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>; }
+function isQuantityModel(formOrModel: any) {
+  return formOrModel?.sprzet_ilosciowy === true || formOrModel?.tryb_ewidencji === 'ilosciowe' || formOrModel?.typ_sprzetu === 'ilosciowe';
+}
 
-const getStatusConfig = (status: string) => {
-  switch (status) {
-    case 'Działa': return 'bg-emerald-500 text-white';
-    case 'Wymaga serwisu (działa)': return 'bg-amber-500 text-white';
-    case 'Wymaga serwisu (nie działa)': return 'bg-red-500 text-white';
-    case 'W serwisie': return 'bg-sky-500 text-white';
-    case 'Naprawiony': return 'bg-indigo-500 text-white';
-    default: return 'bg-slate-400 text-white';
-  }
-};
+function normalizeModelPayload(form: any) {
+  const quantity = isQuantityModel(form);
+  return {
+    ...form,
+    sprzet_ilosciowy: quantity,
+    tryb_ewidencji: quantity ? 'ilosciowe' : 'egzemplarze',
+    ilosc_magazynowa: quantity ? Number(form.ilosc_magazynowa || 0) : 0,
+    jednostka: form.jednostka || 'szt.',
+    kod_kreskowy: quantity ? (form.kod_kreskowy || '') : '',
+  };
+}
 
-const getServiceStatusColor = (statusName: string, defaultColor: string) => {
-  const name = statusName?.toLowerCase() || '';
-  if (name.includes('pilne')) return 'text-red-500 bg-red-50';
-  if (name.includes('napraw')) return 'text-amber-500 bg-amber-50';
-  if (name.includes('gotow')) return 'text-emerald-500 bg-emerald-50';
-  return defaultColor ? `text-[${defaultColor}] bg-slate-50` : 'text-slate-500 bg-slate-100';
-};
+
+function applyQuantityMode(current: any, checked: boolean) {
+  return {
+    ...current,
+    sprzet_ilosciowy: checked,
+    tryb_ewidencji: checked ? 'ilosciowe' : 'egzemplarze',
+    typ_sprzetu: current?.typ_sprzetu === 'opakowanie' ? 'opakowanie' : 'sprzet',
+    ilosc_magazynowa: checked ? (current?.ilosc_magazynowa || 0) : 0,
+    jednostka: current?.jednostka || 'szt.',
+    kod_kreskowy: checked ? (current?.kod_kreskowy || '') : '',
+  };
+}
+
+function normalizeForm(model: any) {
+  return {
+    nazwa: model?.nazwa || '',
+    id_kategorii: model?.id_kategorii || model?.kategoria?.id || '',
+    producent: model?.producent || '',
+    typ_sprzetu: model?.typ_sprzetu || 'sprzet',
+    wartosc_domyslna_egzemplarza: model?.wartosc_domyslna_egzemplarza || model?.wartosc || '',
+    wartosc: model?.wartosc_domyslna_egzemplarza || model?.wartosc || '',
+    miejsce_w_mag: model?.miejsce_w_mag || '',
+    opis: model?.opis || '',
+    notatki_wewnetrzne: model?.notatki_wewnetrzne || '',
+    szerokosc: model?.szerokosc || '',
+    wysokosc: model?.wysokosc || '',
+    glebokosc: model?.glebokosc || '',
+    objetosc: model?.objetosc || '',
+    waga: model?.waga || '',
+    pobor_pradu: model?.pobor_pradu || '',
+    zdjecie: model?.zdjecie || '',
+    tryb_ewidencji: model?.tryb_ewidencji || 'egzemplarze',
+    sprzet_ilosciowy: model?.tryb_ewidencji === 'ilosciowe' || model?.typ_sprzetu === 'ilosciowe',
+    ilosc_magazynowa: model?.ilosc_magazynowa ?? 0,
+    jednostka: model?.jednostka || 'szt.',
+    kod_kreskowy: model?.kod_kreskowy || '',
+  };
+}
 
 export default function ModelDetailsPage() {
-  const params = useParams();
+  const { id } = useParams();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const isNew = params.id === 'new';
+  const [model, setModel] = useState<any>(null);
+  const [categories, setCategories] = useState<any[]>([]);
+  const [showAdd, setShowAdd] = useState(false);
+  const [showCalendar, setShowCalendar] = useState(false);
+  const [busy, setBusy] = useState<any[]>([]);
+  const [magazyny, setMagazyny] = useState<any[]>([]);
+  const [itemForm, setItemForm] = useState<any>({});
+  const [edit, setEdit] = useState(searchParams?.get('edit') === '1');
+  const [form, setForm] = useState<any>({});
+  const [saving, setSaving] = useState(false);
 
-  const defaultTab = searchParams.get('tab') || 'egzemplarze';
-  const [activeTab, setActiveTab] = useState(defaultTab);
-  
-  const [modelData, setModelData] = useState<any>(null);
-  const [kategorie, setKategorie] = useState<any[]>([]);
-  const [serwisy, setSerwisy] = useState<any[]>([]); // Stan dla zgłoszeń serwisowych
+  async function load() {
+    const [m, mag, cats] = await Promise.all([
+      api.get(`/api/magazyn/modele/${id}`),
+      api.get('/api/magazyn/slowniki/magazyny').catch(() => ({ data: [] })),
+      api.get('/api/magazyn/kategorie/plasko').catch(() => api.get('/api/magazyn/kategorie').catch(() => ({ data: [] }))),
+    ]);
+    setModel(m.data);
+    setForm(normalizeForm(m.data));
+    setMagazyny(mag.data || []);
+    setCategories(cats.data || []);
+  }
 
-  const [isLoading, setIsLoading] = useState(!isNew);
-  const [isLoadingSerwisy, setIsLoadingSerwisy] = useState(false);
-  const [isEditMode, setIsEditMode] = useState(isNew);
+  useEffect(() => { load(); }, [id]);
 
-  const [isItemModalOpen, setIsItemModalOpen] = useState(false);
-  const [editingItem, setEditingItem] = useState<any>(null);
-  const [selectedItems, setSelectedItems] = useState<number[]>([]);
+  async function loadCalendar() {
+    const r = await api.get(`/api/magazyn/modele/${id}/zajetosc`).catch(() => ({ data: [] }));
+    setBusy(r.data || []);
+    setShowCalendar(true);
+  }
 
-  const { register, handleSubmit, reset, formState: { isSubmitting } } = useForm();
+  const egzemplarze = model?.egzemplarze || [];
 
-  // Inicjalne pobieranie danych modelu i kategorii
-  useEffect(() => {
-    fetchKategorie();
-    if (!isNew) {
-      fetchModelData();
+  const nextNumber = useMemo(() => {
+    const nums = egzemplarze.map((e: any) => Number(e.numer_egzemplarza || e.numer_urzadzenia)).filter((n: number) => !Number.isNaN(n));
+    return nums.length ? Math.max(...nums) + 1 : 1;
+  }, [egzemplarze]);
+
+  function openAdd() {
+    setItemForm(defaultItemForm(model, nextNumber));
+    setShowAdd(true);
+  }
+
+  async function saveItem(e: any) {
+    e.preventDefault();
+    await api.post(`/api/magazyn/modele/${id}/egzemplarze`, itemForm);
+    setShowAdd(false);
+    await load();
+  }
+
+  async function saveModel(e?: any) {
+    e?.preventDefault?.();
+    if (isQuantityModel(form) && !String(form.kod_kreskowy || '').trim()) {
+      alert('Sprzęt ilościowy musi mieć kod kreskowy modelu. Ten kod skanujesz przy WZ/PZ, a system zapyta o liczbę sztuk.');
+      setEdit(true);
+      return;
     }
-  }, [params.id]);
-
-  // Leniwe (lazy) pobieranie zgłoszeń serwisowych po wejściu w odpowiednią zakładkę
-  useEffect(() => {
-    if (!isNew && activeTab === 'serwis' && serwisy.length === 0) {
-      fetchSerwisy();
-    }
-  }, [activeTab, isNew]);
-
-  const fetchKategorie = async () => {
+    setSaving(true);
     try {
-      const res = await api.get('/api/magazyn/kategorie');
-      const flattened = res.data.flatMap((kat: any) => [kat, ...(kat.dzieci || [])]);
-      setKategorie(flattened);
-    } catch (error) {
-      console.error(error);
-    }
-  };
-
-  const fetchModelData = async () => {
-    setIsLoading(true);
-    try {
-      const res = await api.get(`/api/magazyn/modele/${params.id}`);
-      setModelData(res.data);
-      reset(res.data);
-      setSelectedItems([]); 
-    } catch (error) {
-      console.error(error);
+      const payload = normalizeModelPayload({ ...form, wartosc: form.wartosc_domyslna_egzemplarza || form.wartosc });
+      await api.put(`/api/magazyn/modele/${id}`, payload);
+      setEdit(false);
+      await load();
     } finally {
-      setIsLoading(false);
+      setSaving(false);
     }
-  };
+  }
 
-  // Nowa funkcja pobierająca zgłoszenia dla tego konkretnego modelu sprzętu
-  const fetchSerwisy = async () => {
-    setIsLoadingSerwisy(true);
-    try {
-      const res = await api.get(`/api/serwis/model/${params.id}`);
-      setSerwisy(res.data);
-    } catch (error) {
-      console.error('Błąd pobierania serwisów:', error);
-    } finally {
-      setIsLoadingSerwisy(false);
-    }
-  };
+  async function removeModel() {
+    if (!confirm(`Usunąć model "${model?.nazwa}"?\n\nModel zostanie ukryty, a nie fizycznie skasowany z bazy.`)) return;
+    await api.delete(`/api/magazyn/modele/${id}`);
+    router.push('/dashboard/warehouse/models');
+  }
 
-  const onSubmitModel = async (data: any) => {
-    try {
-      if (isNew) {
-        const res = await api.post('/api/magazyn/modele', data);
-        router.push(`/dashboard/warehouse/models/${res.data.id}`);
-      } else {
-        await api.put(`/api/magazyn/modele/${params.id}`, data);
-        setIsEditMode(false);
-        fetchModelData();
-      }
-    } catch (error) {
-      console.error(error);
-    }
-  };
+  async function onPhoto(file?: File | null) {
+    if (!file) return;
+    const dataUrl = await readImageAsDataUrl(file);
+    setForm((current: any) => ({ ...current, zdjecie: dataUrl }));
+  }
 
-  const handleDeleteModel = async () => {
-    if (confirm('Usunąć ten model sprzętu?')) {
-      await api.delete(`/api/magazyn/modele/${params.id}`);
-      router.push('/dashboard/warehouse');
-    }
-  };
+  if (!model) return <p className="p-8 font-bold text-slate-400">Ładowanie modelu...</p>;
 
-  const handleOpenNewItemModal = () => {
-    if (isNew) return alert("Najpierw zapisz model główny!");
-    setEditingItem(null);
-    setIsItemModalOpen(true);
-  };
-
-  const handleEditItem = (item: any) => {
-    setEditingItem(item);
-    setIsItemModalOpen(true);
-  };
-
-  const handleDeleteItem = async (itemId: number) => {
-    if (confirm('Usunąć ten egzemplarz na stałe?')) {
-      try {
-        await api.delete(`/api/magazyn/egzemplarze/${itemId}`);
-        fetchModelData();
-      } catch (error) {
-        console.error("Błąd usuwania egzemplarza", error);
-      }
-    }
-  };
-
-  const handleBulkDelete = async () => {
-    if (selectedItems.length === 0) return alert("Wybierz co najmniej jeden egzemplarz.");
-    if (confirm(`Czy na pewno chcesz usunąć zaznaczone egzemplarze (${selectedItems.length})?`)) {
-      try {
-        await Promise.all(selectedItems.map(id => api.delete(`/api/magazyn/egzemplarze/${id}`)));
-        fetchModelData();
-      } catch (error) {
-        console.error("Błąd masowego usuwania", error);
-      }
-    }
-  };
-
-  const toggleSelectAll = (checked: boolean) => {
-    if (checked) {
-      setSelectedItems(modelData?.egzemplarze.map((e: any) => e.id) || []);
-    } else {
-      setSelectedItems([]);
-    }
-  };
-
-  const toggleSelect = (id: number) => {
-    if (selectedItems.includes(id)) {
-      setSelectedItems(prev => prev.filter(item => item !== id));
-    } else {
-      setSelectedItems(prev => [...prev, id]);
-    }
-  };
-
-  const totalStock = modelData?.egzemplarze?.length || 0;
-  const inStock = modelData?.egzemplarze?.filter((e:any) => e.status_serwisowy === 'Działa' || e.status_serwisowy === 'Naprawiony').length || 0;
-  const inService = modelData?.egzemplarze?.filter((e:any) => e.status_serwisowy?.includes('Wymaga') || e.status_serwisowy === 'W serwisie').length || 0;
-
-  if (isLoading) return <div className="p-8 flex items-center justify-center gap-3 text-slate-500"><Loader2 className="animate-spin" /> Wczytywanie karty modelu...</div>;
+  const quantityModel = isQuantityModel(form);
 
   return (
-    <div className="flex h-full flex-col bg-white overflow-y-auto custom-scrollbar">
-      
-      <ItemModal 
-        isOpen={isItemModalOpen}
-        onClose={() => setIsItemModalOpen(false)}
-        onSuccess={() => {
-          fetchModelData();
-          if (activeTab === 'serwis') fetchSerwisy(); // Odśwież serwisy po ewentualnym wygenerowaniu zgłoszenia
-        }}
-        modelId={modelData?.id}
-        modelName={modelData?.nazwa}
-        initialData={editingItem}
+    <div className="mx-auto max-w-[1650px] space-y-6">
+      <PageTitle
+        eyebrow="Model sprzętu"
+        title={model.nazwa}
+        description={quantityModel ? "Model ilościowy: stan, jednostka i kod kreskowy są zapisane na modelu. Nie dodajemy egzemplarzy z numerem/SN." : "Model egzemplarzowy: cena domyślna, parametry i lista fizycznych egzemplarzy. Kod kreskowy, QR i SN nadajemy egzemplarzom."}
+        action={
+          <div className="flex flex-wrap gap-2">
+            <Button variant="secondary" onClick={() => router.back()}><ArrowLeft size={16} className="inline" /> Powrót</Button>
+            <Button variant="secondary" onClick={loadCalendar}><CalendarDays size={16} className="inline" /> Kalendarz</Button>
+            <Button variant="secondary" onClick={() => openLabelsPage({ modelId: Number(id) })}><QrCode size={16} className="inline" /> Naklejki</Button>
+            <Button variant="secondary" onClick={() => setEdit(!edit)}>{edit ? <X size={16} className="inline" /> : <Pencil size={16} className="inline" />} {edit ? 'Anuluj edycję' : 'Edytuj model'}</Button>
+            {!quantityModel && <Button onClick={openAdd}><Plus size={16} className="inline" /> Dodaj egzemplarz</Button>}
+          </div>
+        }
       />
 
-      <div className="flex items-center px-6 py-4 bg-slate-50 border-b border-slate-200">
-        <div className="flex items-center text-sm text-slate-500 gap-2 flex-1">
-          <span className="cursor-pointer hover:text-sky-600" onClick={() => router.push('/dashboard')}>Kokpit</span> <ChevronRight size={14} />
-          <span className="cursor-pointer hover:text-sky-600" onClick={() => router.push('/dashboard/warehouse')}>Magazyn</span> <ChevronRight size={14} />
-          <span className="cursor-pointer hover:text-sky-600">{modelData?.kategoria?.nazwa || 'Kategoria'}</span> <ChevronRight size={14} />
-          <span className="font-bold text-slate-800 border-b-2 border-slate-800 pb-0.5">{isNew ? 'Nowy Sprzęt' : modelData?.nazwa}</span>
-        </div>
+      <div className="grid gap-6 xl:grid-cols-[0.9fr_1.4fr]">
+        <Card>
+          <div className="mb-4 flex items-center justify-between gap-4">
+            <h2 className="text-lg font-black">Dane modelu</h2>
+            {edit && <Button onClick={saveModel} disabled={saving}><Check size={16} className="inline" /> {saving ? 'Zapisuję...' : 'Zapisz'}</Button>}
+          </div>
+
+          <form onSubmit={saveModel} className="space-y-5">
+            <div className="grid gap-5 lg:grid-cols-[240px_1fr]">
+              <div className="space-y-3">
+                <div className="aspect-[4/3] overflow-hidden rounded-2xl border bg-slate-50 shadow-inner">
+                  {form.zdjecie ? <img src={form.zdjecie} alt={form.nazwa} className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center text-slate-300"><ImageIcon size={54} /></div>}
+                </div>
+                {edit ? <input type="file" accept="image/*" onChange={e => onPhoto(e.target.files?.[0])} className="block w-full text-xs font-bold text-slate-500 file:mr-3 file:rounded-xl file:border-0 file:bg-cyan-600 file:px-3 file:py-2 file:font-black file:text-white" /> : null}
+                {edit && form.zdjecie ? <button type="button" onClick={() => setForm({ ...form, zdjecie: '' })} className="text-xs font-black text-red-500">Usuń zdjęcie</button> : null}
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <Field label="Nazwa modelu"><input disabled={!edit} className={inputClass} value={form.nazwa || ''} onChange={e => setForm({ ...form, nazwa: e.target.value })} /></Field>
+                <Field label="Kategoria"><select disabled={!edit} className={inputClass} value={form.id_kategorii || ''} onChange={e => setForm({ ...form, id_kategorii: e.target.value })}><option value="">Brak</option>{categories.map((k: any) => <option key={k.id} value={k.id}>{k.nazwa}</option>)}</select></Field>
+                <Field label="Producent"><input disabled={!edit} className={inputClass} value={form.producent || ''} onChange={e => setForm({ ...form, producent: e.target.value })} /></Field>
+                <Field label="Typ"><select disabled={!edit} className={inputClass} value={form.typ_sprzetu || 'sprzet'} onChange={e => setForm({ ...form, typ_sprzetu: e.target.value })}><option value="sprzet">Sprzęt</option><option value="opakowanie">Opakowanie</option><option value="zestaw">Zestaw</option></select></Field>
+                <div className="md:col-span-2 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                  <label className="flex cursor-pointer items-start gap-3 text-sm font-black text-slate-800">
+                    <input type="checkbox" className="mt-1 h-4 w-4" checked={quantityModel} onChange={e => { setEdit(true); setForm(applyQuantityMode(form, e.target.checked)); }} />
+                    <span>
+                      Sprzęt ilościowy
+                      <span className="mt-1 block text-xs font-bold text-slate-500">Zaznaczone = jedna pozycja modelu na sztuki, bez numerów/SN. Odznaczone = fizyczne egzemplarze z własnym numerem, kodem i numerem seryjnym. Zmiana automatycznie włącza edycję — potem kliknij „Zapisz model”.</span>
+                    </span>
+                  </label>
+                </div>
+                {quantityModel && <>
+                  <Field label="Stan ilościowy"><input disabled={!edit} type="number" step="1" min="0" className={inputClass} value={form.ilosc_magazynowa ?? 0} onChange={e => setForm({ ...form, ilosc_magazynowa: e.target.value })} /></Field>
+                  <Field label="Jednostka"><input disabled={!edit} className={inputClass} value={form.jednostka || 'szt.'} onChange={e => setForm({ ...form, jednostka: e.target.value })} /></Field>
+                  <div className="md:col-span-2">
+                    <Field label="Kod kreskowy modelu — wymagany dla sprzętu ilościowego"><input disabled={!edit} required={quantityModel} className={inputClass} value={form.kod_kreskowy || ''} onChange={e => setForm({ ...form, kod_kreskowy: e.target.value })} placeholder="Np. kod z etykiety balastu / kabla / drobnicy" /></Field>
+                    <p className="mt-1 text-xs font-bold text-amber-700">Ten kod jest widoczny tylko przy sprzęcie ilościowym. Po skanie przy WZ/PZ system zapyta, ile sztuk wydać albo przyjąć.</p>
+                  </div>
+                </>}
+                <Field label="Cena / wartość domyślna"><input disabled={!edit} type="number" step="0.01" className={inputClass} value={form.wartosc_domyslna_egzemplarza || ''} onChange={e => setForm({ ...form, wartosc_domyslna_egzemplarza: e.target.value, wartosc: e.target.value })} /></Field>
+                <Field label="Miejsce w magazynie"><input disabled={!edit} className={inputClass} value={form.miejsce_w_mag || ''} onChange={e => setForm({ ...form, miejsce_w_mag: e.target.value })} /></Field>
+                <Field label="Szerokość"><input disabled={!edit} type="number" step="0.01" className={inputClass} value={form.szerokosc || ''} onChange={e => setForm({ ...form, szerokosc: e.target.value })} /></Field>
+                <Field label="Wysokość"><input disabled={!edit} type="number" step="0.01" className={inputClass} value={form.wysokosc || ''} onChange={e => setForm({ ...form, wysokosc: e.target.value })} /></Field>
+                <Field label="Głębokość"><input disabled={!edit} type="number" step="0.01" className={inputClass} value={form.glebokosc || ''} onChange={e => setForm({ ...form, glebokosc: e.target.value })} /></Field>
+                <Field label="Waga"><input disabled={!edit} type="number" step="0.01" className={inputClass} value={form.waga || ''} onChange={e => setForm({ ...form, waga: e.target.value })} /></Field>
+                <Field label="Objętość"><input disabled={!edit} type="number" step="0.01" className={inputClass} value={form.objetosc || ''} onChange={e => setForm({ ...form, objetosc: e.target.value })} /></Field>
+                <Field label="Pobór prądu"><input disabled={!edit} type="number" step="0.01" className={inputClass} value={form.pobor_pradu || ''} onChange={e => setForm({ ...form, pobor_pradu: e.target.value })} /></Field>
+              </div>
+            </div>
+
+            <Field label="Opis"><textarea disabled={!edit} className={inputClass} value={form.opis || ''} onChange={e => setForm({ ...form, opis: e.target.value })} /></Field>
+            <Field label="Notatka wewnętrzna"><textarea disabled={!edit} className={inputClass} value={form.notatki_wewnetrzne || ''} onChange={e => setForm({ ...form, notatki_wewnetrzne: e.target.value })} /></Field>
+
+            {edit && <div className="flex flex-wrap justify-between gap-2 border-t pt-4"><div className="flex gap-2"><Button variant="secondary" type="button" onClick={() => router.back()}><ArrowLeft size={16} className="inline" /> Powrót</Button><Button variant="danger" type="button" onClick={removeModel}><Trash2 size={16} className="inline" /> Usuń model</Button></div><Button type="submit"><Check size={16} className="inline" /> Zapisz model</Button></div>}
+          </form>
+        </Card>
+
+        <Card>
+          {quantityModel ? (
+            <div className="space-y-5">
+              <div>
+                <h2 className="text-lg font-black">Sprzęt ilościowy</h2>
+                <p className="text-sm font-bold text-slate-400">Ten model jest ewidencjonowany na sztuki. Nie tworzymy egzemplarzy z numerem/SN.</p>
+              </div>
+              <div className="grid gap-3 md:grid-cols-3">
+                <div className="rounded-2xl bg-cyan-50 p-5"><div className="text-xs font-black uppercase text-cyan-700">Stan</div><div className="text-4xl font-black text-slate-900">{Number(form.ilosc_magazynowa || 0)}</div><div className="text-sm font-bold text-slate-500">{form.jednostka || 'szt.'}</div></div>
+                <div className="rounded-2xl bg-slate-50 p-5"><div className="text-xs font-black uppercase text-slate-500">Kod skanowania modelu</div><div className={`break-all text-lg font-black ${form.kod_kreskowy ? 'text-slate-900' : 'text-red-600'}`}>{form.kod_kreskowy || 'BRAK KODU — uzupełnij przed wydaniem'}</div></div>
+                <div className="rounded-2xl bg-amber-50 p-5"><div className="text-xs font-black uppercase text-amber-700">Wydanie/PZ</div><div className="text-sm font-bold text-slate-600">Po skanie system pyta ile sztuk wydać albo przyjąć.</div></div>
+              </div>
+              <div className="rounded-2xl border border-dashed p-4 text-sm font-bold text-slate-500">Aby wrócić do pracy na egzemplarzach, wyłącz opcję „Sprzęt ilościowy” i zapisz model. Wtedy można dodawać fizyczne egzemplarze z kodem, numerem i S/N.</div>
+            </div>
+          ) : (
+            <>
+              <div className="mb-4 flex items-center justify-between gap-4">
+                <div>
+                  <h2 className="text-lg font-black">Egzemplarze modelu</h2>
+                  <p className="text-sm font-bold text-slate-400">Tutaj są fizyczne sztuki z kodami kreskowymi, QR i numerami seryjnymi.</p>
+                </div>
+                <Button onClick={openAdd}><Plus size={16} className="inline" /> Dodaj egzemplarz</Button>
+              </div>
+              <DataTable rows={egzemplarze} onRowClick={(r: any) => router.push(`/dashboard/warehouse/items/${r.id}`)} columns={[
+                { key: 'nazwa', label: 'Nazwa egzemplarza', value: (r: any) => <b>{r.nazwa || model.nazwa}</b> },
+                { key: 'numer', label: 'Numer', value: (r: any) => r.numer_egzemplarza || r.numer_urzadzenia || '-' },
+                { key: 'sn', label: 'S/N' },
+                { key: 'kod_kreskowy', label: 'Kod kreskowy' },
+                { key: 'qr_kod', label: 'QR' },
+                { key: 'status', label: 'Status', value: (r: any) => r.status_serwisowy || '-' },
+                { key: 'case', label: 'Case', value: (r: any) => r.case?.nazwa || '-' },
+              ]} />
+            </>
+          )}
+        </Card>
       </div>
 
-      <form onSubmit={handleSubmit(onSubmitModel)} className="p-6">
-        
-        {/* UPPER CARD */}
-        <div className="relative border border-slate-200 rounded-xl p-6 bg-slate-50/50 shadow-sm flex flex-col lg:flex-row gap-8">
-          
-          <div className="absolute top-4 right-4 flex gap-2">
-            {!isEditMode && (
-              <button type="button" onClick={() => setIsEditMode(true)} className="w-10 h-10 rounded-full border border-slate-300 flex items-center justify-center text-slate-600 hover:bg-slate-100 bg-white shadow-sm transition"><Edit2 size={16} /></button>
-            )}
-            {!isNew && (
-               <button type="button" className="w-10 h-10 rounded-full border border-slate-300 flex items-center justify-center text-slate-600 hover:bg-slate-100 bg-white shadow-sm transition"><Copy size={16} /></button>
-            )}
-            {isEditMode && !isNew && (
-              <button type="button" onClick={() => setIsEditMode(false)} className="w-10 h-10 rounded-full border border-slate-300 flex items-center justify-center text-slate-600 hover:bg-slate-100 bg-white shadow-sm transition"><X size={16} /></button>
-            )}
-            {!isNew && (
-               <button type="button" onClick={handleDeleteModel} className="w-10 h-10 rounded-full border border-red-200 flex items-center justify-center text-red-500 hover:bg-red-50 bg-white shadow-sm transition"><Trash2 size={16} /></button>
-            )}
-          </div>
+      {showAdd && <SimpleModal title="Dodaj egzemplarz" onClose={() => setShowAdd(false)}><form onSubmit={saveItem} className="space-y-6"><section><h3 className="mb-3 text-lg font-black">Identyfikacja</h3><div className="grid gap-4 md:grid-cols-2"><Field label="Nazwa egzemplarza"><input className={inputClass} value={itemForm.nazwa || ''} onChange={e => setItemForm({ ...itemForm, nazwa: e.target.value })} /></Field><Field label="Numer egzemplarza"><input className={inputClass} value={itemForm.numer_egzemplarza || ''} onChange={e => setItemForm({ ...itemForm, numer_egzemplarza: e.target.value, numer_urzadzenia: e.target.value })} /></Field><Field label="Numer seryjny"><input className={inputClass} value={itemForm.sn || ''} onChange={e => setItemForm({ ...itemForm, sn: e.target.value })} /></Field><Field label="Data produkcji"><input type="date" className={inputClass} value={itemForm.data_produkcji || ''} onChange={e => setItemForm({ ...itemForm, data_produkcji: e.target.value })} /></Field></div></section><section><h3 className="mb-3 text-lg font-black">Znakowanie i wycena</h3><label className="mb-3 flex items-center gap-2 text-sm font-bold"><input type="checkbox" checked={!!itemForm.rozroznij_kod_qr} onChange={e => setItemForm({ ...itemForm, rozroznij_kod_qr: e.target.checked, zewnetrzny_qr_kod: e.target.checked ? itemForm.zewnetrzny_qr_kod : itemForm.zewnetrzny_kod_kreskowy })} /> Rozróżnij zewnętrzny kod kreskowy i zewnętrzny kod QR</label><div className="grid gap-4 md:grid-cols-2"><Field label="Zewnętrzny kod kreskowy"><input className={inputClass} value={itemForm.zewnetrzny_kod_kreskowy || ''} onChange={e => setItemForm({ ...itemForm, zewnetrzny_kod_kreskowy: e.target.value, zewnetrzny_qr_kod: itemForm.rozroznij_kod_qr ? itemForm.zewnetrzny_qr_kod : e.target.value, kod_kreskowy: e.target.value })} /></Field><Field label="Zewnętrzny kod QR"><input className={inputClass} disabled={!itemForm.rozroznij_kod_qr} value={itemForm.zewnetrzny_qr_kod || ''} onChange={e => setItemForm({ ...itemForm, zewnetrzny_qr_kod: e.target.value, qr_kod: e.target.value })} /></Field><Field label="Wartość egzemplarza"><input type="number" step="0.01" className={inputClass} value={itemForm.wartosc || ''} onChange={e => setItemForm({ ...itemForm, wartosc: e.target.value })} /></Field><Field label="Cena zakupu"><input type="number" step="0.01" className={inputClass} value={itemForm.cena_zakupu || ''} onChange={e => setItemForm({ ...itemForm, cena_zakupu: e.target.value })} /></Field></div></section><section><h3 className="mb-3 text-lg font-black">Logistyka i magazyn</h3><div className="grid gap-4 md:grid-cols-2"><Field label="Magazyn"><select className={inputClass} value={itemForm.id_magazynu || ''} onChange={e => setItemForm({ ...itemForm, id_magazynu: e.target.value })}><option value="">Brak</option>{magazyny.map((m: any) => <option key={m.id} value={m.id}>{m.nazwa}</option>)}</select></Field><Field label="Miejsce w magazynie"><input className={inputClass} value={itemForm.miejsce_w_mag || ''} onChange={e => setItemForm({ ...itemForm, miejsce_w_mag: e.target.value })} /></Field><Field label="Status serwisowy"><select className={inputClass} value={itemForm.status_serwisowy || 'Działa'} onChange={e => setItemForm({ ...itemForm, status_serwisowy: e.target.value })}><option>Działa</option><option>Wymaga serwisu (działa)</option><option>Wymaga serwisu (nie działa)</option><option>W serwisie</option><option>Naprawiony</option></select></Field></div></section><section><h3 className="mb-3 text-lg font-black">Notatki i uwagi</h3><Field label="Uwagi"><textarea className={inputClass} value={itemForm.opis || ''} onChange={e => setItemForm({ ...itemForm, opis: e.target.value })} /></Field></section><div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setShowAdd(false)}>Anuluj</Button><Button type="submit">Zapisz egzemplarz</Button></div></form></SimpleModal>}
 
-          <div className="flex gap-6 min-w-[300px]">
-            <div className="w-32 h-32 bg-white border border-slate-200 rounded-lg shadow-sm flex flex-col items-center justify-center text-slate-300 relative overflow-hidden">
-               {modelData?.zdjecie ? (
-                  <img src={modelData.zdjecie} alt="Product" className="w-full h-full object-cover" />
-               ) : (
-                  <ImageIcon size={40} strokeWidth={1} />
-               )}
-            </div>
-            <div className="flex flex-col gap-1.5 mt-2">
-              {isEditMode ? (
-                <input {...register('nazwa', {required: true})} className="text-lg font-bold border border-slate-300 px-2 py-1 rounded w-full outline-none focus:border-sky-500" placeholder="Nazwa sprzętu" />
-              ) : (
-                <h2 className="text-[17px] font-bold text-slate-800 tracking-tight">{modelData?.nazwa}</h2>
-              )}
-              
-              <div className="text-sm text-slate-600 grid grid-cols-[100px_1fr] gap-x-2 gap-y-1 mt-2">
-                <span className="font-semibold text-slate-500">Na stanie:</span>
-                <span className="font-bold">{totalStock} szt.</span>
-                
-                <span className="font-semibold text-slate-500">Typ:</span>
-                {isEditMode ? (
-                   <select {...register('typ_sprzetu')} className="border border-slate-200 rounded px-1 py-0.5 text-xs outline-none focus:border-sky-500">
-                     <option value="sprzet">Sprzęt (Egzemplarzowy)</option>
-                     <option value="opakowanie">Opakowanie</option>
-                   </select>
-                ) : <span>{modelData?.typ_sprzetu === 'sprzet' ? 'Sprzęt (Egzemplarzowy)' : modelData?.typ_sprzetu}</span>}
-
-                <span className="font-semibold text-slate-500">Kategoria:</span>
-                {isEditMode ? (
-                   <select {...register('id_kategorii')} className="border border-slate-200 rounded px-1 py-0.5 text-xs outline-none focus:border-sky-500">
-                     <option value="">Wybierz...</option>
-                     {kategorie.map(k => <option key={k.id} value={k.id}>{k.nazwa}</option>)}
-                   </select>
-                ) : <span>{modelData?.kategoria?.nazwa}</span>}
-              </div>
-            </div>
-          </div>
-
-          <div className="flex-1 min-w-[250px]">
-            <h3 className="text-sm font-bold text-slate-700 mb-3 ml-20">Wymiary [cm]</h3>
-            <div className="grid grid-cols-[120px_1fr] gap-y-1.5 text-sm">
-              <span className="text-right text-slate-500 font-semibold pr-3">Szerokość:</span>
-              {isEditMode ? <input {...register('szerokosc')} type="number" step="0.01" className="border border-slate-200 w-24 px-1 rounded text-xs focus:border-sky-500 outline-none"/> : <span className="font-medium text-slate-800">{modelData?.szerokosc || '0.00'} cm</span>}
-              
-              <span className="text-right text-slate-500 font-semibold pr-3">Głębokość:</span>
-              {isEditMode ? <input {...register('glebokosc')} type="number" step="0.01" className="border border-slate-200 w-24 px-1 rounded text-xs focus:border-sky-500 outline-none"/> : <span className="font-medium text-slate-800">{modelData?.glebokosc || '0.00'} cm</span>}
-              
-              <span className="text-right text-slate-500 font-semibold pr-3">Wysokość:</span>
-              {isEditMode ? <input {...register('wysokosc')} type="number" step="0.01" className="border border-slate-200 w-24 px-1 rounded text-xs focus:border-sky-500 outline-none"/> : <span className="font-medium text-slate-800">{modelData?.wysokosc || '0.00'} cm</span>}
-              
-              <span className="text-right text-slate-500 font-semibold pr-3">Waga[kg]:</span>
-              {isEditMode ? <input {...register('waga')} type="number" step="0.01" className="border border-slate-200 w-24 px-1 rounded text-xs focus:border-sky-500 outline-none"/> : <span className="font-medium text-slate-800">{modelData?.waga || '0.00'} kg</span>}
-              
-              <span className="text-right text-slate-500 font-semibold pr-3">Pobór prądu [W]:</span>
-              {isEditMode ? <input {...register('pobor_pradu')} type="number" step="0.01" className="border border-slate-200 w-24 px-1 rounded text-xs focus:border-sky-500 outline-none"/> : <span className="font-medium text-slate-800">{modelData?.pobor_pradu || '0.00'} W</span>}
-            </div>
-          </div>
-
-          <div className="flex-1 min-w-[200px]">
-            <h3 className="text-sm font-bold text-slate-700 mb-3 ml-24">Magazyny</h3>
-            <div className="grid grid-cols-[140px_1fr] gap-y-1.5 text-sm">
-              <span className="text-right text-slate-500 font-semibold pr-3">W magazynie (Dostępne):</span>
-              <span className="font-bold text-emerald-600">{inStock} szt.</span>
-              
-              <span className="text-right text-slate-500 font-semibold pr-3">Wymaga uwagi/serwis:</span>
-              <span className="font-bold text-red-500">{inService} szt.</span>
-
-              <span className="text-right text-slate-500 font-semibold pr-3">Miejsce w mag:</span>
-              {isEditMode ? <input {...register('miejsce_w_mag')} className="border border-slate-200 w-24 px-1 rounded text-xs uppercase focus:border-sky-500 outline-none"/> : <span className="font-bold text-slate-600 uppercase">{modelData?.miejsce_w_mag || '-'}</span>}
-            </div>
-          </div>
-
-          <div className="flex-1 min-w-[200px] border-l border-slate-200 pl-8">
-            <h3 className="text-sm font-bold text-slate-700 mb-4">Znakowanie:</h3>
-            <div className="text-sm flex flex-col gap-2">
-              <div className="flex items-center gap-2">
-                 <span className="text-slate-500 font-semibold">Kod kreskowy:</span>
-                 {isEditMode ? <input {...register('kod_kreskowy')} className="border border-slate-200 w-32 px-1 rounded text-xs focus:border-sky-500 outline-none"/> : <span className="font-mono text-slate-800">{modelData?.kod_kreskowy || '-'}</span>}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {isEditMode && (
-          <div className="mt-6 flex justify-end gap-3 pb-6 border-b border-slate-200">
-            <button type="button" onClick={() => {setIsEditMode(false); reset(modelData);}} className="px-6 py-2 border border-slate-300 rounded shadow-sm text-sm font-bold text-slate-600 hover:bg-slate-50 transition">Anuluj</button>
-            <button type="submit" disabled={isSubmitting} className="flex items-center gap-2 bg-[#00B5B5] text-white px-8 py-2 rounded shadow-md text-sm font-bold hover:bg-teal-400 transition disabled:opacity-50">
-              {isSubmitting ? <Loader2 size={16} className="animate-spin"/> : <Save size={16}/>}
-              Zapisz model
-            </button>
-          </div>
-        )}
-
-        {/* UTILITIES / ACTION BAR */}
-        <div className="mt-4 flex flex-wrap gap-3">
-          <button type="button" className="px-4 py-2 border border-slate-300 text-slate-600 font-semibold text-xs rounded shadow-sm hover:bg-slate-50">Zarządzaj tagami</button>
-          <div className="w-full h-0"></div>
-          <button type="button" className="flex items-center gap-2 px-4 py-2 border border-slate-300 text-sky-600 font-semibold text-xs rounded shadow-sm hover:bg-sky-50"><Calendar size={14}/> Kalendarz dostępności</button>
-          <button type="button" className="flex items-center gap-2 px-4 py-2 border border-slate-300 text-emerald-600 font-semibold text-xs rounded shadow-sm hover:bg-emerald-50"><List size={14}/> Arkusz dostępności</button>
-          <button type="button" className="flex items-center gap-2 px-4 py-2 border border-slate-300 text-slate-700 font-semibold text-xs rounded shadow-sm hover:bg-slate-50"><Share2 size={14}/> Udostępnij w Cross Rental</button>
-          <button type="button" className="flex items-center gap-2 px-4 py-2 border border-slate-300 text-slate-700 font-semibold text-xs rounded shadow-sm hover:bg-slate-50"><Printer size={14}/> Generuj naklejki QR (A4)</button>
-        </div>
-
-        {/* TABS */}
-        <div className="mt-8 border-b border-slate-200">
-           <div className="flex overflow-x-auto custom-scrollbar">
-             {TABS.map(tab => {
-                const isActive = activeTab === tab.id;
-                const Icon = tab.icon;
-                return (
-                  <button 
-                    key={tab.id}
-                    type="button"
-                    onClick={() => setActiveTab(tab.id)}
-                    className={`flex flex-col items-center justify-center gap-1.5 min-w-[90px] px-2 py-3 border-b-2 transition-colors ${isActive ? 'border-sky-500 text-sky-600' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
-                  >
-                    <Icon size={18} className={isActive ? 'text-sky-500' : 'text-slate-400'}/>
-                    <span className="text-[11px] font-bold">{tab.label}</span>
-                  </button>
-                )
-             })}
-           </div>
-        </div>
-
-        {/* ------------------------------------------------------------- */}
-        {/* ZAWARTOŚĆ ZAKŁADKI: EGZEMPLARZE */}
-        {/* ------------------------------------------------------------- */}
-        {activeTab === 'egzemplarze' && (
-          <div className="mt-6 border border-slate-200 rounded-lg shadow-sm bg-white overflow-hidden">
-             <div className="p-4 border-b border-slate-200 bg-slate-50/50 flex flex-wrap items-center justify-between gap-4">
-                <div className="flex items-center gap-3">
-                  <div className="relative">
-                    <Search size={14} className="absolute left-3 top-2.5 text-slate-400" />
-                    <input type="text" className="pl-8 pr-8 py-2 border border-slate-300 rounded text-sm w-64 focus:border-sky-500 outline-none" placeholder="Szukaj egzemplarza..." />
-                  </div>
-                  
-                  <button type="button" onClick={handleOpenNewItemModal} className="flex items-center gap-2 bg-slate-700 text-white px-4 py-2 rounded text-xs font-bold hover:bg-slate-800 shadow-sm transition">
-                    <Plus size={14}/> Dodaj egzemplarz
-                  </button>
-                  
-                  <button type="button" className="flex items-center gap-2 bg-white border border-slate-300 text-slate-600 px-4 py-2 rounded text-xs font-bold hover:bg-slate-50 shadow-sm transition"><Wrench size={14}/> Wyślij na serwis</button>
-                  <button type="button" className="flex items-center gap-2 bg-white border border-slate-300 text-slate-600 px-4 py-2 rounded text-xs font-bold hover:bg-slate-50 shadow-sm transition"><Barcode size={14}/> Skanuj</button>
-                </div>
-
-                {selectedItems.length > 0 && (
-                  <button type="button" onClick={handleBulkDelete} className="flex items-center gap-2 bg-white border border-red-300 text-red-600 px-4 py-2 rounded text-xs font-bold hover:bg-red-50 shadow-sm transition">
-                    <Trash2 size={14}/> Usuń zaznaczone ({selectedItems.length})
-                  </button>
-                )}
-             </div>
-
-             <div className="overflow-x-auto">
-               <table className="w-full text-left text-sm whitespace-nowrap">
-                 <thead className="bg-white border-b border-slate-200 text-xs font-bold text-slate-700">
-                   <tr>
-                     <th className="p-3 w-10">
-                       <input 
-                         type="checkbox" 
-                         className="rounded border-slate-300 cursor-pointer text-sky-600" 
-                         checked={modelData?.egzemplarze?.length > 0 && selectedItems.length === modelData?.egzemplarze?.length}
-                         onChange={(e) => toggleSelectAll(e.target.checked)}
-                       />
-                     </th>
-                     <th className="p-3">Nazwa</th>
-                     <th className="p-3">Numer urz.</th>
-                     <th className="p-3">Numer seryjny (SN)</th>
-                     <th className="p-3">Magazyn docelowy</th>
-                     <th className="p-3">Miejsce w mag.</th>
-                     <th className="p-3">Case</th>
-                     <th className="p-3">Status serwisowy</th>
-                     <th className="p-3">Kod kreskowy</th>
-                     <th className="p-3">Uwagi</th>
-                     <th className="p-3 text-right">Akcje</th>
-                   </tr>
-                 </thead>
-                 <tbody className="divide-y divide-slate-100 bg-white">
-                   {modelData?.egzemplarze?.map((egz: any) => (
-                     <tr key={egz.id} className={`${selectedItems.includes(egz.id) ? 'bg-sky-50/50' : 'hover:bg-slate-50'} transition`}>
-                        <td className="p-3">
-                          <input 
-                            type="checkbox" 
-                            className="rounded border-slate-300 cursor-pointer text-sky-600"
-                            checked={selectedItems.includes(egz.id)}
-                            onChange={() => toggleSelect(egz.id)}
-                          />
-                        </td>
-                        <td className="p-3 text-sky-500 font-medium cursor-pointer" onClick={() => handleEditItem(egz)}>
-                          {egz.nazwa || modelData.nazwa}
-                        </td>
-                        <td className="p-3 text-slate-600 font-bold">{egz.numer_urzadzenia || '-'}</td>
-                        <td className="p-3 font-mono text-slate-700">{egz.sn || '-'}</td>
-                        <td className="p-3 text-sky-600">{egz.magazyn?.nazwa || 'Luzem'}</td>
-                        <td className="p-3 text-slate-600 uppercase">{egz.miejsce_w_mag || modelData.miejsce_w_mag || '-'}</td>
-                        
-                        <td className="p-3">
-                          {modelData.typ_sprzetu === 'opakowanie' ? (
-                            <span 
-                              onClick={() => router.push(`/dashboard/warehouse/items/${egz.id}`)}
-                              className="text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100 cursor-pointer hover:bg-emerald-100 transition"
-                            >
-                              Zawiera: {egz._count?.zawartosc_case || 0} szt.
-                            </span>
-                          ) : (
-                            egz.case ? (
-                              <span 
-                                onClick={() => router.push(`/dashboard/warehouse/items/${egz.case.id}`)}
-                                className="text-sky-600 font-semibold text-xs border border-sky-200 bg-sky-50 px-2 py-1 rounded cursor-pointer hover:bg-sky-100 transition" 
-                                title="Kliknij, aby otworzyć Case"
-                              >
-                                {egz.case.numer_urzadzenia ? `[#${egz.case.numer_urzadzenia}] ` : ''} 
-                                {egz.case.nazwa || 'Case'}
-                              </span>
-                            ) : (
-                              <span className="text-slate-400">-</span>
-                            )
-                          )}
-                        </td>
-
-                        <td className="p-3">
-                           <span className={`px-2 py-1 rounded text-[11px] font-bold shadow-sm ${getStatusConfig(egz.status_serwisowy)}`}>
-                             {egz.status_serwisowy}
-                           </span>
-                        </td>
-                        <td className="p-3 font-mono text-slate-500">{egz.kod_kreskowy || '-'}</td>
-                        <td className="p-3 text-slate-400">
-                          {egz.opis ? <MessageSquare size={16} className="text-amber-500" title={egz.opis} /> : '-'}
-                        </td>
-                        <td className="p-3 flex items-center justify-end gap-3 text-slate-400">
-                          <div onClick={() => handleEditItem(egz)} className="w-6 h-6 bg-slate-700 rounded text-white flex items-center justify-center cursor-pointer hover:bg-slate-800">
-                            <Edit2 size={12} />
-                          </div>
-                          <Trash2 size={16} className="cursor-pointer hover:text-red-500" onClick={() => handleDeleteItem(egz.id)} />
-                        </td>
-                     </tr>
-                   ))}
-                   {(!modelData?.egzemplarze || modelData.egzemplarze.length === 0) && !isNew && (
-                     <tr>
-                        <td colSpan={11} className="p-6 text-center text-slate-400 text-sm">Brak utworzonych egzemplarzy dla tego modelu. Kliknij "Dodaj egzemplarz" powyżej.</td>
-                     </tr>
-                   )}
-                   {isNew && (
-                     <tr>
-                        <td colSpan={11} className="p-6 text-center text-slate-400 text-sm">Najpierw zapisz model sprzętu (górny przycisk Zapisz), aby móc do niego dodać fizyczne egzemplarze.</td>
-                     </tr>
-                   )}
-                 </tbody>
-               </table>
-             </div>
-          </div>
-        )}
-
-        {/* ------------------------------------------------------------- */}
-        {/* ZAWARTOŚĆ ZAKŁADKI: STAWKI */}
-        {/* ------------------------------------------------------------- */}
-        {activeTab === 'stawki' && (
-          <div className="mt-6 border border-slate-200 rounded-lg shadow-sm bg-white overflow-hidden p-6">
-            <h3 className="text-[15px] font-bold text-slate-800 mb-4">Stawki Cennika</h3>
-            
-            <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 mb-6">
-              <div className="grid grid-cols-5 gap-4 items-end">
-                 <div>
-                   <label className="block text-xs font-bold text-slate-600 mb-1">Nazwa stawki</label>
-                   <input id="new_nazwa" type="text" defaultValue="Podstawowa (PLN)" className="w-full px-3 py-2 border border-slate-300 rounded text-sm focus:border-sky-500 outline-none" />
-                 </div>
-                 <div>
-                   <label className="block text-xs font-bold text-slate-600 mb-1">Cena netto</label>
-                   <input id="new_cena" type="number" step="0.01" className="w-full px-3 py-2 border border-slate-300 rounded text-sm focus:border-sky-500 outline-none" />
-                 </div>
-                 <div>
-                   <label className="block text-xs font-bold text-slate-600 mb-1">Koszt</label>
-                   <input id="new_koszt" type="number" step="0.01" className="w-full px-3 py-2 border border-slate-300 rounded text-sm focus:border-sky-500 outline-none" />
-                 </div>
-                 <div>
-                   <label className="block text-xs font-bold text-slate-600 mb-1">Nazwa kosztu</label>
-                   <input id="new_nazwak" type="text" className="w-full px-3 py-2 border border-slate-300 rounded text-sm focus:border-sky-500 outline-none" />
-                 </div>
-                 <div className="flex items-center h-full pb-2">
-                   <input id="new_mnoz" type="checkbox" className="w-4 h-4 rounded border-slate-300 text-sky-600 cursor-pointer mr-2" />
-                   <label className="text-xs font-semibold text-slate-700 cursor-pointer select-none">Mnóż koszt przez przelicznik</label>
-                 </div>
-              </div>
-              <div className="mt-4">
-                 <button 
-                   type="button"
-                   onClick={async () => {
-                     const payload = {
-                       nazwa_stawki: (document.getElementById('new_nazwa') as HTMLInputElement).value,
-                       cena_netto: (document.getElementById('new_cena') as HTMLInputElement).value,
-                       koszt: (document.getElementById('new_koszt') as HTMLInputElement).value,
-                       nazwa_kosztu: (document.getElementById('new_nazwak') as HTMLInputElement).value,
-                       mnoz_koszt: (document.getElementById('new_mnoz') as HTMLInputElement).checked
-                     };
-                     await api.post(`/api/magazyn/modele/${modelData.id}/stawki`, payload);
-                     fetchModelData(); 
-                   }}
-                   className="border border-[#00B5B5] text-[#00B5B5] font-bold px-6 py-2 rounded text-sm hover:bg-sky-50 transition shadow-sm"
-                 >
-                   Dodaj stawkę
-                 </button>
-              </div>
-            </div>
-
-            <div className="border border-slate-200 rounded-lg overflow-hidden">
-               <table className="w-full text-left text-sm whitespace-nowrap">
-                 <thead className="bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-700">
-                   <tr>
-                     <th className="p-3 w-10"></th>
-                     <th className="p-3">Nazwa stawki</th>
-                     <th className="p-3">Cena</th>
-                     <th className="p-3">Koszt</th>
-                     <th className="p-3">Nazwa kosztu</th>
-                     <th className="p-3 text-center">Mnóż koszt</th>
-                     <th className="p-3 text-right">Akcje</th>
-                   </tr>
-                 </thead>
-                 <tbody className="divide-y divide-slate-100">
-                   {modelData?.stawki?.map((cena: any) => (
-                     <tr key={cena.id} className="hover:bg-slate-50 transition">
-                       <td className="p-3"><List size={16} className="text-slate-300 cursor-move"/></td>
-                       <td className="p-3 font-semibold text-slate-700">{cena.nazwa_stawki}</td>
-                       <td className="p-3 font-mono text-slate-800">{cena.cena_netto || '0.00'} PLN</td>
-                       <td className="p-3 text-slate-500">{cena.koszt ? `${cena.koszt} PLN` : '-'}</td>
-                       <td className="p-3 text-slate-500">{cena.nazwa_kosztu || '-'}</td>
-                       <td className="p-3 text-center">
-                         <input type="checkbox" checked={cena.mnoz_koszt} readOnly className="rounded border-slate-300 text-sky-600" />
-                       </td>
-                       <td className="p-3 flex justify-end gap-2 text-slate-400">
-                         <button type="button" onClick={async () => {
-                           if(confirm('Usunąć tę stawkę?')) {
-                             await api.delete(`/api/magazyn/stawki/${cena.id}`);
-                             fetchModelData();
-                           }
-                         }} className="hover:text-red-500 p-1 rounded transition"><Trash2 size={16}/></button>
-                       </td>
-                     </tr>
-                   ))}
-                   {(!modelData?.stawki || modelData.stawki.length === 0) && (
-                     <tr><td colSpan={7} className="p-6 text-center text-slate-400 text-sm">Brak zdefiniowanych stawek. Utwórz pierwszą powyżej.</td></tr>
-                   )}
-                 </tbody>
-               </table>
-            </div>
-          </div>
-        )}
-
-        {/* ------------------------------------------------------------- */}
-        {/* ZAWARTOŚĆ ZAKŁADKI: SERWIS */}
-        {/* ------------------------------------------------------------- */}
-        {activeTab === 'serwis' && (
-          <div className="mt-6 border border-slate-200 rounded-lg shadow-sm bg-white overflow-hidden p-6">
-            <div className="flex items-center justify-between mb-6 border-b border-slate-100 pb-4">
-               <h3 className="text-[15px] font-bold text-slate-800 flex items-center gap-2">
-                 <Wrench size={18} className="text-sky-500"/> Zgłoszenia serwisowe sprzętu: {modelData?.nazwa}
-               </h3>
-               <button type="button" onClick={() => router.push('/dashboard/service')} className="text-xs font-bold text-sky-600 border border-sky-200 px-3 py-1.5 rounded hover:bg-sky-50 transition">
-                 Zarządzaj całym serwisem
-               </button>
-            </div>
-
-            {isLoadingSerwisy ? (
-              <div className="flex justify-center p-8 text-slate-400"><Loader2 className="animate-spin w-6 h-6"/></div>
-            ) : (
-              <div className="border border-slate-200 rounded-lg overflow-hidden">
-                 <table className="w-full text-left text-sm whitespace-nowrap">
-                   <thead className="bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-700">
-                     <tr>
-                       <th className="p-3">Data zgłoszenia</th>
-                       <th className="p-3">Sprzęt (Nr/SN)</th>
-                       <th className="p-3">Zgłaszający</th>
-                       <th className="p-3">Tytuł usterki</th>
-                       <th className="p-3">Status serwisu</th>
-                       <th className="p-3 text-right">Akcje</th>
-                     </tr>
-                   </thead>
-                   <tbody className="divide-y divide-slate-100">
-                     {serwisy.map(s => {
-                       const statusStyle = getServiceStatusColor(s.status?.nazwa, s.status?.kolor);
-                       return (
-                         <tr 
-                          key={s.id} 
-                          className="hover:bg-sky-50/30 transition cursor-pointer" 
-                          onClick={() => router.push(`/dashboard/service/${s.id}`)}
-                         >
-                           <td className="p-3 text-slate-500">{new Date(s.data_zgloszenia).toLocaleDateString('pl-PL')}</td>
-                           <td className="p-3 font-mono text-slate-700 font-bold">{s.egzemplarz?.numer_urzadzenia || s.egzemplarz?.sn || '-'}</td>
-                           <td className="p-3 text-slate-600">{s.zglosil?.imie} {s.zglosil?.nazwisko?.charAt(0)}.</td>
-                           <td className="p-3 text-sky-600 font-medium">{s.tytul}</td>
-                           <td className="p-3">
-                             <span className={`text-[10px] font-bold px-2 py-1 rounded-md ${statusStyle}`}>
-                               {s.status?.nazwa || 'Nowe'}
-                             </span>
-                           </td>
-                           <td className="p-3 text-right">
-                             <ChevronRight size={16} className="inline text-slate-400"/>
-                           </td>
-                         </tr>
-                       );
-                     })}
-                     {serwisy.length === 0 && (
-                       <tr><td colSpan={6} className="p-6 text-center text-slate-400 text-sm">Brak zgłoszeń serwisowych dla tego modelu. Oby tak dalej!</td></tr>
-                     )}
-                   </tbody>
-                 </table>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Domyślny fallback dla pustych tabów na dole */}
-        {activeTab !== 'egzemplarze' && activeTab !== 'stawki' && activeTab !== 'serwis' && (
-           <div className="mt-10 text-center text-slate-400 text-sm font-medium">
-             Sekcja <span className="uppercase text-slate-600 font-bold">{activeTab}</span> w przygotowaniu.
-           </div>
-        )}
-
-      </form>
+      {showCalendar && <SimpleModal title="Kalendarz dostępności modelu" onClose={() => setShowCalendar(false)}><div className="space-y-3">{busy.map((b: any) => <div key={b.id} className="rounded-2xl border p-3"><b>{b.tytul}</b><p className="text-sm text-slate-500">{b.start ? new Date(b.start).toLocaleDateString('pl-PL') : '-'} - {b.koniec ? new Date(b.koniec).toLocaleDateString('pl-PL') : '-'} · {b.kontrahent || '-'}</p></div>)}{busy.length === 0 && <p className="font-bold text-slate-400">Brak zajętości.</p>}</div></SimpleModal>}
     </div>
   );
+}
+
+function defaultItemForm(model: any, nextNumber = 1) {
+  const base = model?.nazwa || '';
+  const code = `EF-${model?.id || 'M'}-${nextNumber}`;
+  return { nazwa: base, numer_egzemplarza: String(nextNumber), numer_urzadzenia: String(nextNumber), status_serwisowy: 'Działa', wartosc: model?.wartosc_domyslna_egzemplarza || model?.wartosc || '', zewnetrzny_kod_kreskowy: code, zewnetrzny_qr_kod: code, kod_kreskowy: code, qr_kod: code, rozroznij_kod_qr: false };
 }

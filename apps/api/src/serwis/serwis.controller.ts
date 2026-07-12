@@ -1,43 +1,61 @@
-import { Controller, Get, Put, Body, Param, Req, UseGuards, ParseIntPipe } from '@nestjs/common';
+import { Controller, Get, Put, Post, Delete, Body, Param, Req, UseGuards, ParseIntPipe } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import type { Request } from 'express';
 import { SerwisService } from './serwis.service';
 
-@Controller('api/serwis')
+@Controller('serwis')
 @UseGuards(AuthGuard('jwt'))
 export class SerwisController {
   constructor(private readonly serwisService: SerwisService) {}
 
   @Get()
   async getZgloszenia(@Req() req: Request) {
-    const id_organizacji = Number((req.user as any).id_organizacji);
-    return this.serwisService.getWszystkieZgloszenia(id_organizacji);
+    return this.serwisService.getWszystkieZgloszenia(Number((req.user as any).id_organizacji));
+  }
+
+  @Post()
+  async createZgloszenie(@Body() dto: any, @Req() req: Request) {
+    return this.serwisService.createZgloszenie(dto, Number((req.user as any).id_organizacji), Number((req.user as any).id));
   }
 
   @Get('statusy')
   async getStatusy(@Req() req: Request) {
-    const id_organizacji = Number((req.user as any).id_organizacji);
-    return this.serwisService.getStatusy(id_organizacji);
+    return this.serwisService.getStatusy(Number((req.user as any).id_organizacji));
   }
 
-  @Get(':id')
-  async getZgloszenieById(@Param('id', ParseIntPipe) id: number, @Req() req: Request) {
-    const id_organizacji = Number((req.user as any).id_organizacji);
-    return this.serwisService.getZgloszenieById(id, id_organizacji);
+  @Get('statusy/:id')
+  getStatusById(@Param('id', ParseIntPipe) id: number, @Req() req: Request) {
+    return this.serwisService.getStatusById(id, Number((req.user as any).id_organizacji));
   }
 
-  @Put(':id')
-  async updateZgloszenie(@Param('id', ParseIntPipe) id: number, @Body() dto: any, @Req() req: Request) {
-    const id_organizacji = Number((req.user as any).id_organizacji);
-    const rawUserId = (req.user as any).id || (req.user as any).sub;
-    const id_uzytkownika = rawUserId ? Number(rawUserId) : 0;
-    
-    return this.serwisService.updateZgloszenie(id, dto, id_organizacji, id_uzytkownika);
+  @Post('statusy')
+  async createStatus(@Body() dto: any, @Req() req: Request) {
+    return this.serwisService.createStatus(dto, Number((req.user as any).id_organizacji));
+  }
+
+  @Put('statusy/:id')
+  async updateStatus(@Param('id', ParseIntPipe) id: number, @Body() dto: any, @Req() req: Request) {
+    return this.serwisService.updateStatus(id, dto, Number((req.user as any).id_organizacji));
+  }
+
+  @Delete('statusy/:id')
+  async deleteStatus(@Param('id', ParseIntPipe) id: number, @Req() req: Request) {
+    return this.serwisService.deleteStatus(id, Number((req.user as any).id_organizacji));
   }
 
   @Get('model/:modelId')
   async getZgloszeniaDlaModelu(@Param('modelId', ParseIntPipe) modelId: number, @Req() req: Request) {
-    const id_organizacji = Number((req.user as any).id_organizacji);
-    return this.serwisService.getZgloszeniaDlaModelu(modelId, id_organizacji);
+    return this.serwisService.getZgloszeniaDlaModelu(modelId, Number((req.user as any).id_organizacji));
+  }
+
+  @Get(':id')
+  async getZgloszenieById(@Param('id', ParseIntPipe) id: number, @Req() req: Request) {
+    return this.serwisService.getZgloszenieById(id, Number((req.user as any).id_organizacji));
+  }
+
+  @Put(':id')
+  async updateZgloszenie(@Param('id', ParseIntPipe) id: number, @Body() dto: any, @Req() req: Request) {
+    const id_uzytkownika = Number((req.user as any).id || (req.user as any).sub || 0);
+    return this.serwisService.updateZgloszenie(id, dto, Number((req.user as any).id_organizacji), id_uzytkownika);
   }
 }

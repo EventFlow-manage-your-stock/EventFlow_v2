@@ -1,9 +1,10 @@
+// EVENTFLOW_PRODUCT_POLISH_V5: trasa bez prefiksu api, bo main.ts ustawia app.setGlobalPrefix('api').
 import { Controller, Get, Post, Put, Delete, Body, Param, Req, Query, UseGuards, ParseIntPipe } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import type { Request } from 'express';
 import { WydarzeniaService } from './wydarzenia.service';
 
-@Controller('api/wydarzenia')
+@Controller('wydarzenia')
 @UseGuards(AuthGuard('jwt'))
 export class WydarzeniaController {
   constructor(private readonly wydarzeniaService: WydarzeniaService) {}

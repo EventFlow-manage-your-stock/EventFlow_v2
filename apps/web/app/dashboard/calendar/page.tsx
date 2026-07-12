@@ -1,344 +1,374 @@
 'use client';
 
-import { useState, useMemo, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
-import { 
-  ChevronLeft, ChevronRight, Plus, Search, 
-  Users, AlertTriangle, CheckCircle2,
-  X, CalendarDays, Tag, Trash2, Edit2, Loader2
-} from 'lucide-react';
-import { 
-  addMonths, subMonths, format, startOfMonth, endOfMonth, 
-  startOfWeek, endOfWeek, eachDayOfInterval, isSameMonth, 
-  isSameDay, startOfDay, endOfDay, isBefore
-} from 'date-fns';
-import { pl } from 'date-fns/locale';
-import { api } from '../../../lib/api'; // POPRAWIONY IMPORT NAZWANY
+import { useEffect, useMemo, useState } from 'react';
+import { CalendarPlus, ChevronLeft, ChevronRight, Loader2, Search } from 'lucide-react';
+import Link from 'next/link';
+import { api } from '../../../lib/api';
+import { Button, Card, PageTitle } from '../../../components/ProductUI';
+import { QuickAddCalendarModal } from '../../../components/QuickAddCalendarModal';
 
-// --- TYPY DANYCH ---
-type EventFlag = 'vehicle' | 'users' | 'unconfirmed' | 'warning' | 'checked';
+const views = ['miesiąc', 'tydzień', 'dzień', 'lista'] as const;
+type View = typeof views[number];
 
-interface CalendarEvent {
-  id: number | string;
-  title: string;
-  startDate: Date;
-  endDate: Date;
-  colorHex: string;
-  flags?: EventFlag[];
+type CalendarItem = {
+  id: string;
+  sourceId: number | string;
+  typ: string;
+  tytul: string;
+  start: string;
+  koniec?: string | null;
+  kolor?: string | null;
+  ikona?: string | null;
+  status?: string | null;
+  statusMagazynowy?: string | null;
+  statusKsiegowy?: string | null;
+  ikonaMagazynowa?: string | null;
+  ikonaKsiegowa?: string | null;
+  miejsce?: string | null;
+};
+
+const typeLabels: Record<string, string> = {
+  wydarzenie: 'Wydarzenia',
+  wypozyczenie: 'Wynajmy',
+  urlop: 'Nieobecności',
+  serwis: 'Serwis',
+  flota: 'Flota',
+};
+
+const typeFallbackColor: Record<string, string> = {
+  wydarzenie: '#0891B2',
+  wypozyczenie: '#F97316',
+  urlop: '#22C55E',
+  serwis: '#DC2626',
+  flota: '#2563EB',
+};
+
+// EVENTFLOW_PRODUCT_POLISH_V18:
+// Paski zaczynają się niżej, żeby nie nachodziły na mocno podświetlony dzisiejszy dzień.
+// Liczba rzędów w tygodniu nie jest limitowana — kafel tygodnia rośnie tak długo, aż pokaże wszystkie wpisy.
+const CALENDAR_BAR_TOP = 92;
+const CALENDAR_BAR_ROW_HEIGHT = 22;
+const CALENDAR_BAR_ROW_GAP = 4;
+const CALENDAR_WEEK_MIN_HEIGHT = 172;
+
+function startOfWeek(date: Date) {
+  const d = new Date(date);
+  const day = d.getDay() || 7;
+  d.setDate(d.getDate() - day + 1);
+  d.setHours(0, 0, 0, 0);
+  return d;
 }
-
-interface ProcessedEvent extends CalendarEvent {
-  _row: number;
+function endOfWeek(date: Date) { const d = startOfWeek(date); d.setDate(d.getDate() + 7); return d; }
+function endOfDay(date: Date) { const d = new Date(date); d.setHours(23, 59, 59, 999); return d; }
+function startOfDay(date: Date) { const d = new Date(date); d.setHours(0, 0, 0, 0); return d; }
+function addDays(date: Date, days: number) { const d = new Date(date); d.setDate(d.getDate() + days); return d; }
+function iso(d: Date) { return d.toISOString().slice(0, 10); }
+function sameDay(a: Date, b: Date) { return a.toDateString() === b.toDateString(); }
+function normalizeType(t: string) { return t === 'wynajem' ? 'wypozyczenie' : t; }
+function itemUrl(item: CalendarItem) {
+  const typ = normalizeType(item.typ);
+  if (typ === 'wydarzenie') return `/dashboard/events/${item.sourceId}`;
+  if (typ === 'wypozyczenie') return `/dashboard/rentals/${item.sourceId}`;
+  if (typ === 'urlop') return `/dashboard/leaves/${item.sourceId}`;
+  if (typ === 'serwis') return `/dashboard/service`;
+  if (typ === 'flota') return `/dashboard/fleet`;
+  return '/dashboard/calendar';
 }
-
-const WEEKDAYS = ['PON', 'WT', 'ŚR', 'CZW', 'PT', 'SOB', 'NDZ'];
+function pastelColor(hex?: string | null) {
+  const value = (hex || '#0891B2').replace('#', '');
+  if (value.length !== 6) return 'rgba(148,163,184,.78)';
+  const r = parseInt(value.slice(0, 2), 16);
+  const g = parseInt(value.slice(2, 4), 16);
+  const b = parseInt(value.slice(4, 6), 16);
+  const mix = (c: number) => Math.round(c * 0.48 + 255 * 0.52);
+  return `rgb(${mix(r)}, ${mix(g)}, ${mix(b)})`;
+}
+function itemActiveOnRange(item: CalendarItem, from: Date, to: Date) {
+  const start = item.start ? new Date(item.start) : null;
+  if (!start) return false;
+  const end = item.koniec ? new Date(item.koniec) : start;
+  return start <= to && end >= from;
+}
+function itemActiveOnDay(item: CalendarItem, day: Date) {
+  return itemActiveOnRange(item, startOfDay(day), endOfDay(day));
+}
+function itemSort(a: CalendarItem, b: CalendarItem) {
+  const as = new Date(a.start || 0).getTime();
+  const bs = new Date(b.start || 0).getTime();
+  if (as !== bs) return as - bs;
+  const ae = new Date(a.koniec || a.start || 0).getTime();
+  const be = new Date(b.koniec || b.start || 0).getTime();
+  if (ae !== be) return be - ae;
+  return String(a.tytul || '').localeCompare(String(b.tytul || ''), 'pl');
+}
+function dayDiff(a: Date, b: Date) {
+  return Math.round((startOfDay(a).getTime() - startOfDay(b).getTime()) / 86400000);
+}
 
 export default function CalendarPage() {
-  const router = useRouter();
-  const [currentDate, setCurrentDate] = useState(new Date());
-  const [view, setView] = useState<'month' | 'week' | 'day' | 'list'>('month');
-  
-  // --- STANY API I DANYCH ---
-  const [events, setEvents] = useState<CalendarEvent[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  // EVENTFLOW_PRODUCT_POLISH_V9:
+  // Kalendarz renderuje wydarzenia wielodniowe jako jeden pasek przechodzący przez dni tygodnia.
+  // Dla wydarzeń źródłem koloru jest typ wydarzenia skonfigurowany w Ustawieniach.
+  const [view, setView] = useState<View>('miesiąc');
+  const [cursor, setCursor] = useState(new Date());
+  const [items, setItems] = useState<CalendarItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [showAdd, setShowAdd] = useState(false);
+  const [search, setSearch] = useState('');
+  const [activeTypes, setActiveTypes] = useState<string[]>(['wydarzenie', 'wypozyczenie', 'urlop', 'flota']);
+  const [dict, setDict] = useState<any>({ typy: [], statusy: [], kontrahenci: [], miejsca: [], uzytkownicy: [] });
 
-  // --- STANY DLA MODALA ---
-  const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const range = useMemo(() => {
+    if (view === 'dzień') {
+      const od = startOfDay(cursor);
+      const to = new Date(od); to.setDate(to.getDate() + 1);
+      return { od, to };
+    }
+    if (view === 'tydzień') return { od: startOfWeek(cursor), to: endOfWeek(cursor) };
+    const od = startOfWeek(new Date(cursor.getFullYear(), cursor.getMonth(), 1));
+    const to = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 7);
+    return { od, to };
+  }, [cursor, view]);
 
-  const fetchEvents = useCallback(async () => {
+  async function load() {
+    setLoading(true);
+    setError('');
     try {
-      // Zgodna ścieżka z ujednoliconym backendem
-      const response = await api.get('/api/wydarzenia');
-      
-      const parsedEvents = response.data.map((ev: any) => ({
-        ...ev,
-        title: ev.nazwa,
-        startDate: new Date(ev.data_start),
-        endDate: new Date(ev.data_koniec),
-        colorHex: ev.status?.kolor || '#3b82f6',
-      }));
-      
-      setEvents(parsedEvents);
-    } catch (error) {
-      console.error('Błąd podczas pobierania wydarzeń:', error);
+      const [cal, typy, statusy, kontrahenci, miejsca, uzytkownicy] = await Promise.all([
+        api.get(`/api/kalendarz?od=${iso(range.od)}&do=${iso(range.to)}`),
+        api.get('/api/slowniki/typy-wydarzen').catch(() => ({ data: [] })),
+        api.get('/api/slowniki/statusy-wydarzenia').catch(() => ({ data: [] })),
+        api.get('/api/slowniki/kontrahenci').catch(() => ({ data: [] })),
+        api.get('/api/slowniki/miejsca').catch(() => ({ data: [] })),
+        api.get('/api/slowniki/uzytkownicy').catch(() => ({ data: [] })),
+      ]);
+      setItems((cal.data.items || cal.data || []).map((i: any) => ({ ...i, typ: normalizeType(i.typ) })));
+      setDict({ typy: typy.data || [], statusy: statusy.data || [], kontrahenci: kontrahenci.data || [], miejsca: miejsca.data || [], uzytkownicy: uzytkownicy.data || [] });
+    } catch (e: any) {
+      setItems([]);
+      setError(e?.response?.data?.message || e?.message || 'Nie udało się pobrać kalendarza. Sprawdź API.');
+    } finally {
+      setLoading(false);
     }
-  }, []);
+  }
 
-  useEffect(() => {
-    setIsLoading(true);
-    fetchEvents().finally(() => setIsLoading(false));
+  useEffect(() => { load(); }, [view, cursor.getFullYear(), cursor.getMonth(), cursor.getDate()]);
 
-    const interval = setInterval(fetchEvents, 3 * 60 * 1000);
-    return () => clearInterval(interval);
-  }, [fetchEvents]); 
+  const days = useMemo(() => {
+    const count = view === 'dzień' ? 1 : view === 'tydzień' ? 7 : 42;
+    const start = view === 'miesiąc' ? startOfWeek(new Date(cursor.getFullYear(), cursor.getMonth(), 1)) : range.od;
+    return Array.from({ length: count }, (_, i) => addDays(start, i));
+  }, [view, cursor, range.od]);
 
-  const nextMonth = () => setCurrentDate(addMonths(currentDate, 1));
-  const prevMonth = () => setCurrentDate(subMonths(currentDate, 1));
+  const weeks = useMemo(() => {
+    if (view === 'dzień') return [days];
+    const out: Date[][] = [];
+    for (let i = 0; i < days.length; i += 7) out.push(days.slice(i, i + 7));
+    return out;
+  }, [days, view]);
 
-  const handleEventClick = (event: CalendarEvent, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setSelectedEvent(event);
-    setIsModalOpen(true);
-  };
+  const filteredItems = useMemo(() => {
+    const phrase = search.trim().toLowerCase();
+    return items
+      .filter((i) => activeTypes.includes(normalizeType(i.typ)))
+      .filter((i) => !phrase || `${i.tytul || ''} ${i.status || ''} ${i.statusMagazynowy || ''} ${i.statusKsiegowy || ''} ${i.miejsce || ''}`.toLowerCase().includes(phrase))
+      .sort(itemSort);
+  }, [items, activeTypes, search]);
 
-  const closeModal = () => {
-    setIsModalOpen(false);
-    setTimeout(() => setSelectedEvent(null), 200);
-  };
+  function move(mult: number) {
+    const d = new Date(cursor);
+    if (view === 'miesiąc') d.setMonth(d.getMonth() + mult);
+    else d.setDate(d.getDate() + (view === 'tydzień' ? 7 * mult : mult));
+    setCursor(d);
+  }
 
-  const handleDeleteEvent = async () => {
-    if (!selectedEvent) return;
-    if (confirm('Czy na pewno chcesz usunąć to wydarzenie?')) {
-      try {
-        await api.delete(`/api/wydarzenia/${selectedEvent.id}`);
-        closeModal();
-        fetchEvents();
-      } catch (error) {
-        console.error('Błąd usuwania wydarzenia:', error);
-      }
-    }
-  };
+  function toggleType(type: string) {
+    setActiveTypes((prev) => prev.includes(type) ? prev.filter((t) => t !== type) : [...prev, type]);
+  }
 
-  const calendarDays = useMemo(() => {
-    const monthStart = startOfMonth(currentDate);
-    const monthEnd = endOfMonth(monthStart);
-    const startDate = startOfWeek(monthStart, { weekStartsOn: 1 });
-    const endDate = endOfWeek(monthEnd, { weekStartsOn: 1 });
-    return eachDayOfInterval({ start: startDate, end: endDate });
-  }, [currentDate]);
-
-  const processedEvents = useMemo(() => {
-    const sorted = [...events].sort((a, b) => {
-      const aStart = startOfDay(a.startDate).getTime();
-      const bStart = startOfDay(b.startDate).getTime();
-      if (aStart !== bStart) return aStart - bStart;
-      return (b.endDate.getTime() - b.startDate.getTime()) - (a.endDate.getTime() - a.startDate.getTime());
-    });
-
-    const rowEndDates: number[] = [];
-    
-    return sorted.map(event => {
-      const start = startOfDay(event.startDate).getTime();
-      const end = startOfDay(event.endDate).getTime();
-      let rowIndex = 0;
-      
-      while (true) {
-        const currentRowEnd = rowEndDates[rowIndex];
-        
-        if (currentRowEnd === undefined) {
-          break;
-        }
-        
-        if (start > currentRowEnd) {
-          break;
-        }
-        
-        rowIndex++;
-      }
-      
-      rowEndDates[rowIndex] = end;
-      return { ...event, _row: rowIndex } as ProcessedEvent;
-    });
-  }, [events]);
-
-  const today = new Date();
+  const title = cursor.toLocaleDateString('pl-PL', { month: 'long', year: 'numeric', day: view === 'dzień' ? 'numeric' : undefined });
 
   return (
-    <div className="flex h-full flex-col gap-4 relative">
-      
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-white/5 dark:bg-slate-900/50 dark:backdrop-blur-md">
-        <div className="flex items-center gap-6">
-          <div className="flex items-center gap-4">
-            <button onClick={prevMonth} className="p-1.5 rounded-md hover:bg-slate-100 text-slate-600 dark:text-slate-400 dark:hover:bg-white/10 transition">
-              <ChevronLeft size={20} />
-            </button>
-            <h1 className="text-xl font-bold uppercase tracking-widest text-slate-800 dark:text-white w-40 text-center">
-              {format(currentDate, 'LLLL yyyy', { locale: pl })}
-            </h1>
-            <button onClick={nextMonth} className="p-1.5 rounded-md hover:bg-slate-100 text-slate-600 dark:text-slate-400 dark:hover:bg-white/10 transition">
-              <ChevronRight size={20} />
-            </button>
-          </div>
+    <div className="mx-auto max-w-[1800px] space-y-4">
+      <PageTitle
+        eyebrow="Kalendarz"
+        title="Kalendarz operacyjny"
+        description="Wydarzenia wielodniowe łączą się w paski tygodniowe. Kolor wydarzenia pochodzi z typu wydarzenia. Status jest tylko ikoną przed nazwą."
+        action={<Button onClick={() => setShowAdd(true)}><CalendarPlus size={16} className="inline" /> Dodaj</Button>}
+      />
 
-          <div className="hidden h-8 items-center rounded-lg border border-slate-200 bg-slate-50 p-1 md:flex dark:border-white/10 dark:bg-black/20">
-            {(['month', 'week', 'day', 'list'] as const).map((v) => (
-              <button
-                key={v}
-                onClick={() => setView(v)}
-                className={`rounded-md px-3 py-1 text-xs font-medium capitalize transition-all ${
-                  view === v 
-                    ? 'bg-blue-600 text-white shadow-sm' 
-                    : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
-                }`}
-              >
-                {v === 'month' ? 'Miesiąc' : v === 'week' ? 'Tydzień' : v === 'day' ? 'Dzień' : 'Lista'}
-              </button>
+      <Card className="!p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <button onClick={() => move(-1)} className="rounded-xl border p-2 hover:bg-slate-50"><ChevronLeft /></button>
+            <p className="min-w-[240px] text-center text-2xl font-black uppercase tracking-tight text-slate-900">{title}</p>
+            <button onClick={() => move(1)} className="rounded-xl border p-2 hover:bg-slate-50"><ChevronRight /></button>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {views.map((v) => <button key={v} onClick={() => setView(v)} className={`rounded-xl px-4 py-2 text-sm font-black capitalize ${view === v ? 'bg-cyan-600 text-white shadow' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>{v}</button>)}
+            <Button variant="secondary" onClick={() => setCursor(new Date())}>Dzisiaj</Button>
+          </div>
+        </div>
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          {Object.entries(typeLabels).map(([type, label]) => (
+            <button
+              key={type}
+              onClick={() => toggleType(type)}
+              className={`rounded-xl px-4 py-2 text-sm font-black transition ${activeTypes.includes(type) ? 'text-white shadow' : 'bg-slate-100 text-slate-500'}`}
+              style={activeTypes.includes(type) ? { backgroundColor: typeFallbackColor[type] } : undefined}
+            >
+              {label}
+            </button>
+          ))}
+          <button onClick={() => setActiveTypes(Object.keys(typeLabels))} className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-black text-white">Wszystkie</button>
+          <div className="ml-auto flex min-w-[260px] items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
+            <Search size={16} className="text-slate-400" />
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Szukaj..." className="w-full bg-transparent text-sm font-bold outline-none" />
+          </div>
+        </div>
+      </Card>
+
+      {error && <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-700">{error}</div>}
+      {loading ? (
+        <div className="flex h-80 items-center justify-center"><Loader2 className="animate-spin text-cyan-600" /></div>
+      ) : view === 'lista' ? (
+        <List items={filteredItems} />
+      ) : (
+        <div>
+          {view !== 'dzień' && <div className="mb-2 grid grid-cols-7 gap-2 px-2 text-center text-xs font-black uppercase text-slate-500">{['PON','WT','ŚR','CZW','PT','SOB','NDZ'].map((d) => <span key={d}>{d}</span>)}</div>}
+          <div className="space-y-2">
+            {weeks.map((week) => (
+              <WeekStrip
+                key={week[0].toISOString()}
+                week={week}
+                cursor={cursor}
+                view={view}
+                items={filteredItems.filter((i) => itemActiveOnRange(i, startOfDay(week[0]), endOfDay(week[week.length - 1])))}
+              />
             ))}
           </div>
         </div>
-
-        <div className="flex items-center gap-3">
-          <button 
-            onClick={() => router.push('/dashboard/events/new')}
-            className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-md transition-all hover:bg-blue-700 hover:shadow-lg dark:shadow-none">
-            <Plus size={16} /> Dodaj
-          </button>
-        </div>
-      </div>
-
-      <div className="flex flex-1 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-white/5 dark:bg-slate-900/50 relative">
-        
-        {isLoading && (
-          <div className="absolute inset-0 z-50 flex items-center justify-center bg-white/50 backdrop-blur-sm dark:bg-slate-900/50">
-             <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
-          </div>
-        )}
-
-        <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-50 dark:border-white/5 dark:bg-black/20">
-          {WEEKDAYS.map(day => (
-            <div key={day} className="py-3 text-center text-xs font-bold text-slate-500 dark:text-slate-400">
-              {day}
-            </div>
-          ))}
-        </div>
-
-        <div className="grid flex-1 grid-cols-7 grid-rows-5 auto-rows-fr overflow-y-auto custom-scrollbar">
-          {calendarDays.map((day) => {
-            const dayTime = startOfDay(day).getTime();
-            
-            const dayEvents = processedEvents.filter(event => {
-              const eStart = startOfDay(event.startDate).getTime();
-              const eEnd = startOfDay(event.endDate).getTime();
-              return dayTime >= eStart && dayTime <= eEnd;
-            });
-
-            let maxRow = -1;
-            dayEvents.forEach(e => {
-              if (e._row > maxRow) maxRow = e._row;
-            });
-
-            const slots = Array.from({ length: maxRow + 1 }).map((_, i) => 
-              dayEvents.find(e => e._row === i) || null
-            );
-
-            const isCurrentMonth = isSameMonth(day, currentDate);
-            const isPast = isBefore(endOfDay(day), today); 
-            
-            return (
-              <div 
-                key={day.toISOString()} 
-                className={`min-h-[120px] border-r border-b border-slate-100 p-1 transition-colors hover:bg-slate-50 dark:border-white/5 dark:hover:bg-white/5
-                  ${!isCurrentMonth ? 'bg-slate-50/50 opacity-50 dark:bg-black/10' : ''}
-                  ${isPast ? 'opacity-70 grayscale-[30%]' : ''}
-                `}
-              >
-                <div className="flex justify-between px-1 mb-1">
-                  <span className={`text-xl font-semibold ${isSameDay(day, today) ? 'text-blue-500' : 'text-slate-300 dark:text-slate-600'}`}>
-                    {format(day, 'd')}
-                  </span>
-                  <span className="text-slate-200 dark:text-slate-800 font-bold">=</span>
-                </div>
-
-                <div className="flex flex-col gap-[2px]">
-                  {slots.map((event, index) => {
-                    if (!event) {
-                      return <div key={`empty-${day.toISOString()}-${index}`} className="h-6 w-full" />;
-                    }
-
-                    const isStart = isSameDay(day, event.startDate);
-                    const isEnd = isSameDay(day, event.endDate);
-
-                    let radiusClass = 'rounded-none';
-                    if (isStart && isEnd) radiusClass = 'rounded-md';
-                    else if (isStart) radiusClass = 'rounded-l-md';
-                    else if (isEnd) radiusClass = 'rounded-r-md';
-
-                    return (
-                      <div 
-                        key={`${event.id}-${day.toISOString()}`}
-                        onClick={(e) => handleEventClick(event, e)}
-                        className={`group relative flex h-6 items-center px-1.5 text-[10px] font-medium text-white cursor-pointer transition hover:brightness-110 hover:shadow-sm ${radiusClass}`}
-                        style={{
-                          backgroundColor: event.colorHex,
-                          marginLeft: isStart ? '2px' : '-5px',
-                          marginRight: isEnd ? '2px' : '-5px',
-                          zIndex: 10
-                        }}
-                      >
-                        {(isStart || day.getDay() === 1) && (
-                          <span className="truncate pr-4 z-20 drop-shadow-md">
-                            {event.title}
-                          </span>
-                        )}
-
-                        {isEnd && event.flags && (
-                          <div className="absolute right-1 flex gap-1 z-20">
-                            {event.flags.includes('checked') && <CheckCircle2 size={10} className="text-white drop-shadow-md" />}
-                            {event.flags.includes('unconfirmed') && <AlertTriangle size={10} className="text-white drop-shadow-md" />}
-                            {event.flags.includes('users') && <Users size={10} className="text-white drop-shadow-md" />}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {isModalOpen && selectedEvent && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm transition-opacity p-4" onClick={closeModal}>
-          <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden dark:border-white/10 dark:bg-slate-900" onClick={(e) => e.stopPropagation()}>
-            <div className="h-3 w-full" style={{ backgroundColor: selectedEvent.colorHex }}></div>
-            
-            <div className="p-6">
-              <div className="flex items-start justify-between">
-                <h2 className="text-xl font-bold text-slate-900 pr-8 dark:text-white">
-                  {selectedEvent.title}
-                </h2>
-                <button onClick={closeModal} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors dark:hover:bg-white/10 dark:hover:text-white">
-                  <X size={20} />
-                </button>
-              </div>
-
-              <div className="mt-6 space-y-4">
-                <div className="flex items-center gap-3 text-sm text-slate-600 dark:text-slate-300">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 dark:bg-white/5">
-                    <CalendarDays size={16} className="text-blue-500" />
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="font-medium">Czas trwania</span>
-                    <span>
-                      {format(selectedEvent.startDate, 'd MMMM yyyy HH:mm', { locale: pl })} - {format(selectedEvent.endDate, 'd MMMM yyyy HH:mm', { locale: pl })}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-3 border-t border-slate-100 bg-slate-50 p-4 dark:border-white/5 dark:bg-black/20">
-              <button 
-                onClick={handleDeleteEvent}
-                className="flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 transition-colors dark:text-red-400 dark:hover:bg-red-500/10"
-              >
-                <Trash2 size={16} />
-                Usuń
-              </button>
-              
-              <button 
-                onClick={() => router.push(`/dashboard/events/${selectedEvent.id}`)}
-                className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-md hover:bg-blue-700 transition-colors dark:shadow-none"
-              >
-                <Edit2 size={16} />
-                Pełna Edycja
-              </button>
-            </div>
-          </div>
-        </div>
       )}
+      {showAdd && <QuickAddCalendarModal dict={dict} onClose={() => setShowAdd(false)} onSaved={() => { setShowAdd(false); load(); }} />}
     </div>
   );
+}
+
+function WeekStrip({ week, cursor, view, items }: { week: Date[]; cursor: Date; view: View; items: CalendarItem[] }) {
+  const isDay = view === 'dzień';
+  const weekStart = startOfDay(week[0]);
+  const weekEnd = endOfDay(week[week.length - 1]);
+  const bars = buildBars(items, weekStart, weekEnd, isDay ? 1 : 7);
+  const maxRow = Math.max(2, ...bars.map((b) => b.row + 1));
+  const weekMinHeight = Math.max(CALENDAR_WEEK_MIN_HEIGHT, CALENDAR_BAR_TOP + maxRow * (CALENDAR_BAR_ROW_HEIGHT + CALENDAR_BAR_ROW_GAP) + 16);
+
+  return (
+    <div
+      className={`relative grid ${isDay ? 'grid-cols-1' : 'grid-cols-7'} gap-x-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm`}
+      style={{ minHeight: `${weekMinHeight}px` }}
+    >
+      {week.map((day) => {
+        const today = sameDay(new Date(), day);
+        const outsideMonth = view === 'miesiąc' && day.getMonth() !== cursor.getMonth();
+        return (
+          <div
+            key={day.toISOString()}
+            className={`relative min-h-[172px] border-r border-slate-100 p-2 ${today ? 'bg-blue-50 ring-2 ring-inset ring-blue-500' : outsideMonth ? 'bg-slate-50/80' : 'bg-white'}`}
+            style={{ minHeight: `${weekMinHeight}px`, paddingTop: `${CALENDAR_BAR_TOP + maxRow * (CALENDAR_BAR_ROW_HEIGHT + CALENDAR_BAR_ROW_GAP)}px` }}
+          >
+            <div className="absolute left-2 top-2">
+              <p className={`text-[11px] font-black uppercase ${today ? 'text-blue-700' : 'text-slate-400'}`}>{day.toLocaleDateString('pl-PL', { weekday: 'short' })}</p>
+              <p className={`leading-none ${today ? 'mt-1 inline-block rounded-xl bg-blue-600 px-2 py-1 text-3xl font-black text-white shadow-lg' : 'text-4xl font-black text-slate-300'}`}>{day.getDate()}</p>
+            </div>
+          </div>
+        );
+      })}
+
+      <div
+        className={`pointer-events-none absolute left-0 right-0 grid ${isDay ? 'grid-cols-1' : 'grid-cols-7'} px-2`}
+        style={{ top: `${CALENDAR_BAR_TOP}px`, gridTemplateRows: `repeat(${maxRow}, ${CALENDAR_BAR_ROW_HEIGHT}px)`, rowGap: `${CALENDAR_BAR_ROW_GAP}px` }}
+      >
+        {bars.map((bar) => (
+          <CalendarBar key={bar.key} bar={bar} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function buildBars(items: CalendarItem[], weekStart: Date, weekEnd: Date, columns: number) {
+  const today = startOfDay(new Date());
+  const rows: number[] = [];
+  const out: any[] = [];
+
+  const segments = items.flatMap((item) => {
+    const start = startOfDay(new Date(item.start));
+    const end = startOfDay(new Date(item.koniec || item.start));
+    const clippedStart = start < weekStart ? weekStart : start;
+    const clippedEnd = end > startOfDay(weekEnd) ? startOfDay(weekEnd) : end;
+    if (clippedEnd < weekStart || clippedStart > weekEnd) return [];
+
+    const baseColor = item.kolor || typeFallbackColor[item.typ] || '#0891B2';
+    const containsToday = start <= today && end >= today;
+    const parts: any[] = [];
+
+    if (containsToday && clippedStart < today) {
+      const pastEnd = addDays(today, -1);
+      if (pastEnd >= clippedStart) parts.push({ item, start: clippedStart, end: pastEnd, color: pastelColor(baseColor), past: true });
+      if (clippedEnd >= today) parts.push({ item, start: today > clippedStart ? today : clippedStart, end: clippedEnd, color: baseColor, past: false });
+    } else {
+      parts.push({ item, start: clippedStart, end: clippedEnd, color: baseColor, past: false });
+    }
+    return parts;
+  }).sort((a, b) => {
+    const d = dayDiff(a.start, weekStart) - dayDiff(b.start, weekStart);
+    if (d !== 0) return d;
+    return dayDiff(b.end, b.start) - dayDiff(a.end, a.start);
+  });
+
+  for (const seg of segments) {
+    const startCol = Math.max(0, Math.min(columns - 1, dayDiff(seg.start, weekStart)));
+    const endCol = Math.max(startCol, Math.min(columns - 1, dayDiff(seg.end, weekStart)));
+    let row = rows.findIndex((lastEnd) => lastEnd < startCol);
+    if (row === -1) { row = rows.length; rows.push(endCol); }
+    else rows[row] = endCol;
+    out.push({
+      key: `${seg.item.id}-${iso(seg.start)}-${iso(seg.end)}-${seg.past ? 'past' : 'now'}`,
+      item: seg.item,
+      startCol,
+      endCol,
+      row,
+      color: seg.color,
+      isWeekStart: sameDay(seg.start, weekStart) || sameDay(seg.start, startOfDay(new Date(seg.item.start))),
+      isWeekEnd: sameDay(seg.end, startOfDay(weekEnd)) || sameDay(seg.end, startOfDay(new Date(seg.item.koniec || seg.item.start))),
+    });
+  }
+  return out;
+}
+
+function CalendarBar({ bar }: { bar: any }) {
+  const radius = bar.isWeekStart && bar.isWeekEnd ? 'rounded-md' : bar.isWeekStart ? 'rounded-l-md rounded-r-none' : bar.isWeekEnd ? 'rounded-r-md rounded-l-none' : 'rounded-none';
+  return (
+    <Link
+      href={itemUrl(bar.item)}
+      title={`${bar.item.status || ''} | ${bar.item.tytul || ''}`}
+      className={`pointer-events-auto block truncate px-2 py-[2px] text-[13px] font-black leading-[20px] text-white shadow-sm transition hover:brightness-95 ${radius}`}
+      style={{
+        gridColumn: `${bar.startCol + 1} / ${bar.endCol + 2}`,
+        gridRow: `${bar.row + 1}`,
+        backgroundColor: bar.color,
+        textShadow: '0 1px 1px rgba(15,23,42,.55)',
+      }}
+    >
+      <span className="mr-1 align-middle text-[12px]">{bar.item.ikona || '●'}</span>
+      {bar.item.ikonaMagazynowa && <span className="mr-1 align-middle text-[12px]">{bar.item.ikonaMagazynowa}</span>}
+      {bar.item.ikonaKsiegowa && <span className="mr-1 align-middle text-[12px]">{bar.item.ikonaKsiegowa}</span>}
+      {bar.item.tytul}
+    </Link>
+  );
+}
+
+function List({ items }: { items: CalendarItem[] }) {
+  return <Card><div className="space-y-3">{items.map((i) => <Link href={itemUrl(i)} key={`${i.typ}-${i.id}`} className="flex items-center justify-between rounded-2xl border border-slate-100 p-4 transition hover:border-cyan-200 hover:bg-cyan-50"><div><p className="font-black"><span className="mr-2">{i.ikona || '●'}</span>{i.tytul}</p><p className="text-sm text-slate-500">{typeLabels[i.typ] || i.typ} · {i.status}{i.statusMagazynowy ? ` · ${i.ikonaMagazynowa || '📦'} ${i.statusMagazynowy}` : ''}{i.statusKsiegowy ? ` · ${i.ikonaKsiegowa || '💰'} ${i.statusKsiegowy}` : ''}</p></div><p className="text-sm font-bold text-slate-500">{i.start ? new Date(i.start).toLocaleString('pl-PL') : '-'}</p></Link>)}{items.length === 0 && <p className="p-8 text-center font-bold text-slate-400">Brak wpisów w wybranym zakresie.</p>}</div></Card>;
 }

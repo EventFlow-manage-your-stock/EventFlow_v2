@@ -36,3 +36,14 @@ yarn-error.log*
 # Misc
 .DS_Store
 *.pem
+
+# Local secrets / build cache
+.env
+.env.local
+apps/api/.env
+apps/web/.env.local
+node_modules
+.next
+apps/web/.next
+dist
+.DS_Store

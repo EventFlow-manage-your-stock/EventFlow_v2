@@ -1,272 +1,383 @@
 'use client';
 
-import React, { useEffect, useRef, useCallback } from 'react';
-import { 
-  Heart, Image as ImageIcon, Calendar, Calculator, Eye, Edit2, 
-  Trash2, X, Plus, Search, ChevronDown, Wrench, Share2, FileText
-} from 'lucide-react';
-import { useWarehouseStore } from '../../../store/warehouse.store';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import {
+  CalendarDays,
+  ChevronDown,
+  ChevronRight,
+  Edit2,
+  Eye,
+  FileText,
+  ImageIcon,
+  Plus,
+  Search,
+  Tag,
+  Trash2,
+} from 'lucide-react';
+import { api } from '../../../lib/api';
+import { Button, Card, PageTitle } from '../../../components/ProductUI';
+
+function numberOrZero(value: any) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function money(value: any) {
+  return `${numberOrZero(value).toFixed(2)} PLN`;
+}
+
+function count(value: any) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function modelCategoryId(model: any) {
+  return String(model.kategoria?.id || model.id_kategorii || model.kategoria_id || '');
+}
+
+function getCategoryParentId(category: any) {
+  return category.id_rodzica || category.id_kategorii_glownej || category.id_kategorii_nadrzednej || category.parent_id || category.id_parent || null;
+}
+
+function flattenCategories(categories: any[]): any[] {
+  const result: any[] = [];
+  const walk = (items: any[], parent: any = null, level = 0) => {
+    for (const item of items || []) {
+      const copy = { ...item, parent, level };
+      result.push(copy);
+      if (item.dzieci?.length) walk(item.dzieci, copy, level + 1);
+      if (item.children?.length) walk(item.children, copy, level + 1);
+      if (item.podkategorie?.length) walk(item.podkategorie, copy, level + 1);
+    }
+  };
+  walk(categories || []);
+  return result;
+}
+
+function buildCategoryTree(categories: any[]) {
+  const flatInput = flattenCategories(categories || []);
+  const byId = new Map<string, any>();
+
+  for (const cat of flatInput) {
+    byId.set(String(cat.id), { ...cat, dzieci: [], _parentId: getCategoryParentId(cat) ? String(getCategoryParentId(cat)) : null });
+  }
+
+  // Jeżeli API zwraca już zagnieżdżone kategorie, parent może być w polu parent z flattenCategories.
+  for (const cat of Array.from(byId.values())) {
+    if (!cat._parentId && cat.parent?.id) cat._parentId = String(cat.parent.id);
+  }
+
+  const roots: any[] = [];
+  for (const cat of Array.from(byId.values())) {
+    if (cat._parentId && byId.has(cat._parentId)) byId.get(cat._parentId).dzieci.push(cat);
+    else roots.push(cat);
+  }
+
+  const sortByOrder = (items: any[]) => {
+    items.sort((a, b) => numberOrZero(a.kolejnosc) - numberOrZero(b.kolejnosc) || String(a.nazwa || '').localeCompare(String(b.nazwa || ''), 'pl'));
+    items.forEach((item) => sortByOrder(item.dzieci || []));
+  };
+  sortByOrder(roots);
+
+  return { roots, byId };
+}
+
+function descendantsOf(categoryId: string, byId: Map<string, any>) {
+  const ids = new Set<string>();
+  const walk = (id: string) => {
+    if (!id || ids.has(id)) return;
+    ids.add(id);
+    const cat = byId.get(id);
+    for (const child of cat?.dzieci || []) walk(String(child.id));
+  };
+  walk(categoryId);
+  return ids;
+}
+
+function categoryPath(categoryId: string, byId: Map<string, any>) {
+  const parts: string[] = [];
+  let current = byId.get(categoryId);
+  let guard = 0;
+  while (current && guard < 10) {
+    parts.unshift(current.nazwa);
+    current = current._parentId ? byId.get(String(current._parentId)) : null;
+    guard++;
+  }
+  return parts.join(' / ');
+}
+
+function imageSrc(value: any) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  if (raw.startsWith('data:') || raw.startsWith('http://') || raw.startsWith('https://') || raw.startsWith('/')) return raw;
+  if (raw.length > 80) return `data:image/jpeg;base64,${raw}`;
+  return '';
+}
+
+function ModelThumb({ model }: { model: any }) {
+  const src = imageSrc(model.zdjecie || model.zdjecie_url || model.image || model.photo);
+  if (!src) {
+    return (
+      <div className="flex h-12 w-16 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-300">
+        <ImageIcon size={20} />
+      </div>
+    );
+  }
+  return <img src={src} alt={model.nazwa || 'Zdjęcie modelu'} className="h-12 w-16 rounded-xl border border-slate-200 object-cover" />;
+}
+
+function CategoryButton({ active, children, onClick, count }: { active: boolean; children: React.ReactNode; onClick: () => void; count?: number }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-black transition ${active ? 'bg-cyan-600 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+    >
+      {children}
+      {typeof count === 'number' && <span className={`rounded-full px-2 py-0.5 text-[11px] ${active ? 'bg-white/20 text-white' : 'bg-white text-slate-500'}`}>{count}</span>}
+    </button>
+  );
+}
 
 export default function InternalWarehousePage() {
-  const { 
-    categories, 
-    models, 
-    isLoading, 
-    isFetchingNextPage,
-    hasMore,
-    filters,
-    fetchCategories, 
-    fetchModels,
-    setFilter
-  } = useWarehouseStore();
-
+  // EVENTFLOW_PRODUCT_POLISH_V26:
+  // Przebudowa widoku magazynu: kategorie główne + rozwijane podkategorie zamiast płaskiej listy kilkudziesięciu chipów.
+  // Dodatkowo lista modeli jest bliższa NEW: zdjęcie, nazwa, stany, cena, akcje i szybka edycja modelu.
   const router = useRouter();
+  const [models, setModels] = useState<any[]>([]);
+  const [categories, setCategories] = useState<any[]>([]);
+  const [activeRoot, setActiveRoot] = useState<string>('');
+  const [activeCategory, setActiveCategory] = useState<string>('');
+  const [expandedRoots, setExpandedRoots] = useState<Record<string, boolean>>({});
+  const [search, setSearch] = useState('');
+  const [loading, setLoading] = useState(true);
 
-  const activeParentCategory = categories.find(c => c.id === filters.kategoriaId) || categories[0];
-  
-  // Ref dla elementu "obserwatora" do Infinite Scroll
-  const observerRef = useRef<IntersectionObserver | null>(null);
-  const lastElementRef = useCallback((node: HTMLTableRowElement) => {
-    if (isLoading || isFetchingNextPage) return;
-    if (observerRef.current) observerRef.current.disconnect();
-    
-    observerRef.current = new IntersectionObserver(entries => {
-      if (entries[0].isIntersecting && hasMore) {
-        fetchModels();
-      }
+  async function load() {
+    setLoading(true);
+    try {
+      const [m, k] = await Promise.all([
+        api.get('/api/magazyn/modele').catch(() => ({ data: [] })),
+        api.get('/api/magazyn/kategorie').catch(() => ({ data: [] })),
+      ]);
+      setModels(m.data || []);
+      setCategories(k.data || []);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { load(); }, []);
+
+  const { roots, byId } = useMemo(() => buildCategoryTree(categories), [categories]);
+
+  const modelCountByCategory = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const model of models) {
+      const id = modelCategoryId(model);
+      if (!id) continue;
+      map.set(id, (map.get(id) || 0) + 1);
+    }
+    return map;
+  }, [models]);
+
+  const totalForCategory = (categoryId: string) => {
+    const ids = descendantsOf(categoryId, byId);
+    let total = 0;
+    ids.forEach((id) => { total += modelCountByCategory.get(id) || 0; });
+    return total;
+  };
+
+  function selectRoot(rootId: string) {
+    const nextOpen = activeRoot === rootId ? !expandedRoots[rootId] : true;
+    setActiveRoot(rootId);
+    setActiveCategory(rootId);
+    setExpandedRoots({ ...expandedRoots, [rootId]: nextOpen });
+  }
+
+  function clearCategory() {
+    setActiveRoot('');
+    setActiveCategory('');
+  }
+
+  const activeCategoryIds = useMemo(() => activeCategory ? descendantsOf(activeCategory, byId) : new Set<string>(), [activeCategory, byId]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return models.filter((model: any) => {
+      const catId = modelCategoryId(model);
+      if (activeCategory && !activeCategoryIds.has(catId)) return false;
+      if (!q) return true;
+      const haystack = [
+        model.nazwa,
+        model.kategoria?.nazwa,
+        catId ? categoryPath(catId, byId) : '',
+        model.typ_sprzetu,
+        model.uwagi,
+        model.magazyn,
+        model.kod,
+        model.sku,
+      ].join(' ').toLowerCase();
+      return haystack.includes(q);
     });
-    
-    if (node) observerRef.current.observe(node);
-  }, [isLoading, isFetchingNextPage, hasMore, fetchModels]);
+  }, [models, activeCategory, activeCategoryIds, search, byId]);
 
-  useEffect(() => {
-    fetchCategories();
-    fetchModels(true);
-  }, []); // Run once on mount
+  const totals = useMemo(() => ({
+    models: filtered.length,
+    items: filtered.reduce((a, m: any) => a + count(m._count?.egzemplarze || m.stan?.total), 0),
+    available: filtered.reduce((a, m: any) => a + count(m.dostepnych || m.stan?.magazyn), 0),
+    service: filtered.reduce((a, m: any) => a + count(m.stan?.serwis), 0),
+  }), [filtered]);
 
   return (
-    <div className="flex flex-col h-full bg-white rounded-tl-2xl border-t border-l border-slate-200 overflow-hidden shadow-sm">
-      
-      {/* 1. GŁÓWNA NAWIGACJA KATEGORII */}
-      <div className="flex flex-wrap items-center gap-6 px-6 py-4 border-b border-slate-200 bg-white shadow-sm z-10">
-        {categories.map((cat) => (
-          <button 
-            key={cat.id}
-            onClick={() => setFilter('kategoriaId', cat.id)}
-            className={`flex items-center gap-1 text-[13px] font-bold uppercase tracking-wider transition ${
-              filters.kategoriaId === cat.id ? 'text-blue-600' : 'text-slate-600 hover:text-blue-500'
-            }`}
-          >
-            {cat.nazwa} <ChevronDown size={14} className="text-slate-400" />
-          </button>
-        ))}
-        <button className="flex items-center gap-1 text-[13px] font-bold uppercase tracking-wider text-slate-600 hover:text-red-500 px-3 py-1 rounded-full border border-slate-200 ml-auto transition">
-          <Heart size={14} className="text-slate-400" /> Ulubione
-        </button>
-        <button className="flex items-center gap-2 text-[13px] font-bold text-emerald-600 border border-emerald-500 px-3 py-1.5 rounded bg-emerald-50 hover:bg-emerald-100 transition">
-           <span className="w-4 h-4 bg-emerald-500 rounded-sm flex items-center justify-center"></span> Zobacz jak działają opakowania
-        </button>
-      </div>
-
-      {/* 2. SUBKATEGORIE */}
-      {activeParentCategory?.dzieci?.length > 0 && (
-        <div className="flex flex-wrap gap-4 px-6 py-3 border-b border-slate-100 bg-slate-50/50">
-          {activeParentCategory.dzieci.map((sub) => (
-            <button key={sub.id} className="text-[13px] font-medium text-slate-500 hover:text-slate-800 transition">
-              {sub.nazwa}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* 3. PASEK WYSZUKIWANIA I AKCJI */}
-      <div className="flex flex-wrap items-center justify-between gap-4 px-6 py-4 border-b border-slate-200 bg-white">
-        <div className="flex items-center gap-4">
-          <div className="relative">
-            <input 
-              type="text" 
-              placeholder="Szukaj..."
-              value={filters.search}
-              onChange={(e) => setFilter('search', e.target.value)}
-              className="pl-3 pr-8 py-2 border border-slate-300 rounded-md text-sm w-[250px] focus:outline-none focus:border-blue-500"
-            />
-            {filters.search ? (
-               <X size={16} className="absolute right-2 top-2.5 text-slate-400 cursor-pointer" onClick={() => setFilter('search', '')}/>
-            ) : (
-               <Search size={16} className="absolute right-2 top-2.5 text-slate-400" />
-            )}
+    <div className="mx-auto max-w-[1900px] space-y-6">
+      <PageTitle
+        eyebrow="Magazyn"
+        title="Magazyn wewnętrzny"
+        description="Modele sprzętu, stany, ceny i dostępność. Kategorie są zebrane w grupy, a podkategorie rozwijają się dopiero po wybraniu kategorii głównej."
+        action={
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={() => router.push('/dashboard/warehouse/models')}><Plus size={16} className="inline" /> Dodaj / modele</Button>
+            <Button variant="secondary" onClick={() => router.push('/dashboard/warehouse/labels?type=barcode')}><Tag size={16} className="inline" /> Naklejki</Button>
           </div>
+        }
+      />
 
-          <div className="flex items-center gap-2">
-            <input type="datetime-local" className="border border-slate-300 rounded-md text-sm px-3 py-2 text-slate-600 outline-none" />
-            <span className="text-slate-400 text-sm">to</span>
-            <input type="datetime-local" className="border border-slate-300 rounded-md text-sm px-3 py-2 text-slate-600 outline-none" />
-            <button className="border border-slate-300 px-4 py-2 rounded-md text-sm font-medium text-slate-600 hover:bg-slate-50 transition">Szukaj</button>
+      <Card className="!p-4">
+        <div className="mb-3 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+          <div>
+            <p className="text-[11px] font-black uppercase tracking-[0.25em] text-cyan-600">Kategorie</p>
+            <h2 className="text-xl font-black text-slate-900">Wybierz kategorię główną</h2>
+          </div>
+          <div className="flex w-full items-center gap-2 rounded-xl border bg-white px-3 py-2 xl:max-w-sm">
+            <Search size={16} className="text-slate-400" />
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Szukaj modelu, kategorii, SKU..." className="w-full bg-transparent text-sm font-bold outline-none" />
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          <button className="bg-sky-400 text-white text-sm font-medium px-4 py-2 rounded shadow-sm hover:bg-sky-500 transition">Kalendarz</button>
-          <button className="bg-sky-400 text-white text-sm font-medium px-4 py-2 rounded shadow-sm hover:bg-sky-500 transition">Zestawienie</button>
-          <button className="bg-sky-400 text-white text-sm font-medium px-4 py-2 rounded shadow-sm hover:bg-sky-500 transition">Inwentaryzacja</button>
-          
-          <div className="h-8 w-px bg-slate-200 mx-2"></div>
-
-          <button 
-            onClick={() => router.push('/dashboard/warehouse/models/new')} // Zamiast modala
-            className="flex items-center gap-1 bg-white border border-slate-300 text-slate-700 text-sm font-bold px-4 py-2 rounded shadow-sm hover:bg-slate-50 transition"
-            >
-            <Plus size={16} className="text-emerald-500" /> Dodaj <ChevronDown size={14}/>
-            </button>
-          <button className="flex items-center gap-1 bg-white border border-slate-300 text-slate-700 text-sm font-medium px-4 py-2 rounded hover:bg-slate-50 transition">
-            Eksport <ChevronDown size={14}/>
-          </button>
-          <button className="bg-white border border-blue-400 text-blue-500 text-sm font-medium px-4 py-2 rounded hover:bg-blue-50 transition">
-            Naklejki z kodami
-          </button>
-          <button className="bg-white border border-blue-400 text-blue-500 text-sm font-medium px-4 py-2 rounded hover:bg-blue-50 transition">
-            Ukryj zdjęcia
-          </button>
-          <button className="flex items-center gap-2 bg-white border border-slate-300 text-slate-700 text-sm font-medium px-4 py-2 rounded hover:bg-slate-50 transition">
-            <Share2 size={16} /> Znajdź sprzęt w event network
-          </button>
+        <div className="flex flex-wrap gap-2">
+          <CategoryButton active={!activeCategory} onClick={clearCategory} count={models.length}>Wszystkie</CategoryButton>
+          {roots.map((root: any) => {
+            const rootId = String(root.id);
+            const isActiveRoot = activeRoot === rootId;
+            const isExpanded = !!expandedRoots[rootId] && isActiveRoot;
+            return (
+              <button
+                key={root.id}
+                onClick={() => selectRoot(rootId)}
+                className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-black transition ${isActiveRoot ? 'bg-cyan-600 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+              >
+                {isExpanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+                {root.nazwa}
+                <span className={`rounded-full px-2 py-0.5 text-[11px] ${isActiveRoot ? 'bg-white/20 text-white' : 'bg-white text-slate-500'}`}>{totalForCategory(rootId)}</span>
+              </button>
+            );
+          })}
         </div>
-      </div>
 
-      {/* Pasek narzędzi nad samą tabelą */}
-      <div className="flex justify-end p-2 bg-slate-50 border-b border-slate-200 gap-1">
-         <button className="p-1.5 bg-white border border-slate-300 rounded shadow-sm text-slate-500 hover:text-slate-800"><Edit2 size={14}/></button>
-         <button className="p-1.5 bg-sky-400 border border-sky-500 rounded shadow-sm text-white hover:bg-sky-500"><Wrench size={14}/></button>
-      </div>
-
-      {/* 4. TABELA DANYCH */}
-      <div className="flex-1 overflow-auto custom-scrollbar relative">
-        {isLoading && models.length === 0 ? (
-          <div className="flex items-center justify-center h-full text-slate-500">Ładowanie magazynu...</div>
-        ) : (
-          <table className="w-full text-left text-sm whitespace-nowrap min-w-[1200px]">
-            <thead className="sticky top-0 bg-white border-b border-slate-200 z-10 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-              <tr>
-                <th className="p-4 w-10"><input type="checkbox" className="rounded border-slate-300" /></th>
-                <th className="p-4 w-10 flex gap-2">↓ L.p. S U</th>
-                <th className="p-4 w-20 text-center">Zdjęcie</th>
-                <th className="p-4 min-w-[200px]">Nazwa</th>
-                <th className="p-4">Typ</th>
-                <th className="p-4">Kategoria</th>
-                <th className="p-4">Na stanie</th>
-                <th className="p-4">Dostępnych</th>
-                <th className="p-4">Rezerwacje</th>
-                <th className="p-4">Cena</th>
-                <th className="p-4">Kod kreskowy</th>
-                <th className="p-4">Uwagi</th>
-                <th className="p-4">Konflikty</th>
-                <th className="p-4 text-center">Cross Rental Network</th>
-                <th className="p-4 text-center">Status CRN</th>
-                <th className="p-4">Magazyny</th>
-                <th className="p-4">Notatka</th>
-                <th className="p-4 text-center">Akcje</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 bg-white">
-              {models.map((item, index) => {
-                const isLast = index === models.length - 1;
+        {activeRoot && expandedRoots[activeRoot] && (
+          <div className="mt-4 rounded-2xl border border-cyan-100 bg-cyan-50/50 p-4">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="text-xs font-black uppercase tracking-wider text-cyan-700">Podkategorie</p>
+                <p className="text-sm font-bold text-slate-500">Kliknij podkategorię, żeby zawęzić listę modeli.</p>
+              </div>
+              <button onClick={() => setActiveCategory(activeRoot)} className="rounded-xl border border-cyan-200 bg-white px-3 py-2 text-xs font-black text-cyan-700">Pokaż całą kategorię</button>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {(byId.get(activeRoot)?.dzieci || []).length === 0 && <span className="text-sm font-bold text-slate-400">Ta kategoria nie ma podkategorii.</span>}
+              {(byId.get(activeRoot)?.dzieci || []).map((child: any) => {
+                const childId = String(child.id);
                 return (
-                  <tr 
-                    key={item.id} 
-                    ref={isLast ? lastElementRef : null}
-                    className="hover:bg-blue-50/30 transition-colors group"
-                  >
-                    <td className="p-4"><input type="checkbox" className="rounded border-slate-300" /></td>
-                    <td className="p-4 text-blue-500 font-medium">
-                      <div className="flex items-center gap-1.5">
-                         <span>{index + 1}</span>
-                         <div className="flex flex-col gap-0 text-slate-400 cursor-pointer">
-                            <span className="text-[10px] leading-[8px]">▲</span>
-                            <span className="text-[10px] leading-[8px]">▼</span>
-                         </div>
-                         <Heart size={14} className={item.ulubiony ? "text-red-500 fill-red-500" : "text-slate-300"} />
-                         <span className="text-slate-400 font-bold text-lg leading-none">+</span>
-                         <span className="text-blue-500 font-bold text-lg leading-none">↓</span>
-                      </div>
-                    </td>
-                    <td className="p-4 text-center">
-                      {item.zdjecie ? (
-                         <img src={item.zdjecie} alt="foto" className="w-10 h-10 object-contain mx-auto" />
-                      ) : (
-                         <div className="w-10 h-10 bg-slate-100 border border-slate-200 text-slate-300 flex items-center justify-center rounded mx-auto">
-                            <ImageIcon size={20} />
-                         </div>
-                      )}
-                    </td>
-                    <td className="p-4">
-                      <div className="flex items-center gap-2 mb-1">
-                        <Calendar size={14} className="text-emerald-500 bg-emerald-50 p-0.5 rounded cursor-pointer" />
-                        <Calculator size={14} className="text-sky-500 bg-sky-50 p-0.5 rounded cursor-pointer" />
-                      </div>
-                      <span className="text-blue-600 font-medium cursor-pointer hover:underline">{item.nazwa}</span>
-                    </td>
-                    <td className="p-4 text-slate-600">{item.typ_sprzetu === 'sprzet' ? 'Sprzęt' : item.typ_sprzetu}</td>
-                    <td className="p-4 text-slate-600">{item.kategoria_nazwa}</td>
-                    
-                    {/* Skomplikowana kolumna Na stanie wg screena */}
-                    <td className="p-4 min-w-[120px]">
-                      <div className="text-base font-bold text-slate-700">{item.stan.total}</div>
-                      <div className="flex flex-col gap-0.5 text-[11px] font-semibold text-slate-600 mt-1">
-                         {item.stan.magazyn > 0 && <div><span className="bg-slate-800 text-white px-1.5 py-0.5 rounded mr-1">1</span>Magazyn: {item.stan.magazyn}</div>}
-                         {item.stan.eventy > 0 && <div><span className="bg-sky-500 text-white px-1.5 py-0.5 rounded mr-1">2</span>Na eventach: {item.stan.eventy}</div>}
-                         {item.stan.serwis > 0 && <div className="text-red-500"><span className="bg-red-500 text-white px-1.5 py-0.5 rounded mr-1">3</span>Serwis: {item.stan.serwis}</div>}
-                         {item.stan.rack > 0 && <div><span className="bg-slate-400 text-white px-1.5 py-0.5 rounded mr-1">4</span>W rackach: {item.stan.rack}</div>}
-                      </div>
-                    </td>
-
-                    <td className="p-4">
-                      <div className="text-base font-bold text-slate-700">{item.dostepnych}</div>
-                      {item.stan.serwis > 0 && (
-                        <div className="bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded mt-1 inline-block">W serwisie: {item.stan.serwis}</div>
-                      )}
-                    </td>
-
-                    <td className="p-4 text-slate-400">-</td>
-                    
-                    <td className="p-4 text-slate-600 text-xs">Podstawowa: <span className="font-bold text-slate-800">{item.cena_podstawowa.toFixed(2)} PLN</span></td>
-                    <td className="p-4 text-slate-600">{item.kod_kreskowy || '-'}</td>
-                    <td className="p-4 text-slate-400">-</td>
-                    <td className="p-4"><span className="bg-emerald-500 text-white px-2 py-1 rounded text-xs font-bold shadow-sm">0</span></td>
-                    <td className="p-4 text-center">
-                       {item.udostepniony_crn ? (
-                         <span className="text-blue-500 font-medium cursor-pointer">Udostępnij</span>
-                       ) : (
-                         <span className="text-blue-500 font-medium cursor-pointer">Udostępnij</span> // Na screenie wszystko ma "Udostępnij"
-                       )}
-                    </td>
-                    <td className="p-4 text-center text-slate-400">-</td>
-                    <td className="p-4 text-slate-600 font-medium">SYCOWSKA <span className="bg-white border border-slate-200 text-slate-400 text-[10px] px-1 ml-1 rounded">+</span></td>
-                    <td className="p-4"><span className="text-slate-500 bg-slate-100 border border-slate-200 px-2 py-1 rounded text-[11px] font-medium hover:bg-slate-200 cursor-pointer transition">Notatka</span></td>
-                    <td className="p-4">
-                      <div className="flex justify-center items-center gap-3 text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Eye size={16} className="cursor-pointer hover:text-blue-500" />
-                        <div className="w-6 h-6 bg-slate-700 rounded text-white flex items-center justify-center cursor-pointer hover:bg-slate-800">
-                          <Edit2 size={12} />
-                        </div>
-                        <X size={20} className="cursor-pointer font-bold text-slate-800 hover:text-red-500" />
-                      </div>
-                    </td>
-                  </tr>
+                  <CategoryButton key={child.id} active={activeCategory === childId} onClick={() => setActiveCategory(childId)} count={totalForCategory(childId)}>
+                    {child.nazwa}
+                  </CategoryButton>
                 );
               })}
-              
-              {isFetchingNextPage && (
-                 <tr>
-                    <td colSpan={18} className="p-4 text-center text-slate-400">
-                       <Loader2 className="w-5 h-5 animate-spin mx-auto inline-block mr-2"/> Wczytywanie kolejnych pozycji...
-                    </td>
-                 </tr>
-              )}
-            </tbody>
-          </table>
+            </div>
+          </div>
         )}
+      </Card>
+
+      <div className="grid gap-4 md:grid-cols-4">
+        <Card><p className="text-xs font-black uppercase text-slate-400">Modele</p><p className="text-3xl font-black">{totals.models}</p></Card>
+        <Card><p className="text-xs font-black uppercase text-slate-400">Egzemplarze</p><p className="text-3xl font-black">{totals.items}</p></Card>
+        <Card><p className="text-xs font-black uppercase text-slate-400">Dostępne</p><p className="text-3xl font-black">{totals.available}</p></Card>
+        <Card><p className="text-xs font-black uppercase text-slate-400">W serwisie</p><p className="text-3xl font-black">{totals.service}</p></Card>
       </div>
+
+      <Card className="!p-0 overflow-hidden">
+        <div className="border-b border-slate-100 bg-white px-5 py-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.25em] text-cyan-600">Modele sprzętu</p>
+              <h2 className="text-xl font-black text-slate-900">Lista modeli</h2>
+            </div>
+            <p className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-500">{filtered.length} wyników</p>
+          </div>
+        </div>
+
+        {loading ? (
+          <p className="p-8 text-center font-bold text-slate-400">Ładowanie magazynu...</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[1350px] text-left text-sm">
+              <thead className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500">
+                <tr>
+                  <th className="p-3 font-black">SKU / kod</th>
+                  <th className="p-3 font-black">Zdjęcie</th>
+                  <th className="p-3 font-black">Nazwa</th>
+                  <th className="p-3 font-black">Typ</th>
+                  <th className="p-3 font-black">Kategoria</th>
+                  <th className="p-3 font-black">Na stanie</th>
+                  <th className="p-3 font-black">Dostępnych</th>
+                  <th className="p-3 font-black">Rezerwacje</th>
+                  <th className="p-3 font-black">Cena</th>
+                  <th className="p-3 font-black">Magazyn</th>
+                  <th className="p-3 text-right font-black">Akcje</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filtered.map((model: any) => {
+                  const catId = modelCategoryId(model);
+                  const total = count(model.stan?.total || model._count?.egzemplarze);
+                  const available = count(model.dostepnych || model.stan?.magazyn);
+                  const service = count(model.stan?.serwis);
+                  const reservations = count(model.rezerwacje || model.stan?.rezerwacje);
+                  return (
+                    <tr key={model.id} onClick={() => router.push(`/dashboard/warehouse/models/${model.id}`)} className="cursor-pointer align-top transition hover:bg-cyan-50/50">
+                      <td className="p-3 text-xs font-bold text-slate-500">{model.sku || model.kod || model.kod_modelu || model.symbol || <span className="text-slate-300">—</span>}</td>
+                      <td className="p-3"><ModelThumb model={model} /></td>
+                      <td className="p-3">
+                        <b className="text-cyan-700">{model.nazwa}</b>
+                        {model.uwagi && <p className="mt-1 line-clamp-2 text-xs font-semibold text-slate-400">{model.uwagi}</p>}
+                      </td>
+                      <td className="p-3 font-bold text-slate-600">{model.typ_sprzetu || 'Sprzęt'}</td>
+                      <td className="p-3 font-bold text-slate-500">{catId ? categoryPath(catId, byId) || model.kategoria?.nazwa : model.kategoria?.nazwa || model.kategoria_nazwa || '-'}</td>
+                      <td className="p-3">
+                        <span className="rounded-full bg-blue-50 px-2 py-1 text-xs font-black text-blue-700">{total}</span>
+                        {service > 0 && <span className="ml-2 rounded-full bg-red-50 px-2 py-1 text-xs font-black text-red-700">serwis {service}</span>}
+                      </td>
+                      <td className="p-3 font-black text-emerald-700">{available}</td>
+                      <td className="p-3"><span className="rounded-full bg-teal-50 px-2 py-1 text-xs font-black text-teal-700">{reservations}</span></td>
+                      <td className="p-3 font-bold text-slate-600">{money(model.cena_podstawowa || model.wartosc_domyslna_egzemplarza || model.wartosc)}</td>
+                      <td className="p-3 font-bold text-slate-500">{model.magazyn || model.lokalizacja || model.miejsce || '-'}</td>
+                      <td className="p-3">
+                        <div className="flex justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+                          <button title="Podgląd" onClick={() => router.push(`/dashboard/warehouse/models/${model.id}`)} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"><Eye size={16} /></button>
+                          <button title="Edytuj" onClick={() => router.push(`/dashboard/warehouse/models/${model.id}?edit=1`)} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"><Edit2 size={16} /></button>
+                          <button title="Dostępność" onClick={() => router.push(`/dashboard/warehouse/models/${model.id}?tab=availability`)} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"><CalendarDays size={16} /></button>
+                          <button title="Szczegóły" onClick={() => router.push(`/dashboard/warehouse/models/${model.id}`)} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"><FileText size={16} /></button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {filtered.length === 0 && <tr><td colSpan={11} className="p-12 text-center font-bold text-slate-400">Brak modeli w wybranej kategorii.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
     </div>
   );
 }

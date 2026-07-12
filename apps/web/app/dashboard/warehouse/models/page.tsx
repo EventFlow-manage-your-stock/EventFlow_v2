@@ -1,244 +1,264 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { 
-  ChevronRight, Plus, DownloadCloud, RefreshCw, Trash2, 
-  FileText, Table, Settings, Loader2, Eye, Edit2, X, Search 
-} from 'lucide-react';
-import { useModelsStore } from '../../../../store/models.store';
+import { Eye, ImageIcon, Pencil, Plus, Search, Trash2 } from 'lucide-react';
+import { api } from '../../../../lib/api';
+import { Button, Card, Field, inputClass, PageTitle } from '../../../../components/ProductUI';
+import { SimpleModal } from '../../../../components/SimpleModal';
 
-export default function ModelsListPage() {
+function money(value: any) {
+  const n = Number(value ?? 0);
+  return Number.isFinite(n) ? `${n.toFixed(2)} PLN` : '-';
+}
+
+function countValue(value: any) {
+  const n = Number(value ?? 0);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function readImageAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function isQuantityModel(form: any) {
+  return form?.sprzet_ilosciowy === true || form?.tryb_ewidencji === 'ilosciowe';
+}
+
+function normalizeModelPayload(form: any) {
+  const quantity = isQuantityModel(form);
+  return {
+    ...form,
+    sprzet_ilosciowy: quantity,
+    tryb_ewidencji: quantity ? 'ilosciowe' : 'egzemplarze',
+    ilosc_magazynowa: quantity ? Number(form.ilosc_magazynowa || 0) : 0,
+    jednostka: form.jednostka || 'szt.',
+    kod_kreskowy: quantity ? (form.kod_kreskowy || '') : '',
+  };
+}
+
+export default function ModelsPage() {
   const router = useRouter();
-  const { 
-    models, categories, filters, isLoading, 
-    fetchModels, fetchCategories, setFilter, deleteModel 
-  } = useModelsStore();
+  const [items, setItems] = useState<any[]>([]);
+  const [categories, setCategories] = useState<any[]>([]);
+  const [view, setView] = useState<'sprzet' | 'opakowanie' | 'wszystkie'>('sprzet');
+  const [categoryId, setCategoryId] = useState<string>('');
+  const [search, setSearch] = useState('');
+  const [show, setShow] = useState(false);
+  const [form, setForm] = useState<any>({ typ_sprzetu: 'sprzet', tryb_ewidencji: 'egzemplarze', sprzet_ilosciowy: false, ilosc_magazynowa: 0, jednostka: 'szt.', kod_kreskowy: '' });
+  const [preview, setPreview] = useState<string>('');
 
-  const [selectedModels, setSelectedModels] = useState<number[]>([]);
+  async function load() {
+    const [m, k] = await Promise.all([
+      api.get('/api/magazyn/modele'),
+      api.get('/api/magazyn/kategorie/plasko').catch(() => api.get('/api/magazyn/kategorie').catch(() => ({ data: [] }))),
+    ]);
+    setItems(m.data || []);
+    setCategories(k.data || []);
+  }
 
-  useEffect(() => {
-    fetchCategories();
-    fetchModels();
-  }, []);
+  useEffect(() => { load(); }, []);
 
-  // --- LOGIKA CHECKBOXÓW ---
-  const handleSelectAll = (checked: boolean) => {
-    if (checked) setSelectedModels(models.map((m: any) => m.id));
-    else setSelectedModels([]);
-  };
-
-  const handleSelectModel = (id: number, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setSelectedModels(prev => 
-      prev.includes(id) ? prev.filter(modelId => modelId !== id) : [...prev, id]
-    );
-  };
-
-  const handleDelete = async (id: number, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (confirm('Czy na pewno chcesz usunąć ten model sprzętu? Zostanie przeniesiony do archiwum usuniętych.')) {
-      await deleteModel(id);
-      setSelectedModels(prev => prev.filter(modelId => modelId !== id));
+  async function save(e: any) {
+    e.preventDefault();
+    if (isQuantityModel(form) && !String(form.kod_kreskowy || '').trim()) {
+      alert('Sprzęt ilościowy musi mieć kod kreskowy modelu. Ten kod skanujesz przy WZ/PZ, a system zapyta o liczbę sztuk.');
+      return;
     }
-  };
+    await api.post('/api/magazyn/modele', normalizeModelPayload(form));
+    setShow(false);
+    setPreview('');
+    setForm({ typ_sprzetu: view === 'opakowanie' ? 'opakowanie' : 'sprzet', tryb_ewidencji: 'egzemplarze', sprzet_ilosciowy: false, ilosc_magazynowa: 0, jednostka: 'szt.', kod_kreskowy: '' });
+    load();
+  }
 
-  // --- LOGIKA EKSPORTU (CSV / EXCEL) ---
-  const handleExportExcel = () => {
-    const dataToExport = selectedModels.length > 0 ? models.filter(m => selectedModels.includes(m.id)) : models;
-    
-    if (dataToExport.length === 0) return alert('Brak danych do eksportu.');
+  function openAdd() {
+    const type = view === 'opakowanie' ? 'opakowanie' : 'sprzet';
+    setPreview('');
+    setForm({ typ_sprzetu: type, widoczny_w_mag: true, widoczny_w_ofercie: true, tryb_ewidencji: 'egzemplarze', sprzet_ilosciowy: false, ilosc_magazynowa: 0, jednostka: 'szt.', kod_kreskowy: '' });
+    setShow(true);
+  }
 
-    let csvContent = "ID;Nazwa;Sztuk na stanie;Widoczny w magazynie;Widoczny w ofercie;Kategoria\n";
-    dataToExport.forEach(m => {
-      const stock = m._count?.egzemplarze || 0;
-      const widMag = m.widoczny_w_mag ? 'TAK' : 'NIE';
-      const widOfer = m.widoczny_w_ofercie ? 'TAK' : 'NIE';
-      const kat = m.kategoria?.nazwa || 'Brak kategorii';
-      
-      csvContent += `${m.id};"${m.nazwa}";${stock};"${widMag}";"${widOfer}";"${kat}"\n`;
-    });
+  async function onPhoto(file?: File | null) {
+    if (!file) return;
+    const dataUrl = await readImageAsDataUrl(file);
+    setPreview(dataUrl);
+    setForm((current: any) => ({ ...current, zdjecie: dataUrl }));
+  }
 
-    const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = `modele_sprzetu_${new Date().toISOString().split('T')[0]}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
+  async function removeModel(model: any) {
+    if (!confirm(`Usunąć model "${model.nazwa}"?\n\nModel zostanie ukryty, a nie fizycznie skasowany z bazy.`)) return;
+    await api.delete(`/api/magazyn/modele/${model.id}`);
+    load();
+  }
+
+  const rows = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    return items
+      .filter((x: any) => view === 'wszystkie' || x.typ_sprzetu === view)
+      .filter((x: any) => !categoryId || String(x.id_kategorii || x.kategoria?.id || '') === categoryId)
+      .filter((x: any) => {
+        if (!query) return true;
+        return [x.nazwa, x.producent, x.kategoria?.nazwa, x.kategoria_nazwa, x.miejsce_w_mag, x.uwagi]
+          .filter(Boolean)
+          .some((v: any) => String(v).toLowerCase().includes(query));
+      });
+  }, [items, view, categoryId, search]);
 
   return (
-    <div className="max-w-[1600px] mx-auto space-y-6 animate-fade-in-up">
-      
-      {/* BREADCRUMBS & HEADER */}
-      <div className="flex items-center text-sm text-slate-500 gap-2 mb-2 mt-4">
-        <span className="cursor-pointer hover:text-[#00B5B5] font-semibold" onClick={() => router.push('/dashboard')}>Kokpit</span> 
-        <ChevronRight size={14} />
-        <span className="cursor-pointer hover:text-[#00B5B5] font-semibold" onClick={() => router.push('/dashboard/warehouse')}>Magazyn</span> 
-        <ChevronRight size={14} />
-        <span className="font-bold text-[#00B5B5] border-b-2 border-[#00B5B5] pb-0.5">Modele</span>
-      </div>
+    <div className="mx-auto max-w-[1900px] space-y-5">
+      <PageTitle
+        eyebrow="Magazyn"
+        title="Modele"
+        description="Widok modeli sprzętu w stylu operacyjnej listy: zdjęcie, stan, dostępność, cena i szybka edycja. Kody modelu pokazujemy tylko przy sprzęcie ilościowym; zwykły sprzęt ma kody na egzemplarzach."
+        action={<Button onClick={openAdd}><Plus size={16} className="inline" /> Dodaj model</Button>}
+      />
 
-      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden flex flex-col">
-        
-        {/* UPPER TOOLBAR (Zgodnie ze zdjęciem) */}
-        <div className="p-4 border-b border-slate-100 flex flex-wrap items-center justify-between gap-4 bg-slate-50/50">
-          <div className="flex flex-wrap items-center gap-3">
-            <button 
-              onClick={() => router.push('/dashboard/warehouse/models/new')}
-              className="flex items-center gap-2 bg-[#8bc34a] text-white px-5 py-2 rounded-lg text-sm font-bold shadow-md hover:bg-green-500 transition"
-            >
-              <Plus size={16} /> Dodaj
-            </button>
-            <button className="flex items-center gap-2 bg-white text-slate-600 border border-slate-300 px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-50 transition shadow-sm">
-              <DownloadCloud size={16} /> Import
-            </button>
-            <button onClick={fetchModels} className="flex items-center gap-2 bg-white text-slate-600 border border-slate-300 px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-50 transition shadow-sm">
-              <RefreshCw size={16} /> Aktualizuj
-            </button>
-            <button onClick={() => alert("Widok usuniętych modeli w przygotowaniu.")} className="flex items-center gap-2 bg-red-50 text-red-600 border border-red-200 px-4 py-2 rounded-lg text-sm font-semibold hover:bg-red-100 transition shadow-sm">
-              <Trash2 size={16} /> Lista usuniętych
-            </button>
-            <button className="flex items-center gap-2 bg-white text-slate-600 border border-slate-300 px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-50 transition shadow-sm">
-              <FileText size={16} className="text-emerald-700" /> PDF - cały magazyn
-            </button>
-            <button onClick={handleExportExcel} className="flex items-center gap-2 bg-white text-slate-600 border border-slate-300 px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-50 transition shadow-sm">
-              <Table size={16} className="text-sky-600" /> Excel
-            </button>
-          </div>
+      <Card className="!p-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <button onClick={() => setView('sprzet')} className={`rounded-xl px-4 py-2 text-sm font-black ${view === 'sprzet' ? 'bg-cyan-600 text-white' : 'bg-slate-100 text-slate-600'}`}>Sprzęt</button>
+          <button onClick={() => setView('opakowanie')} className={`rounded-xl px-4 py-2 text-sm font-black ${view === 'opakowanie' ? 'bg-cyan-600 text-white' : 'bg-slate-100 text-slate-600'}`}>Opakowania</button>
+          <button onClick={() => setView('wszystkie')} className={`rounded-xl px-4 py-2 text-sm font-black ${view === 'wszystkie' ? 'bg-cyan-600 text-white' : 'bg-slate-100 text-slate-600'}`}>Wszystkie</button>
 
-          <div className="flex items-center gap-2 border border-slate-300 rounded-lg overflow-hidden shadow-sm bg-white">
-            <button className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-50 border-r border-slate-200 transition">
-              <Settings size={16} /> Wyświetl wszystko
-            </button>
-            <button className="p-2 text-white bg-[#8bc34a] hover:bg-green-500 transition px-3">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
-            </button>
+          <div className="ml-auto flex min-w-[320px] flex-1 flex-wrap items-center justify-end gap-2">
+            <div className="relative min-w-[260px] flex-1 max-w-[430px]">
+              <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
+              <input className={`${inputClass} pl-9`} value={search} onChange={e => setSearch(e.target.value)} placeholder="Szukaj modelu, kategorii, producenta albo kodu modelu ilościowego..." />
+            </div>
+            <select className={`${inputClass} max-w-[260px]`} value={categoryId} onChange={e => setCategoryId(e.target.value)}>
+              <option value="">Wszystkie kategorie</option>
+              {categories.map((k: any) => <option key={k.id} value={k.id}>{k.nazwa}</option>)}
+            </select>
           </div>
         </div>
+      </Card>
 
-        {/* DATA TABLE */}
-        <div className="overflow-x-auto min-h-[500px]">
-          <table className="w-full text-left text-sm whitespace-nowrap">
-            <thead className="bg-white border-b border-slate-200">
-              {/* Główny wiersz nagłówków */}
+      <Card className="!p-0 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="min-w-[1650px] w-full border-separate border-spacing-y-1 text-left text-xs">
+            <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-400">
               <tr>
-                <th className="p-3 w-10 text-center"><input type="checkbox" onChange={(e) => handleSelectAll(e.target.checked)} checked={models.length > 0 && selectedModels.length === models.length} className="rounded border-slate-300 cursor-pointer text-[#00B5B5]" /></th>
-                <th className="p-3 w-12 font-bold text-slate-400 text-xs">#</th>
-                <th className="p-3 font-bold text-slate-500 text-xs uppercase tracking-wider">Nazwa</th>
-                <th className="p-3 font-bold text-slate-500 text-xs uppercase tracking-wider text-center">Data produkcji</th>
-                <th className="p-3 font-bold text-slate-500 text-xs uppercase tracking-wider text-center">Sztuk na stanie</th>
-                <th className="p-3 font-bold text-slate-500 text-xs uppercase tracking-wider text-center">Widoczny w magazynie</th>
-                <th className="p-3 font-bold text-slate-500 text-xs uppercase tracking-wider text-center">Widoczny w ofercie</th>
-                <th className="p-3 font-bold text-slate-500 text-xs uppercase tracking-wider">Kategoria</th>
-                <th className="p-3 font-bold text-slate-500 text-xs uppercase tracking-wider text-right">Akcje</th>
-              </tr>
-              {/* Wiersz z inputami filtrów */}
-              <tr className="bg-slate-50/50 border-t border-slate-100">
-                <th className="p-2 border-b border-slate-200"></th>
-                <th className="p-2 border-b border-slate-200"></th>
-                <th className="p-2 border-b border-slate-200 min-w-[300px]">
-                  <div className="relative">
-                    <input 
-                      type="text" 
-                      value={filters.search}
-                      onChange={(e) => setFilter('search', e.target.value)}
-                      className="w-full pl-3 pr-8 py-1.5 border border-slate-300 rounded text-xs font-normal outline-none focus:border-[#00B5B5] bg-white transition shadow-inner" 
-                      placeholder="Wpisz aby wyszukać..."
-                    />
-                    {filters.search && <X size={14} className="absolute right-2 top-2 text-slate-400 cursor-pointer hover:text-red-500" onClick={() => setFilter('search', '')} />}
-                  </div>
-                </th>
-                <th className="p-2 border-b border-slate-200"><input type="text" disabled className="w-full px-2 py-1.5 border border-slate-200 rounded text-xs font-normal bg-slate-100 cursor-not-allowed outline-none" /></th>
-                <th className="p-2 border-b border-slate-200"><input type="text" disabled className="w-full px-2 py-1.5 border border-slate-200 rounded text-xs font-normal bg-slate-100 cursor-not-allowed outline-none" /></th>
-                <th className="p-2 border-b border-slate-200">
-                  <select 
-                    value={filters.widocznyWMag} 
-                    onChange={(e) => setFilter('widocznyWMag', e.target.value)} 
-                    className="w-full px-2 py-1.5 border border-slate-300 rounded text-xs font-normal outline-none focus:border-[#00B5B5] bg-white cursor-pointer shadow-inner"
-                  >
-                    <option value="">Widoczność</option>
-                    <option value="TAK">TAK</option>
-                    <option value="NIE">NIE</option>
-                  </select>
-                </th>
-                <th className="p-2 border-b border-slate-200">
-                  <select 
-                    value={filters.widocznyWOfercie} 
-                    onChange={(e) => setFilter('widocznyWOfercie', e.target.value)} 
-                    className="w-full px-2 py-1.5 border border-slate-300 rounded text-xs font-normal outline-none focus:border-[#00B5B5] bg-white cursor-pointer shadow-inner"
-                  >
-                    <option value="">Widoczność</option>
-                    <option value="TAK">TAK</option>
-                    <option value="NIE">NIE</option>
-                  </select>
-                </th>
-                <th className="p-2 border-b border-slate-200 min-w-[200px]">
-                  <select 
-                    value={filters.kategoriaId} 
-                    onChange={(e) => setFilter('kategoriaId', e.target.value)} 
-                    className="w-full px-2 py-1.5 border border-slate-300 rounded text-xs font-normal outline-none focus:border-[#00B5B5] bg-white cursor-pointer shadow-inner"
-                  >
-                    <option value="">Kategoria</option>
-                    {categories.map((kat: any) => <option key={kat.id} value={kat.id}>{kat.nazwa}</option>)}
-                  </select>
-                </th>
-                <th className="p-2 border-b border-slate-200"></th>
+                <th className="px-3 py-3">Kod modelu</th>
+                <th className="px-3 py-3">Zdjęcie</th>
+                <th className="px-3 py-3">Nazwa</th>
+                <th className="px-3 py-3">Typ</th>
+                <th className="px-3 py-3">Kategoria</th>
+                <th className="px-3 py-3">Na stanie</th>
+                <th className="px-3 py-3">Dostępnych</th>
+                <th className="px-3 py-3">Rezerwacje</th>
+                <th className="px-3 py-3">Cena</th>
+                <th className="px-3 py-3">Uwagi</th>
+                <th className="px-3 py-3">Magazyn</th>
+                <th className="px-3 py-3 text-right">Akcje</th>
               </tr>
             </thead>
-            
-            <tbody className="divide-y divide-slate-100 bg-white">
-              {isLoading ? (
-                <tr>
-                  <td colSpan={9} className="p-16 text-center text-slate-400">
-                    <Loader2 className="animate-spin w-8 h-8 mx-auto mb-3 text-[#00B5B5]" />
-                    Pobieranie bazy modeli...
-                  </td>
-                </tr>
-              ) : models.length > 0 ? (
-                models.map((model: any, idx: number) => (
-                  <tr 
-                    key={model.id} 
-                    className={`${selectedModels.includes(model.id) ? 'bg-sky-50/40' : 'hover:bg-slate-50'} transition cursor-pointer group`}
-                    onClick={() => router.push(`/dashboard/warehouse/models/${model.id}`)}
-                  >
-                    <td className="p-3 text-center">
-                      <input 
-                        type="checkbox" 
-                        checked={selectedModels.includes(model.id)}
-                        onClick={(e) => handleSelectModel(model.id, e)}
-                        onChange={() => {}} 
-                        className="rounded border-slate-300 cursor-pointer text-[#00B5B5]" 
-                      />
+            <tbody>
+              {rows.map((r: any, index: number) => {
+                const quantityModel = r.tryb_ewidencji === 'ilosciowe' || r.sprzet_ilosciowy;
+                const total = quantityModel ? countValue(r.ilosc_magazynowa ?? r.stan?.total) : countValue(r._count?.egzemplarze ?? r.stan?.total);
+                const available = quantityModel ? total : countValue(r.dostepnych ?? r.stan?.magazyn);
+                const service = quantityModel ? 0 : countValue(r.stan?.serwis);
+                const reserved = Math.max(0, total - available - service);
+                return (
+                  <tr key={r.id} className="group rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 transition hover:bg-cyan-50/40 hover:ring-cyan-200">
+                    <td className="whitespace-nowrap rounded-l-2xl px-3 py-2 font-mono text-[11px]">
+                      {quantityModel ? (
+                        r.kod_kreskowy ? <span className="text-slate-700">{r.kod_kreskowy}</span> : <span className="font-black text-red-600">BRAK KODU</span>
+                      ) : <span className="text-slate-300">—</span>}
                     </td>
-                    <td className="p-3 text-slate-400 font-mono text-xs">{idx + 1}</td>
-                    <td className="p-3 text-sky-500 font-medium hover:text-[#00B5B5] transition">{model.nazwa}</td>
-                    <td className="p-3 text-center text-slate-500 font-mono text-xs">-</td>
-                    <td className="p-3 text-center text-slate-700 font-mono font-bold">{model._count?.egzemplarze || 0}</td>
-                    <td className="p-3 text-center text-slate-600 font-medium">{model.widoczny_w_mag ? 'TAK' : 'NIE'}</td>
-                    <td className="p-3 text-center text-slate-600 font-medium">{model.widoczny_w_ofercie ? 'TAK' : 'NIE'}</td>
-                    <td className="p-3 text-slate-600">{model.kategoria?.nazwa || '-'}</td>
-                    
-                    <td className="p-3 text-right flex justify-end gap-1 opacity-100 transition-opacity">
-                      <button onClick={(e) => {e.stopPropagation(); router.push(`/dashboard/warehouse/models/${model.id}`);}} className="p-1.5 text-slate-400 hover:text-sky-600 bg-slate-100 hover:bg-sky-50 border border-transparent hover:border-sky-200 rounded transition"><Eye size={16}/></button>
-                      <button onClick={(e) => {e.stopPropagation(); router.push(`/dashboard/warehouse/models/${model.id}?edit=true`);}} className="p-1.5 text-slate-400 hover:text-amber-600 bg-slate-100 hover:bg-amber-50 border border-transparent hover:border-amber-200 rounded transition"><Edit2 size={16}/></button>
-                      <button onClick={(e) => handleDelete(model.id, e)} className="p-1.5 text-slate-400 hover:text-red-500 bg-slate-100 hover:bg-red-50 border border-transparent hover:border-red-200 rounded transition"><X size={16}/></button>
+                    <td className="px-3 py-2">
+                      <button onClick={() => router.push(`/dashboard/warehouse/models/${r.id}`)} className="h-14 w-20 overflow-hidden rounded-lg border bg-slate-50">
+                        {r.zdjecie ? <img src={r.zdjecie} alt={r.nazwa} className="h-full w-full object-cover" /> : <div className="flex h-full w-full items-center justify-center text-slate-300"><ImageIcon size={20} /></div>}
+                      </button>
+                    </td>
+                    <td className="min-w-[300px] px-3 py-2">
+                      <button onClick={() => router.push(`/dashboard/warehouse/models/${r.id}`)} className="text-left font-black text-cyan-700 hover:underline">{r.nazwa}</button>
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        <span className="rounded bg-emerald-50 px-2 py-0.5 text-[10px] font-black text-emerald-700">📅 kalendarz</span>
+                        <span className="rounded bg-slate-100 px-2 py-0.5 text-[10px] font-black text-slate-600">#{index + 1}</span>
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 font-bold text-slate-700">
+                      {r.typ_sprzetu === 'opakowanie' ? 'Opakowanie' : (quantityModel ? 'Sprzęt ilościowy' : 'Sprzęt z egzemplarzami')}
+                      {quantityModel && <div className="mt-1 rounded bg-amber-50 px-2 py-0.5 text-[10px] font-black text-amber-700">na sztuki · {r.jednostka || 'szt.'}</div>}
+                    </td>
+                    <td className="px-3 py-2 text-slate-600">{r.kategoria?.nazwa || r.kategoria_nazwa || '-'}</td>
+                    <td className="px-3 py-2">
+                      <div className="font-black text-slate-800">{total}</div>
+                      <div className="text-[10px] font-bold text-slate-500">POZNAŃ</div>
+                      {service > 0 && <div className="mt-1 inline-flex rounded bg-red-100 px-2 py-0.5 text-[10px] font-black text-red-700">W serwisie: {service}</div>}
+                    </td>
+                    <td className="px-3 py-2 font-black text-slate-700">{available}</td>
+                    <td className="px-3 py-2"><span className="rounded bg-emerald-500 px-2 py-1 text-xs font-black text-white">{reserved}</span></td>
+                    <td className="px-3 py-2 text-slate-700"><span className="font-bold">Podstawowa:</span>{money(r.cena_podstawowa || r.wartosc_domyslna_egzemplarza || r.wartosc)}</td>
+                    <td className="max-w-[210px] px-3 py-2 text-slate-500">{r.uwagi || '-'}</td>
+                    <td className="px-3 py-2 text-slate-600">{r.miejsce_w_mag || '-'}</td>
+                    <td className="rounded-r-2xl px-3 py-2">
+                      <div className="flex justify-end gap-2">
+                        <button title="Podgląd" onClick={() => router.push(`/dashboard/warehouse/models/${r.id}`)} className="rounded-lg p-2 text-slate-500 hover:bg-white hover:text-cyan-700"><Eye size={16} /></button>
+                        <button title="Edytuj" onClick={() => router.push(`/dashboard/warehouse/models/${r.id}?edit=1`)} className="rounded-lg p-2 text-slate-500 hover:bg-white hover:text-cyan-700"><Pencil size={16} /></button>
+                        <button title="Usuń" onClick={() => removeModel(r)} className="rounded-lg p-2 text-slate-500 hover:bg-white hover:text-red-600"><Trash2 size={16} /></button>
+                      </div>
                     </td>
                   </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan={9} className="p-12 text-center text-slate-400 font-medium bg-slate-50/50">
-                    Brak wyników do wyświetlenia.
-                  </td>
-                </tr>
-              )}
+                );
+              })}
+              {rows.length === 0 && <tr><td colSpan={12} className="p-10 text-center font-bold text-slate-400">Brak modeli dla wybranych filtrów.</td></tr>}
             </tbody>
           </table>
         </div>
+      </Card>
 
-      </div>
+      {show && <SimpleModal title="Dodaj model" onClose={() => setShow(false)}>
+        <form onSubmit={save} className="space-y-5">
+          <div className="grid gap-5 lg:grid-cols-[260px_1fr]">
+            <div className="space-y-3">
+              <div className="aspect-[4/3] overflow-hidden rounded-2xl border bg-slate-50">
+                {preview || form.zdjecie ? <img src={preview || form.zdjecie} alt="Podgląd" className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center text-slate-300"><ImageIcon size={48} /></div>}
+              </div>
+              <input type="file" accept="image/*" onChange={e => onPhoto(e.target.files?.[0])} className="block w-full text-xs font-bold text-slate-500 file:mr-3 file:rounded-xl file:border-0 file:bg-cyan-600 file:px-3 file:py-2 file:font-black file:text-white" />
+              <p className="text-xs font-bold text-slate-400">Zdjęcie zapisujemy przy modelu i pokazujemy w magazynie, ofertach oraz przy wyborze sprzętu.</p>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <Field label="Nazwa modelu"><input className={inputClass} required value={form.nazwa || ''} onChange={e => setForm({ ...form, nazwa: e.target.value })} /></Field>
+              <Field label="Kategoria"><select className={inputClass} value={form.id_kategorii || ''} onChange={e => setForm({ ...form, id_kategorii: e.target.value })}><option value="">Brak</option>{categories.map((k: any) => <option key={k.id} value={k.id}>{k.nazwa}</option>)}</select></Field>
+              <Field label="Producent"><input className={inputClass} value={form.producent || ''} onChange={e => setForm({ ...form, producent: e.target.value })} /></Field>
+              <Field label="Typ"><select className={inputClass} value={form.typ_sprzetu || 'sprzet'} onChange={e => setForm({ ...form, typ_sprzetu: e.target.value })}><option value="sprzet">Sprzęt</option><option value="opakowanie">Opakowanie</option><option value="zestaw">Zestaw</option></select></Field>
+              <div className="md:col-span-2 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                <label className="flex cursor-pointer items-start gap-3 text-sm font-black text-slate-800">
+                  <input type="checkbox" className="mt-1 h-4 w-4" checked={isQuantityModel(form)} onChange={e => setForm({ ...form, sprzet_ilosciowy: e.target.checked, tryb_ewidencji: e.target.checked ? 'ilosciowe' : 'egzemplarze', ilosc_magazynowa: e.target.checked ? (form.ilosc_magazynowa || 0) : 0, kod_kreskowy: e.target.checked ? form.kod_kreskowy : '' })} />
+                  <span>
+                    Sprzęt ilościowy
+                    <span className="mt-1 block text-xs font-bold text-slate-500">Zaznacz dla rzeczy wydawanych na sztuki bez osobnych numerów/SN, np. balast 25 kg x 90. Odznaczone = fizyczne egzemplarze z własnym numerem i numerem seryjnym.</span>
+                  </span>
+                </label>
+              </div>
+              {isQuantityModel(form) && <>
+                <Field label="Stan ilościowy"><input type="number" step="1" min="0" className={inputClass} value={form.ilosc_magazynowa ?? 0} onChange={e => setForm({ ...form, ilosc_magazynowa: e.target.value })} /></Field>
+                <Field label="Jednostka"><input className={inputClass} value={form.jednostka || 'szt.'} onChange={e => setForm({ ...form, jednostka: e.target.value })} /></Field>
+                <div className="md:col-span-2">
+                  <Field label="Kod kreskowy modelu — wymagany dla sprzętu ilościowego"><input required={isQuantityModel(form)} className={inputClass} value={form.kod_kreskowy || ''} onChange={e => setForm({ ...form, kod_kreskowy: e.target.value })} placeholder="Np. kod z etykiety balastu / kabla / drobnicy" /></Field>
+                  <p className="mt-1 text-xs font-bold text-amber-700">Kod jest widoczny tylko przy sprzęcie ilościowym i służy do szybkiego wydania/przyjęcia na sztuki.</p>
+                </div>
+              </>}
+              <Field label="Cena podstawowa / wartość domyślna"><input type="number" step="0.01" className={inputClass} value={form.wartosc_domyslna_egzemplarza || ''} onChange={e => setForm({ ...form, wartosc_domyslna_egzemplarza: e.target.value, wartosc: e.target.value })} /></Field>
+              <Field label="Miejsce w magazynie"><input className={inputClass} value={form.miejsce_w_mag || ''} onChange={e => setForm({ ...form, miejsce_w_mag: e.target.value })} /></Field>
+              <Field label="Szerokość"><input type="number" step="0.01" className={inputClass} value={form.szerokosc || ''} onChange={e => setForm({ ...form, szerokosc: e.target.value })} /></Field>
+              <Field label="Wysokość"><input type="number" step="0.01" className={inputClass} value={form.wysokosc || ''} onChange={e => setForm({ ...form, wysokosc: e.target.value })} /></Field>
+              <Field label="Głębokość"><input type="number" step="0.01" className={inputClass} value={form.glebokosc || ''} onChange={e => setForm({ ...form, glebokosc: e.target.value })} /></Field>
+              <Field label="Waga"><input type="number" step="0.01" className={inputClass} value={form.waga || ''} onChange={e => setForm({ ...form, waga: e.target.value })} /></Field>
+            </div>
+          </div>
+          <Field label="Opis / uwagi"><textarea className={inputClass} value={form.opis || ''} onChange={e => setForm({ ...form, opis: e.target.value })} /></Field>
+          <div className="rounded-2xl bg-cyan-50 p-3 text-sm font-bold text-cyan-800">Dla sprzętu z egzemplarzami kod kreskowy/QR należy do egzemplarzy. Kod modelu pokazuje się tylko przy sprzęcie ilościowym, bo wtedy skan oznacza pobranie określonej liczby sztuk.</div>
+          <div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setShow(false)}>Anuluj</Button><Button type="submit">Zapisz model</Button></div>
+        </form>
+      </SimpleModal>}
     </div>
   );
 }

@@ -14,9 +14,9 @@ export class CrmService {
         { email: { contains: search, mode: 'insensitive' } },
       ];
     }
-
     return this.prisma.extendedClient.kontrahent.findMany({
       where,
+      include: { _count: { select: { kontakty: { where: { aktywny: true } }, wydarzenia: { where: { aktywny: true } } } } },
       orderBy: { nazwa: 'asc' },
     });
   }
@@ -25,18 +25,10 @@ export class CrmService {
     const client = await this.prisma.extendedClient.kontrahent.findFirst({
       where: { id, id_organizacji, aktywny: true },
       include: {
-        kontakty: {
-          where: { aktywny: true },
-          orderBy: { nazwisko: 'asc' }
-        },
-        wydarzenia: {
-          where: { aktywny: true },
-          orderBy: { data_start: 'desc' },
-          include: { manager: true }
-        }
+        kontakty: { where: { aktywny: true }, orderBy: [{ glowny: 'desc' }, { nazwisko: 'asc' }] },
+        wydarzenia: { where: { aktywny: true }, orderBy: { data_start: 'desc' }, include: { manager: true, typ: true, status: true } }
       }
     });
-
     if (!client) throw new NotFoundException('Nie znaleziono kontrahenta');
     return client;
   }
@@ -48,6 +40,8 @@ export class CrmService {
         nazwa: dto.nazwa,
         nazwa_skrocona: dto.nazwa_skrocona,
         nip: dto.nip,
+        regon: dto.regon,
+        krs: dto.krs,
         kraj: dto.kraj || 'Polska',
         miasto: dto.miasto,
         ulica: dto.ulica,
@@ -57,18 +51,22 @@ export class CrmService {
         nr_konta: dto.nr_konta,
         czy_klient: dto.czy_klient ?? true,
         czy_dostawca: !!dto.czy_dostawca,
-        uwagi: dto.uwagi
+        uwagi: dto.uwagi,
+        zrodlo_danych: dto.zrodlo_danych || 'recznie',
+        data_pobrania_gus: dto.data_pobrania_gus ? new Date(dto.data_pobrania_gus) : null,
       }
     });
   }
 
   async update(id: number, dto: any, id_organizacji: number) {
     return this.prisma.extendedClient.kontrahent.update({
-      where: { id, id_organizacji },
+      where: { id },
       data: {
         nazwa: dto.nazwa,
         nazwa_skrocona: dto.nazwa_skrocona,
         nip: dto.nip,
+        regon: dto.regon,
+        krs: dto.krs,
         kraj: dto.kraj,
         miasto: dto.miasto,
         ulica: dto.ulica,
@@ -78,15 +76,68 @@ export class CrmService {
         nr_konta: dto.nr_konta,
         czy_klient: dto.czy_klient,
         czy_dostawca: dto.czy_dostawca,
-        uwagi: dto.uwagi
+        uwagi: dto.uwagi,
       }
     });
   }
 
   async remove(id: number, id_organizacji: number) {
-    return this.prisma.extendedClient.kontrahent.update({
-      where: { id, id_organizacji },
-      data: { aktywny: false }
+    return this.prisma.extendedClient.kontrahent.update({ where: { id }, data: { aktywny: false, data_usuniecia: new Date() } });
+  }
+
+  // EVENTFLOW_PRODUCT_POLISH_V3: kontakty są osobnym kafelkiem w module kontrahentów.
+  async getContacts(id_organizacji: number, id_kontrahenta?: number) {
+    return this.prisma.extendedClient.kontaktKontrahenta.findMany({
+      where: { id_organizacji, aktywny: true, ...(id_kontrahenta ? { id_kontrahenta } : {}) },
+      include: { kontrahent: { select: { id: true, nazwa: true } } },
+      orderBy: [{ glowny: 'desc' }, { nazwisko: 'asc' }],
     });
+  }
+
+  async getContactById(id: number, id_organizacji: number) {
+    const contact = await this.prisma.extendedClient.kontaktKontrahenta.findFirst({
+      where: { id, id_organizacji, aktywny: true },
+      include: { kontrahent: { select: { id: true, nazwa: true } } },
+    });
+    if (!contact) throw new NotFoundException('Nie znaleziono kontaktu');
+    return contact;
+  }
+
+  async createContact(dto: any, id_organizacji: number) {
+    return this.prisma.extendedClient.kontaktKontrahenta.create({
+      data: {
+        id_organizacji,
+        id_kontrahenta: Number(dto.id_kontrahenta),
+        imie: dto.imie || null,
+        nazwisko: dto.nazwisko || null,
+        stanowisko: dto.stanowisko || null,
+        email: dto.email || null,
+        telefon: dto.telefon || null,
+        telefon_2: dto.telefon_2 || null,
+        notatki_wewnetrzne: dto.notatki_wewnetrzne || null,
+        glowny: !!dto.glowny,
+      },
+    });
+  }
+
+  async updateContact(id: number, dto: any, id_organizacji: number) {
+    return this.prisma.extendedClient.kontaktKontrahenta.update({
+      where: { id },
+      data: {
+        id_kontrahenta: dto.id_kontrahenta ? Number(dto.id_kontrahenta) : undefined,
+        imie: dto.imie || null,
+        nazwisko: dto.nazwisko || null,
+        stanowisko: dto.stanowisko || null,
+        email: dto.email || null,
+        telefon: dto.telefon || null,
+        telefon_2: dto.telefon_2 || null,
+        notatki_wewnetrzne: dto.notatki_wewnetrzne || null,
+        glowny: !!dto.glowny,
+      },
+    });
+  }
+
+  async removeContact(id: number, id_organizacji: number) {
+    return this.prisma.extendedClient.kontaktKontrahenta.update({ where: { id }, data: { aktywny: false, data_usuniecia: new Date() } });
   }
 }

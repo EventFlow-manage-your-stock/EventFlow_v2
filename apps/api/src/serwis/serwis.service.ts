@@ -54,10 +54,12 @@ export class SerwisService {
     if (statusy.length === 0) {
       await this.prisma.extendedClient.statusSerwisu.createMany({
         data: [
-          { id_organizacji, nazwa: 'Nowe zgłoszenie', kolor: '#64748b', kolejnosc: 1 },
-          { id_organizacji, nazwa: 'Pilne', kolor: '#ef4444', kolejnosc: 2 },
-          { id_organizacji, nazwa: 'W trakcie diagnozy', kolor: '#f59e0b', kolejnosc: 3 },
-          { id_organizacji, nazwa: 'Oczekuje na części', kolor: '#f97316', kolejnosc: 4 },
+          // EVENTFLOW_PRODUCT_POLISH_V4: statusy zgodne ze wzorem ze zrzutu.
+          { id_organizacji, nazwa: 'Działa', kolor: '#22c55e', kolejnosc: 1 },
+          { id_organizacji, nazwa: 'Wymaga serwisu (działa)', kolor: '#facc15', kolejnosc: 2 },
+          { id_organizacji, nazwa: 'Wymaga serwisu (nie działa)', kolor: '#ef4444', kolejnosc: 3 },
+          { id_organizacji, nazwa: 'W serwisie', kolor: '#2563eb', kolejnosc: 4 },
+          { id_organizacji, nazwa: 'Naprawiony', kolor: '#16a34a', kolejnosc: 5 },
         ]
       });
 
@@ -124,7 +126,7 @@ export class SerwisService {
       // --- ZMIANA: Aktualizacja samego Egzemplarza (Sprzętu) z poziomu serwisu ---
       if (dto.status_serwisowy_sprzetu) {
         await tx.egzemplarz.update({
-          where: { id: existing.id_egzemplarza, id_organizacji },
+          where: { id: existing.id_egzemplarza },
           data: { status_serwisowy: cleanString(dto.status_serwisowy_sprzetu) }
         });
       }
@@ -141,6 +143,77 @@ export class SerwisService {
       });
 
       return updated;
+    });
+  }
+
+  // EVENTFLOW_PRODUCT_POLISH_V3: tworzenie zgłoszenia serwisowego bezpośrednio z panelu Serwis.
+  async createZgloszenie(dto: any, id_organizacji: number, id_uzytkownika: number) {
+    const status = dto.id_statusu_serwisu
+      ? Number(dto.id_statusu_serwisu)
+      : (await this.getStatusy(id_organizacji))[0]?.id;
+
+    if (!status) throw new NotFoundException('Brak statusu serwisowego');
+
+    return this.prisma.extendedClient.$transaction(async (tx) => {
+      const created = await tx.serwisSprzetu.create({
+        data: {
+          id_organizacji,
+          id_egzemplarza: Number(dto.id_egzemplarza),
+          id_statusu_serwisu: status,
+          id_uzytkownika_zglosil: id_uzytkownika,
+          tytul: dto.tytul,
+          opis: dto.opis || null,
+        }
+      });
+
+      // EVENTFLOW_PRODUCT_POLISH_V4: kliknięcie Nowe zgłoszenie zmienia też status sprzętu, jeśli użytkownik go wskaże.
+      if (dto.status_serwisowy_sprzetu) {
+        await tx.egzemplarz.update({
+          where: { id: Number(dto.id_egzemplarza) },
+          data: { status_serwisowy: String(dto.status_serwisowy_sprzetu) },
+        });
+      }
+
+      return created;
+    });
+  }
+
+  async getStatusById(id: number, id_organizacji: number) {
+    const status = await this.prisma.extendedClient.statusSerwisu.findFirst({ where: { id, id_organizacji, aktywny: true } });
+    if (!status) throw new NotFoundException('Nie znaleziono statusu serwisowego');
+    return status;
+  }
+
+  async createStatus(dto: any, id_organizacji: number) {
+    return this.prisma.extendedClient.statusSerwisu.create({
+      data: {
+        id_organizacji,
+        nazwa: dto.nazwa,
+        kolor: dto.kolor || '#64748b',
+        kolejnosc: Number(dto.kolejnosc || 0),
+      }
+    });
+  }
+
+  async updateStatus(id: number, dto: any, id_organizacji: number) {
+    return this.prisma.extendedClient.statusSerwisu.update({
+      where: { id },
+      data: {
+        nazwa: dto.nazwa,
+        kolor: dto.kolor,
+        kolejnosc: Number(dto.kolejnosc || 0),
+        aktywny: dto.aktywny ?? true,
+      }
+    });
+  }
+
+
+
+  // EVENTFLOW_PRODUCT_POLISH_V6: usuwanie statusu oznacza go jako nieaktywny, żeby nie zrywać historii zgłoszeń.
+  async deleteStatus(id: number, id_organizacji: number) {
+    return this.prisma.extendedClient.statusSerwisu.update({
+      where: { id },
+      data: { aktywny: false, data_usuniecia: new Date() }
     });
   }
 }
