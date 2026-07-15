@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { CalendarPlus, ChevronLeft, ChevronRight, Loader2, Search } from 'lucide-react';
+import { CalendarPlus, ChevronLeft, ChevronRight, Loader2, Search, Info } from 'lucide-react';
 import Link from 'next/link';
 import { api } from '../../../lib/api';
 import { Button, Card, PageTitle } from '../../../components/ProductUI';
@@ -43,9 +43,6 @@ const typeFallbackColor: Record<string, string> = {
   flota: '#2563EB',
 };
 
-// EVENTFLOW_PRODUCT_POLISH_V18:
-// Paski zaczynają się niżej, żeby nie nachodziły na mocno podświetlony dzisiejszy dzień.
-// Liczba rzędów w tygodniu nie jest limitowana — kafel tygodnia rośnie tak długo, aż pokaże wszystkie wpisy.
 const CALENDAR_BAR_TOP = 92;
 const CALENDAR_BAR_ROW_HEIGHT = 22;
 const CALENDAR_BAR_ROW_GAP = 4;
@@ -106,9 +103,6 @@ function dayDiff(a: Date, b: Date) {
 }
 
 export default function CalendarPage() {
-  // EVENTFLOW_PRODUCT_POLISH_V9:
-  // Kalendarz renderuje wydarzenia wielodniowe jako jeden pasek przechodzący przez dni tygodnia.
-  // Dla wydarzeń źródłem koloru jest typ wydarzenia skonfigurowany w Ustawieniach.
   const [view, setView] = useState<View>('miesiąc');
   const [cursor, setCursor] = useState(new Date());
   const [items, setItems] = useState<CalendarItem[]>([]);
@@ -178,7 +172,8 @@ export default function CalendarPage() {
 
   function move(mult: number) {
     const d = new Date(cursor);
-    if (view === 'miesiąc') d.setMonth(d.getMonth() + mult);
+    // Usprawnienie zmiany dat: uwzględnia również poprawny skok dla "lista"
+    if (view === 'miesiąc' || view === 'lista') d.setMonth(d.getMonth() + mult);
     else d.setDate(d.getDate() + (view === 'tydzień' ? 7 * mult : mult));
     setCursor(d);
   }
@@ -195,18 +190,18 @@ export default function CalendarPage() {
         eyebrow="Kalendarz"
         title="Kalendarz operacyjny"
         description="Wydarzenia wielodniowe łączą się w paski tygodniowe. Kolor wydarzenia pochodzi z typu wydarzenia. Status jest tylko ikoną przed nazwą."
-        action={<Button onClick={() => setShowAdd(true)}><CalendarPlus size={16} className="inline" /> Dodaj</Button>}
+        action={<Button onClick={() => setShowAdd(true)}><CalendarPlus size={16} className="inline mr-1" /> Dodaj</Button>}
       />
 
-      <Card className="!p-4">
+      <Card className="!p-4 border-slate-200 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <button onClick={() => move(-1)} className="rounded-xl border p-2 hover:bg-slate-50"><ChevronLeft /></button>
-            <p className="min-w-[240px] text-center text-2xl font-black uppercase tracking-tight text-slate-900">{title}</p>
-            <button onClick={() => move(1)} className="rounded-xl border p-2 hover:bg-slate-50"><ChevronRight /></button>
+            <button onClick={() => move(-1)} className="rounded-xl border p-2 hover:bg-slate-50 transition-colors"><ChevronLeft size={18} /></button>
+            <p className="min-w-[240px] text-center text-2xl font-medium uppercase tracking-tight text-slate-800">{title}</p>
+            <button onClick={() => move(1)} className="rounded-xl border p-2 hover:bg-slate-50 transition-colors"><ChevronRight size={18} /></button>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {views.map((v) => <button key={v} onClick={() => setView(v)} className={`rounded-xl px-4 py-2 text-sm font-black capitalize ${view === v ? 'bg-cyan-600 text-white shadow' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>{v}</button>)}
+            {views.map((v) => <button key={v} onClick={() => setView(v)} className={`rounded-xl px-4 py-2 text-sm font-semibold capitalize transition-all ${view === v ? 'bg-cyan-600 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>{v}</button>)}
             <Button variant="secondary" onClick={() => setCursor(new Date())}>Dzisiaj</Button>
           </div>
         </div>
@@ -215,28 +210,29 @@ export default function CalendarPage() {
             <button
               key={type}
               onClick={() => toggleType(type)}
-              className={`rounded-xl px-4 py-2 text-sm font-black transition ${activeTypes.includes(type) ? 'text-white shadow' : 'bg-slate-100 text-slate-500'}`}
+              className={`rounded-xl px-4 py-2 text-sm font-medium transition-all shadow-sm ${activeTypes.includes(type) ? 'text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
               style={activeTypes.includes(type) ? { backgroundColor: typeFallbackColor[type] } : undefined}
             >
               {label}
             </button>
           ))}
-          <button onClick={() => setActiveTypes(Object.keys(typeLabels))} className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-black text-white">Wszystkie</button>
-          <div className="ml-auto flex min-w-[260px] items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
+          <button onClick={() => setActiveTypes(Object.keys(typeLabels))} className="rounded-xl bg-slate-800 hover:bg-slate-900 transition-colors px-4 py-2 text-sm font-medium text-white shadow-sm">Wszystkie</button>
+          <div className="ml-auto flex min-w-[260px] items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm focus-within:border-cyan-500 focus-within:ring-1 focus-within:ring-cyan-500 transition-all">
             <Search size={16} className="text-slate-400" />
-            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Szukaj..." className="w-full bg-transparent text-sm font-bold outline-none" />
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Szukaj..." className="w-full bg-transparent text-sm font-medium outline-none text-slate-700" />
           </div>
         </div>
       </Card>
 
-      {error && <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-700">{error}</div>}
+      {error && <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-700">{error}</div>}
+      
       {loading ? (
-        <div className="flex h-80 items-center justify-center"><Loader2 className="animate-spin text-cyan-600" /></div>
+        <div className="flex h-80 items-center justify-center"><Loader2 className="animate-spin text-cyan-600 w-8 h-8" /></div>
       ) : view === 'lista' ? (
         <List items={filteredItems} />
       ) : (
-        <div>
-          {view !== 'dzień' && <div className="mb-2 grid grid-cols-7 gap-2 px-2 text-center text-xs font-black uppercase text-slate-500">{['PON','WT','ŚR','CZW','PT','SOB','NDZ'].map((d) => <span key={d}>{d}</span>)}</div>}
+        <div className="animate-fade-in-up">
+          {view !== 'dzień' && <div className="mb-2 grid grid-cols-7 gap-2 px-2 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">{['PON','WT','ŚR','CZW','PT','SOB','NDZ'].map((d) => <span key={d}>{d}</span>)}</div>}
           <div className="space-y-2">
             {weeks.map((week) => (
               <WeekStrip
@@ -244,28 +240,63 @@ export default function CalendarPage() {
                 week={week}
                 cursor={cursor}
                 view={view}
-                items={filteredItems.filter((i) => itemActiveOnRange(i, startOfDay(week[0]), endOfDay(week[week.length - 1])))}
+                items={filteredItems.filter((i) => itemActiveOnRange(i, startOfDay(week[0] as Date), endOfDay(week[week.length - 1] as Date)))}
               />
             ))}
           </div>
         </div>
       )}
+
+      {/* LEGENDA POD KALENDARZEM */}
+      <div className="grid gap-6 md:grid-cols-2 mt-6 animate-fade-in-up delay-75">
+        <Card className="shadow-sm border-slate-200 bg-white">
+          <h3 className="mb-4 text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-2">
+            <Info size={15} /> Typy wydarzeń (Kolory Pasków)
+          </h3>
+          <div className="flex flex-wrap gap-2.5">
+            {dict.typy?.length > 0 ? dict.typy.map((t: any) => (
+              <div key={t.id} className="flex items-center gap-2 rounded-full border border-slate-100 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-600 shadow-sm transition-colors hover:bg-white">
+                <span className="h-3 w-3 rounded-full shadow-sm border border-black/5" style={{ backgroundColor: t.kolor || typeFallbackColor[t.nazwa] || '#0891B2' }} />
+                {t.nazwa}
+              </div>
+            )) : <p className="text-xs text-slate-400 font-medium">Brak zdefiniowanych typów w ustawieniach.</p>}
+          </div>
+        </Card>
+
+        <Card className="shadow-sm border-slate-200 bg-white">
+          <h3 className="mb-4 text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-2">
+            <Info size={15} /> Statusy operacyjne (Ikony na paskach)
+          </h3>
+          <div className="flex flex-wrap gap-2.5">
+            {dict.statusy?.length > 0 ? dict.statusy.map((s: any) => (
+              <div key={s.id} className="flex items-center gap-2 rounded-full border border-slate-100 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-600 shadow-sm transition-colors hover:bg-white">
+                <span className="flex h-5 w-5 items-center justify-center rounded bg-white shadow-sm text-sm" style={{ color: s.kolor || '#64748B' }}>
+                  {s.ikona || '•'}
+                </span>
+                {s.nazwa}
+              </div>
+            )) : <p className="text-xs text-slate-400 font-medium">Brak zdefiniowanych statusów w ustawieniach.</p>}
+          </div>
+        </Card>
+      </div>
+
       {showAdd && <QuickAddCalendarModal dict={dict} onClose={() => setShowAdd(false)} onSaved={() => { setShowAdd(false); load(); }} />}
     </div>
   );
 }
 
 function WeekStrip({ week, cursor, view, items }: { week: Date[]; cursor: Date; view: View; items: CalendarItem[] }) {
+  if (!week || week.length === 0) return null; // Zabezpieczenie typu przed błędem TS(2345)
   const isDay = view === 'dzień';
-  const weekStart = startOfDay(week[0]);
-  const weekEnd = endOfDay(week[week.length - 1]);
+  const weekStart = startOfDay(week[0] as Date); 
+  const weekEnd = endOfDay(week[week.length - 1] as Date);
   const bars = buildBars(items, weekStart, weekEnd, isDay ? 1 : 7);
   const maxRow = Math.max(2, ...bars.map((b) => b.row + 1));
   const weekMinHeight = Math.max(CALENDAR_WEEK_MIN_HEIGHT, CALENDAR_BAR_TOP + maxRow * (CALENDAR_BAR_ROW_HEIGHT + CALENDAR_BAR_ROW_GAP) + 16);
 
   return (
     <div
-      className={`relative grid ${isDay ? 'grid-cols-1' : 'grid-cols-7'} gap-x-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm`}
+      className={`relative grid ${isDay ? 'grid-cols-1' : 'grid-cols-7'} gap-x-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition-all hover:border-slate-300`}
       style={{ minHeight: `${weekMinHeight}px` }}
     >
       {week.map((day) => {
@@ -274,12 +305,12 @@ function WeekStrip({ week, cursor, view, items }: { week: Date[]; cursor: Date; 
         return (
           <div
             key={day.toISOString()}
-            className={`relative min-h-[172px] border-r border-slate-100 p-2 ${today ? 'bg-blue-50 ring-2 ring-inset ring-blue-500' : outsideMonth ? 'bg-slate-50/80' : 'bg-white'}`}
+            className={`relative min-h-[172px] border-r border-slate-100 p-2 transition-colors ${today ? 'bg-cyan-50/40 ring-1 ring-inset ring-cyan-200' : outsideMonth ? 'bg-slate-50/80' : 'bg-white'}`}
             style={{ minHeight: `${weekMinHeight}px`, paddingTop: `${CALENDAR_BAR_TOP + maxRow * (CALENDAR_BAR_ROW_HEIGHT + CALENDAR_BAR_ROW_GAP)}px` }}
           >
-            <div className="absolute left-2 top-2">
-              <p className={`text-[11px] font-black uppercase ${today ? 'text-blue-700' : 'text-slate-400'}`}>{day.toLocaleDateString('pl-PL', { weekday: 'short' })}</p>
-              <p className={`leading-none ${today ? 'mt-1 inline-block rounded-xl bg-blue-600 px-2 py-1 text-3xl font-black text-white shadow-lg' : 'text-4xl font-black text-slate-300'}`}>{day.getDate()}</p>
+            <div className="absolute left-3 top-3">
+              <p className={`text-[11px] font-semibold uppercase tracking-wide ${today ? 'text-cyan-700' : 'text-slate-400'}`}>{day.toLocaleDateString('pl-PL', { weekday: 'short' })}</p>
+              <p className={`leading-none mt-1 transition-all ${today ? 'inline-flex items-center justify-center min-w-[32px] h-8 rounded-xl bg-cyan-600 text-xl font-medium text-white shadow-md px-2' : 'text-3xl font-medium text-slate-400'}`}>{day.getDate()}</p>
             </div>
           </div>
         );
@@ -348,27 +379,27 @@ function buildBars(items: CalendarItem[], weekStart: Date, weekEnd: Date, column
 }
 
 function CalendarBar({ bar }: { bar: any }) {
-  const radius = bar.isWeekStart && bar.isWeekEnd ? 'rounded-md' : bar.isWeekStart ? 'rounded-l-md rounded-r-none' : bar.isWeekEnd ? 'rounded-r-md rounded-l-none' : 'rounded-none';
+  const radius = bar.isWeekStart && bar.isWeekEnd ? 'rounded-md' : bar.isWeekStart ? 'rounded-l-md rounded-r-none' : bar.isWeekEnd ? 'rounded-r-md rounded-l-none' : 'rounded-sm';
   return (
     <Link
       href={itemUrl(bar.item)}
       title={`${bar.item.status || ''} | ${bar.item.tytul || ''}`}
-      className={`pointer-events-auto block truncate px-2 py-[2px] text-[13px] font-black leading-[20px] text-white shadow-sm transition hover:brightness-95 ${radius}`}
+      className={`pointer-events-auto block truncate px-2.5 py-[2px] text-[13px] font-medium leading-[20px] text-white shadow-sm transition-all hover:brightness-110 hover:shadow-md ${radius}`}
       style={{
         gridColumn: `${bar.startCol + 1} / ${bar.endCol + 2}`,
         gridRow: `${bar.row + 1}`,
         backgroundColor: bar.color,
-        textShadow: '0 1px 1px rgba(15,23,42,.55)',
+        textShadow: '0 1px 2px rgba(15,23,42,.35)',
       }}
     >
-      <span className="mr-1 align-middle text-[12px]">{bar.item.ikona || '●'}</span>
-      {bar.item.ikonaMagazynowa && <span className="mr-1 align-middle text-[12px]">{bar.item.ikonaMagazynowa}</span>}
-      {bar.item.ikonaKsiegowa && <span className="mr-1 align-middle text-[12px]">{bar.item.ikonaKsiegowa}</span>}
-      {bar.item.tytul}
+      <span className="mr-1.5 align-middle text-[12px] opacity-90 drop-shadow-sm">{bar.item.ikona || '•'}</span>
+      {bar.item.ikonaMagazynowa && <span className="mr-1.5 align-middle text-[12px] opacity-90 drop-shadow-sm">{bar.item.ikonaMagazynowa}</span>}
+      {bar.item.ikonaKsiegowa && <span className="mr-1.5 align-middle text-[12px] opacity-90 drop-shadow-sm">{bar.item.ikonaKsiegowa}</span>}
+      <span className="drop-shadow-sm">{bar.item.tytul}</span>
     </Link>
   );
 }
 
 function List({ items }: { items: CalendarItem[] }) {
-  return <Card><div className="space-y-3">{items.map((i) => <Link href={itemUrl(i)} key={`${i.typ}-${i.id}`} className="flex items-center justify-between rounded-2xl border border-slate-100 p-4 transition hover:border-cyan-200 hover:bg-cyan-50"><div><p className="font-black"><span className="mr-2">{i.ikona || '●'}</span>{i.tytul}</p><p className="text-sm text-slate-500">{typeLabels[i.typ] || i.typ} · {i.status}{i.statusMagazynowy ? ` · ${i.ikonaMagazynowa || '📦'} ${i.statusMagazynowy}` : ''}{i.statusKsiegowy ? ` · ${i.ikonaKsiegowa || '💰'} ${i.statusKsiegowy}` : ''}</p></div><p className="text-sm font-bold text-slate-500">{i.start ? new Date(i.start).toLocaleString('pl-PL') : '-'}</p></Link>)}{items.length === 0 && <p className="p-8 text-center font-bold text-slate-400">Brak wpisów w wybranym zakresie.</p>}</div></Card>;
+  return <Card className="border-slate-200 shadow-sm"><div className="space-y-3">{items.map((i) => <Link href={itemUrl(i)} key={`${i.typ}-${i.id}`} className="flex items-center justify-between rounded-2xl border border-slate-100 p-4 transition-all hover:border-cyan-200 hover:bg-cyan-50/50 hover:shadow-sm"><div><p className="font-semibold text-slate-800"><span className="mr-2 opacity-80">{i.ikona || '•'}</span>{i.tytul}</p><p className="mt-1 text-sm font-medium text-slate-500">{typeLabels[i.typ] || i.typ} • {i.status}{i.statusMagazynowy ? ` • ${i.ikonaMagazynowa || '📦'} ${i.statusMagazynowy}` : ''}{i.statusKsiegowy ? ` • ${i.ikonaKsiegowa || '💰'} ${i.statusKsiegowy}` : ''}</p></div><p className="text-sm font-medium text-slate-500">{i.start ? new Date(i.start).toLocaleString('pl-PL') : '-'}</p></Link>)}{items.length === 0 && <p className="p-8 text-center font-medium text-slate-400">Brak wpisów w wybranym zakresie.</p>}</div></Card>;
 }
