@@ -23,6 +23,7 @@ import { FlotaModule } from './flota/flota.module';
 import { OfertyModule } from './oferty/oferty.module';
 import { GusModule } from './gus/gus.module';
 import { UstawieniaModule } from './ustawienia/ustawienia.module';
+import { ZapytaniaModule } from './zapytania/zapytania.module';
 
 @Module({
   imports: [
@@ -43,6 +44,7 @@ import { UstawieniaModule } from './ustawienia/ustawienia.module';
     OfertyModule,
     GusModule,
     UstawieniaModule,
+    ZapytaniaModule,
   ],
   controllers: [AppController],
   providers: [AppService],

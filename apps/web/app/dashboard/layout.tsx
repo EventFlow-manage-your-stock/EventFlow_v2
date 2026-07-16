@@ -38,6 +38,7 @@ const menuConfig = [
     { label: 'Pojazdy', href: '/dashboard/fleet', icon: Car },
   ]},
   { icon: FileText, label: 'Oferty', href: '/dashboard/offers' },
+  { icon: FileText, label: 'Zapytania Ofertowe', href: '/dashboard/zapytania'},
   { icon: Settings, label: 'Ustawienia', children: [
     { label: 'Personalizacja systemu', href: '/dashboard/settings', icon: Settings },
     { label: 'Typy wydarzeń', href: '/dashboard/settings/event-types', icon: Palette },
