@@ -199,7 +199,14 @@ export default function ModelDetailsPage() {
                 <Field label="Nazwa modelu"><input disabled={!edit} className={inputClass} value={form.nazwa || ''} onChange={e => setForm({ ...form, nazwa: e.target.value })} /></Field>
                 <Field label="Kategoria"><select disabled={!edit} className={inputClass} value={form.id_kategorii || ''} onChange={e => setForm({ ...form, id_kategorii: e.target.value })}><option value="">Brak</option>{categories.map((k: any) => <option key={k.id} value={k.id}>{k.nazwa}</option>)}</select></Field>
                 <Field label="Producent"><input disabled={!edit} className={inputClass} value={form.producent || ''} onChange={e => setForm({ ...form, producent: e.target.value })} /></Field>
-                <Field label="Typ"><select disabled={!edit} className={inputClass} value={form.typ_sprzetu || 'sprzet'} onChange={e => setForm({ ...form, typ_sprzetu: e.target.value })}><option value="sprzet">Sprzęt</option><option value="opakowanie">Opakowanie</option><option value="zestaw">Zestaw</option></select></Field>
+                <Field label="Typ">
+                  <select disabled={!edit} className={inputClass} value={form.typ_sprzetu || 'sprzet'} onChange={e => setForm({ ...form, typ_sprzetu: e.target.value })}>
+                    <option value="sprzet">Sprzęt</option>
+                    <option value="opakowanie">Opakowanie (Case - rozpakowuje się na WZ)</option>
+                    <option value="rack">Rack (Nie rozpakowuje się na WZ)</option>
+                    <option value="zestaw">Zestaw</option>
+                  </select>
+                </Field>
                 <div className="md:col-span-2 rounded-2xl border border-amber-200 bg-amber-50 p-4">
                   <label className="flex cursor-pointer items-start gap-3 text-sm font-black text-slate-800">
                     <input type="checkbox" className="mt-1 h-4 w-4" checked={quantityModel} onChange={e => { setEdit(true); setForm(applyQuantityMode(form, e.target.checked)); }} />

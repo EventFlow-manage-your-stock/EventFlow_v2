@@ -27,14 +27,11 @@ export class MagazynService {
     return val === true || val === 'true' || val === 1 || val === '1';
   }
 
-  // EVENTFLOW_PRODUCT_POLISH_V35: model może być ewidencjonowany jako konkretne egzemplarze albo jako sprzęt ilościowy na sztuki.
   private isSprzetIlosciowy(dto: any): boolean {
     const value = dto?.sprzet_ilosciowy ?? dto?.czy_ilosciowy ?? dto?.tryb_ewidencji;
     return value === true || value === 'true' || value === 1 || value === '1' || value === 'ilosciowe' || value === 'ilościowe';
   }
 
-  // EVENTFLOW_PRODUCT_POLISH_V40: kod kreskowy modelu jest obowiązkowy wyłącznie dla sprzętu ilościowego.
-  // Sprzęt egzemplarzowy dalej używa kodów na konkretnych egzemplarzach.
   private normalizeKodKreskowyModelu(dto: any, ilosciowy: boolean): string | null {
     if (!ilosciowy) return null;
     const code = this.cleanString(dto?.kod_kreskowy || dto?.kod_modelu || dto?.sku);
@@ -44,10 +41,6 @@ export class MagazynService {
     return code;
   }
 
-
-  // EVENTFLOW_PRODUCT_POLISH_V45:
-  // Case/opakowanie jest skrótem skanowania, ale NIE jest pozycją dokumentu WZ/PZ.
-  // Żeby policzyć wagę case bez pokazywania go w tabeli sprzętu, zapisujemy niewidoczny marker w uwagach pozycji ze środka case.
   private caseScanMeta(caseRow: any) {
     if (!caseRow) return null;
     return {
@@ -107,15 +100,14 @@ export class MagazynService {
     const page = filters.page ? parseInt(filters.page) : 1;
     const limit = filters.limit ? parseInt(filters.limit) : 1000;
     const skip = (page - 1) * limit;
-
     const where: any = { id_organizacji, aktywny: true };
+
     if (filters.kategoriaId) where.id_kategorii = Number(filters.kategoriaId);
     if (filters.search) {
       where.OR = [
         { nazwa: { contains: filters.search, mode: 'insensitive' } },
         { producent: { contains: filters.search, mode: 'insensitive' } },
         { kod_kreskowy: { contains: filters.search, mode: 'insensitive' } },
-        // EVENTFLOW_PRODUCT_POLISH_V40: po kodzie szukamy tylko modeli ilościowych, bo zwykły sprzęt ma kody na egzemplarzach.
       ];
     }
     if (filters.widocznyWMag) {
@@ -160,7 +152,6 @@ export class MagazynService {
         jednostka: model.jednostka,
         kategoria_nazwa: model.kategoria?.nazwa || '-',
         kategoria: model.kategoria,
-        // EVENTFLOW_PRODUCT_POLISH_V37: dla sprzętu ilościowego kod należy do modelu; dla zwykłego sprzętu zostaje pusty w UI modeli.
         kod_kreskowy: (model.tryb_ewidencji === 'ilosciowe' || model.typ_sprzetu === 'ilosciowe') ? model.kod_kreskowy : null,
         ulubiony: model.ulubiony,
         udostepniony_crn: model.udostepniony_crn,
@@ -193,7 +184,6 @@ export class MagazynService {
         ilosc_magazynowa: ilosciowy ? (this.cleanNumber(dto.ilosc_magazynowa) ?? 0) : 0,
         jednostka: this.cleanString(dto.jednostka) || 'szt.',
         id_kategorii: this.cleanNumber(dto.id_kategorii),
-        // EVENTFLOW_PRODUCT_POLISH_V35: kod kreskowy modelu zapisujemy tylko dla sprzętu ilościowego. Egzemplarze mają własne kody/SN.
         kod_kreskowy: this.normalizeKodKreskowyModelu(dto, ilosciowy),
         notatki_wewnetrzne: this.cleanString(dto.notatki_wewnetrzne),
         szerokosc: this.cleanNumber(dto.szerokosc),
@@ -253,7 +243,6 @@ export class MagazynService {
         wartosc_domyslna_egzemplarza: this.cleanNumber(dto.wartosc_domyslna_egzemplarza) ?? this.cleanNumber(dto.wartosc),
         miejsce_w_mag: this.cleanString(dto.miejsce_w_mag),
         zdjecie: this.cleanString(dto.zdjecie),
-        // EVENTFLOW_PRODUCT_POLISH_V35: kod modelu służy tylko do skanowania sprzętu ilościowego.
         kod_kreskowy: this.normalizeKodKreskowyModelu(dto, ilosciowy),
         notatki_wewnetrzne: this.cleanString(dto.notatki_wewnetrzne)
       }
@@ -267,7 +256,6 @@ export class MagazynService {
         where: { id },
         data: { aktywny: false, data_usuniecia: new Date() }
       });
-
       await tx.logZmian.create({
         data: {
           id_organizacji,
@@ -277,7 +265,6 @@ export class MagazynService {
           akcja: 'USUNIECIE',
         },
       });
-
       return model;
     });
   }
@@ -291,7 +278,6 @@ export class MagazynService {
 
   async createEgzemplarz(id_modelu: number, dto: any, id_organizacji: number, id_uzytkownika: number | null) {
     const safeUserId = isNaN(Number(id_uzytkownika)) ? null : Number(id_uzytkownika);
-
     return this.prisma.extendedClient.$transaction(async (tx) => {
       const egzemplarz = await tx.egzemplarz.create({
         data: {
@@ -305,7 +291,6 @@ export class MagazynService {
           id_magazynu: this.cleanNumber(dto.id_magazynu),
           miejsce_w_mag: this.cleanString(dto.miejsce_w_mag),
           opis: this.cleanString(dto.opis),
-          // EVENTFLOW_PRODUCT_POLISH_V4: pole ukryte w UI, zostawione w bazie dla kompatybilności.
           pakowany_pojedynczo: false,
           cena_zakupu: this.cleanNumber(dto.cena_zakupu),
           id_case: this.cleanNumber(dto.id_case),
@@ -314,7 +299,6 @@ export class MagazynService {
           zewnetrzny_kod_kreskowy: this.cleanString(dto.zewnetrzny_kod_kreskowy || dto.kod_kreskowy),
           zewnetrzny_qr_kod: this.cleanString(dto.zewnetrzny_qr_kod || dto.qr_kod || dto.zewnetrzny_kod_kreskowy || dto.kod_kreskowy),
           rozroznij_kod_qr: this.cleanBoolean(dto.rozroznij_kod_qr),
-
           szerokosc: this.cleanNumber(dto.szerokosc),
           wysokosc: this.cleanNumber(dto.wysokosc),
           glebokosc: this.cleanNumber(dto.glebokosc),
@@ -356,7 +340,6 @@ export class MagazynService {
 
   async updateEgzemplarz(id: number, dto: any, id_organizacji: number, id_uzytkownika: number | null) {
     const safeUserId = isNaN(Number(id_uzytkownika)) ? null : Number(id_uzytkownika);
-
     return this.prisma.extendedClient.$transaction(async (tx) => {
       const egzemplarz = await tx.egzemplarz.update({
         where: { id },
@@ -369,17 +352,14 @@ export class MagazynService {
           id_magazynu: this.cleanNumber(dto.id_magazynu),
           miejsce_w_mag: this.cleanString(dto.miejsce_w_mag),
           opis: this.cleanString(dto.opis),
-          // EVENTFLOW_PRODUCT_POLISH_V4: pole ukryte w UI, zostawione w bazie dla kompatybilności.
           pakowany_pojedynczo: false,
           cena_zakupu: this.cleanNumber(dto.cena_zakupu),
           id_case: this.cleanNumber(dto.id_case),
           status_serwisowy: this.cleanString(dto.status_serwisowy) || "Działa",
-          // EVENTFLOW_PRODUCT_POLISH_V5: kod kreskowy aktualizujemy tylko na egzemplarzu, nie na modelu.
           kod_kreskowy: this.cleanString(dto.kod_kreskowy || dto.zewnetrzny_kod_kreskowy),
           zewnetrzny_kod_kreskowy: this.cleanString(dto.zewnetrzny_kod_kreskowy || dto.kod_kreskowy),
           zewnetrzny_qr_kod: this.cleanString(dto.zewnetrzny_qr_kod || dto.qr_kod || dto.zewnetrzny_kod_kreskowy || dto.kod_kreskowy),
           rozroznij_kod_qr: this.cleanBoolean(dto.rozroznij_kod_qr),
-
           szerokosc: this.cleanNumber(dto.szerokosc),
           wysokosc: this.cleanNumber(dto.wysokosc),
           glebokosc: this.cleanNumber(dto.glebokosc),
@@ -421,13 +401,11 @@ export class MagazynService {
 
   async deleteEgzemplarz(id: number, id_organizacji: number, id_uzytkownika: number | null) {
     const safeUserId = isNaN(Number(id_uzytkownika)) ? null : Number(id_uzytkownika);
-
     return this.prisma.extendedClient.$transaction(async (tx) => {
       const egzemplarz = await tx.egzemplarz.update({
         where: { id },
         data: { aktywny: false }
       });
-
       await tx.logZmian.create({
         data: {
           id_organizacji,
@@ -437,7 +415,6 @@ export class MagazynService {
           akcja: 'USUNIECIE'
         },
       });
-
       return egzemplarz;
     });
   }
@@ -445,10 +422,10 @@ export class MagazynService {
   async getFizyczneCase(id_organizacji: number) {
     return this.prisma.extendedClient.egzemplarz.findMany({
       where: { 
-        id_organizacji, 
-        aktywny: true,
-        model: { typ_sprzetu: 'opakowanie' } 
-      },
+         id_organizacji, 
+         aktywny: true,
+         model: { typ_sprzetu: { in: ['opakowanie', 'rack'] } } 
+       },
       include: {
         model: { select: { nazwa: true } },
         _count: { select: { zawartosc_case: { where: { aktywny: true } } } }
@@ -481,7 +458,7 @@ export class MagazynService {
         id_case: null,
         id: { not: id_case },
         model: { typ_sprzetu: 'sprzet' } 
-      },
+       },
       include: { model: true },
       orderBy: { nazwa: 'asc' }
     });
@@ -489,12 +466,10 @@ export class MagazynService {
 
   async modyfikujZawartoscCase(id_case: number, itemIds: number[], akcja: 'add' | 'remove', id_organizacji: number, id_uzytkownika: number | null) {
     const safeUserId = isNaN(Number(id_uzytkownika)) ? null : Number(id_uzytkownika);
-
     return this.prisma.extendedClient.$transaction(async (tx) => {
       const skrzynia = await tx.egzemplarz.findFirst({
         where: { id: id_case, id_organizacji, aktywny: true }
       });
-
       if (!skrzynia) throw new NotFoundException('Nie znaleziono skrzyni');
 
       await tx.egzemplarz.updateMany({
@@ -514,7 +489,6 @@ export class MagazynService {
           },
         });
       }
-
       return { success: true, updatedCount: itemIds.length };
     });
   }
@@ -524,7 +498,7 @@ export class MagazynService {
       where: {
         id_organizacji,
         aktywny: true,
-        model: { typ_sprzetu: 'opakowanie' }
+        model: { typ_sprzetu: { in: ['opakowanie', 'rack'] } }
       },
       include: {
         model: {
@@ -546,7 +520,7 @@ export class MagazynService {
 
   async getOpakowanieById(id: number, id_organizacji: number) {
     const opakowanie = await this.prisma.extendedClient.egzemplarz.findFirst({
-      where: { id, id_organizacji, aktywny: true, model: { typ_sprzetu: 'opakowanie' } },
+      where: { id, id_organizacji, aktywny: true, model: { typ_sprzetu: { in: ['opakowanie', 'rack'] } } },
       include: {
         model: { include: { kategoria: true } },
         magazyn: true,
@@ -565,7 +539,6 @@ export class MagazynService {
         { nazwa: { contains: search, mode: 'insensitive' } },
       ];
     }
-
     return this.prisma.extendedClient.modelSprzetu.findMany({
       where,
       include: {
@@ -586,7 +559,6 @@ export class MagazynService {
         const istniejaca = await tx.cenaModelu.findFirst({
           where: { id_modelu: update.id_modelu, id_organizacji, nazwa_stawki: 'Podstawowa (PLN)', aktywny: true }
         });
-
         if (istniejaca) {
           await tx.cenaModelu.update({
             where: { id: istniejaca.id },
@@ -642,7 +614,6 @@ export class MagazynService {
     });
   }
 
-  // --- ZAKŁADKA "EGZEMPLARZE" - Pełna lista wszystkich sztuk fizycznych ---
   async getWszystkieEgzemplarze(id_organizacji: number, filters: any = {}) {
     const where: any = { id_organizacji, aktywny: true };
 
@@ -657,11 +628,9 @@ export class MagazynService {
         { zewnetrzny_qr_kod: { contains: filters.searchItem, mode: 'insensitive' } },
       ];
     }
-
     if (filters.searchModel) {
       where.model = { nazwa: { contains: filters.searchModel, mode: 'insensitive' } };
     }
-
     if (filters.searchCategory) {
       where.model = {
         ...where.model,
@@ -681,8 +650,6 @@ export class MagazynService {
     });
   }
 
-
-  // EVENTFLOW_PRODUCT_POLISH_V3: CRUD kategorii sprzętu z poziomu systemu.
   async createKategoria(dto: any, id_organizacji: number) {
     return this.prisma.extendedClient.kategoria.create({
       data: {
@@ -714,14 +681,12 @@ export class MagazynService {
     return this.prisma.extendedClient.kategoria.update({ where: { id }, data: { aktywny: false, data_usuniecia: new Date() } });
   }
 
-  // EVENTFLOW_PRODUCT_POLISH_V3: kalendarz zajętości modelu na podstawie pozycji wynajmu + wydarzeń.
   async getZajetoscModelu(id_modelu: number, id_organizacji: number) {
     const pozycje = await this.prisma.extendedClient.pozycjaWynajmu.findMany({
       where: { id_organizacji, id_modelu, aktywny: true },
       include: { wynajem: { include: { kontrahent: true } }, egzemplarz: true },
       orderBy: { data_utworzenia: 'desc' },
     });
-
     return pozycje.map((p) => ({
       id: p.id,
       typ: 'wynajem',
@@ -735,13 +700,11 @@ export class MagazynService {
     }));
   }
 
-
-  // EVENTFLOW_PRODUCT_POLISH_V5:
-  // Opakowanie tworzymy jako model o typie_sprzetu='opakowanie' + pierwszy egzemplarz/case.
-  // Nie kasujemy starego modelu danych; wykorzystujemy istniejące tabele modele i egzemplarze.
+  // WSPARCIE DLA RACK I OPAKOWAŃ
   async createOpakowanie(dto: any, id_organizacji: number, id_uzytkownika: number | null) {
     const safeUserId = isNaN(Number(id_uzytkownika)) ? null : Number(id_uzytkownika);
     const nazwa = this.cleanString(dto.nazwa) || 'Nowe opakowanie';
+    
     return this.prisma.extendedClient.$transaction(async (tx) => {
       const model = dto.id_modelu
         ? await tx.modelSprzetu.findFirst({ where: { id: Number(dto.id_modelu), id_organizacji, aktywny: true } })
@@ -749,7 +712,7 @@ export class MagazynService {
             data: {
               id_organizacji,
               nazwa: this.cleanString(dto.nazwa_modelu) || nazwa,
-              typ_sprzetu: 'opakowanie',
+              typ_sprzetu: this.cleanString(dto.typ_sprzetu) || 'opakowanie', // Wsparcie dla tworzenia Rack
               id_kategorii: this.cleanNumber(dto.id_kategorii),
               widoczny_w_mag: true,
               widoczny_w_ofercie: false,
@@ -780,7 +743,7 @@ export class MagazynService {
           objetosc: this.cleanNumber(dto.objetosc),
           wartosc: this.cleanNumber(dto.wartosc),
           opis: this.cleanString(dto.opis),
-          status_serwisowy: 'Działa',
+          status_serwisowy: 'Działa'
         },
       });
 
@@ -801,12 +764,7 @@ export class MagazynService {
     });
   }
 
-
-
-  // EVENTFLOW_PRODUCT_POLISH_V14/V37:
-  // Jedno wejście do skanowania kodu w magazynie.
-  // Priorytet: jeżeli kod należy do case/opakowania, zwracamy case i jego zawartość.
-  // Case NIE trafia na WZ/PZ jako pozycja — dokument dostaje sprzęty ze środka.
+  // EVENTFLOW RACK UPDATE: Skanowanie kodu
   async znajdzSprzetPoKodzie(kodRaw: string, id_organizacji: number) {
     const kod = this.cleanString(kodRaw);
     if (!kod) throw new NotFoundException('Podaj kod kreskowy, QR albo numer seryjny');
@@ -841,14 +799,12 @@ export class MagazynService {
       },
     };
 
-    // EVENTFLOW_PRODUCT_POLISH_V37:
-    // Jeżeli ten sam kod występuje na case i na sprzęcie w środku, case ma pierwszeństwo.
     const caseEgzemplarz = await this.prisma.extendedClient.egzemplarz.findFirst({
       where: {
         id_organizacji,
         aktywny: true,
         OR: [
-          { AND: [{ OR: codeOr }, { model: { typ_sprzetu: 'opakowanie' } }] },
+          { AND: [{ OR: codeOr }, { model: { typ_sprzetu: { in: ['opakowanie', 'rack'] } } }] },
           { AND: [{ OR: codeOr }, { zawartosc_case: { some: { aktywny: true } } }] },
         ],
       },
@@ -857,26 +813,14 @@ export class MagazynService {
     });
 
     const egzemplarz = caseEgzemplarz || await this.prisma.extendedClient.egzemplarz.findFirst({
-      where: {
-        id_organizacji,
-        aktywny: true,
-        OR: codeOr,
-      },
+      where: { id_organizacji, aktywny: true, OR: codeOr },
       include: includeForScan,
       orderBy: [{ id: 'asc' }],
     });
 
     if (!egzemplarz) {
-      // EVENTFLOW_PRODUCT_POLISH_V34/V37:
-      // Sprzęt ilościowy nie ma egzemplarzy. Jego kod jest na modelu, a przy skanie UI pyta o ilość sztuk.
       const modelIlosciowy = await this.prisma.extendedClient.modelSprzetu.findFirst({
-        where: {
-          id_organizacji,
-          aktywny: true,
-          OR: [
-            { kod_kreskowy: kod },
-          ],
-        },
+        where: { id_organizacji, aktywny: true, OR: [{ kod_kreskowy: kod }] },
         include: { kategoria: true, egzemplarze: { where: { aktywny: true }, take: 1 } },
       });
 
@@ -896,7 +840,6 @@ export class MagazynService {
           message: `Zeskanowano model ilościowy: ${modelIlosciowy.nazwa}. Podaj ilość sztuk.`,
         };
       }
-
       throw new NotFoundException(`Nie znaleziono sprzętu dla kodu: ${kod}`);
     }
 
@@ -929,7 +872,7 @@ export class MagazynService {
         }));
 
       if (!contents.length) throw new NotFoundException(`Case/opakowanie ${kod} jest puste albo nie ma aktywnych egzemplarzy w środku.`);
-
+      
       return {
         rowType: 'case',
         isCase: true,
@@ -942,43 +885,62 @@ export class MagazynService {
         kategoria: caseRow.model?.kategoria?.nazwa || 'Opakowania',
         ilosc: contents.length,
         contents,
-        message: `Zeskanowano case. Do dokumentu dodano ${contents.length} egzemplarzy z wnętrza case.`,
+        message: `Zeskanowano case. Do dokumentu dodano ${contents.length} egzemplarzy z wnętrza.`,
         scan_reason: reason,
       };
     };
 
-    const isDirectCase = egzemplarz.model?.typ_sprzetu === 'opakowanie' || (egzemplarz.zawartosc_case?.length || 0) > 0;
+    // LOGIKA CASE vs RACK
+    const isDirectCase = egzemplarz.model?.typ_sprzetu === 'opakowanie';
     if (isDirectCase) {
       return makeCasePayload(egzemplarz, 'direct_case_scan');
     }
 
-    // EVENTFLOW_PRODUCT_POLISH_V37:
-    // Jeśli przez duplikat kodu Prisma znalazła sprzęt ze środka, a jego parent-case ma ten sam kod,
-    // traktujemy skan jako skan case i rozwijamy całą zawartość.
     const parentCase = egzemplarz.case;
     const parentCaseCodes = [
-      parentCase?.kod_kreskowy,
-      parentCase?.zewnetrzny_kod_kreskowy,
-      parentCase?.zewnetrzny_qr_kod,
-      parentCase?.qr_kod,
-      parentCase?.sn,
-      parentCase?.numer_urzadzenia,
-      parentCase?.numer_egzemplarza,
+      parentCase?.kod_kreskowy, parentCase?.zewnetrzny_kod_kreskowy,
+      parentCase?.zewnetrzny_qr_kod, parentCase?.qr_kod,
+      parentCase?.sn, parentCase?.numer_urzadzenia, parentCase?.numer_egzemplarza,
     ].filter(Boolean).map((v: any) => String(v));
 
     if (parentCase && parentCaseCodes.includes(String(kod)) && (parentCase.zawartosc_case?.length || 0) > 0) {
-      return makeCasePayload(parentCase, 'parent_case_code_matched');
+      if (parentCase.model?.typ_sprzetu === 'opakowanie') {
+        return makeCasePayload(parentCase, 'parent_case_code_matched');
+      }
+    }
+
+    // LOGIKA RACK (Zwracamy pojedynczy egzemplarz, ale doklejamy zawartość jako uwagi)
+    let uwagiDodatkowe = '';
+
+    if (egzemplarz.model?.typ_sprzetu === 'rack') {
+        const contents = (egzemplarz.zawartosc_case || [])
+          .filter((c: any) => c.aktywny !== false)
+          .map((c: any) => c.nazwa || c.model?.nazwa || c.numer_egzemplarza || c.sn)
+          .filter(Boolean)
+          .join(', ');
+        if (contents) uwagiDodatkowe = `[RACK] Zawiera: ${contents}`;
+    } else if (parentCase && parentCase.model?.typ_sprzetu === 'rack') {
+        // Jeśli zeskanowano element będący wewnątrz racka, zwracamy od razu cały rack (skaner chwycił urządzenie przez siatkę case'a)
+        const contents = (parentCase.zawartosc_case || [])
+          .filter((c: any) => c.aktywny !== false)
+          .map((c: any) => c.nazwa || c.model?.nazwa || c.numer_egzemplarza || c.sn)
+          .filter(Boolean)
+          .join(', ');
+
+        return {
+          ...normalize(parentCase),
+          nazwa: `[RACK] ${parentCase.nazwa || parentCase.model?.nazwa || 'Rack'}`,
+          uwagi: contents ? `[RACK] Zawiera: ${contents}` : ''
+        };
     }
 
     return {
       ...normalize(egzemplarz),
+      uwagi: uwagiDodatkowe,
       case: egzemplarz.case ? `${egzemplarz.case.model?.nazwa || ''} ${egzemplarz.case.nazwa || ''}`.trim() : null,
     };
   }
 
-  // EVENTFLOW_PRODUCT_POLISH_V12:
-  // Dokumenty magazynowe: wydania, przyjęcia i planowane listy sprzętu.
-  // Nie zastępuje to wynajmów/ofert, tylko daje operacyjny dokument z podpisem i pozycjami.
   private nextDocumentNumber(prefix: string) {
     const now = new Date();
     return `${prefix}/${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${Date.now().toString().slice(-6)}`;
@@ -1023,20 +985,17 @@ export class MagazynService {
 
     return this.prisma.extendedClient.$transaction(async (tx) => {
       const expandedPozycje: any[] = [];
-
+      
       for (const p of pozycje) {
         const id_egzemplarza = this.cleanNumber(p.id_egzemplarza);
-
-        // EVENTFLOW_PRODUCT_POLISH_V34:
-        // Standardowo WZ/PZ są po egzemplarzach. Wyjątek: sprzęt ilościowy bez egzemplarzy
-        // zapisujemy jako model + ilość, np. balast 25 kg x 90 szt.
+        
         if (!id_egzemplarza) {
           const id_modelu = this.cleanNumber(p.id_modelu);
           const modelIlosciowy = id_modelu ? await tx.modelSprzetu.findFirst({
             where: { id: id_modelu, id_organizacji, aktywny: true },
             include: { kategoria: true },
           }) : null;
-
+          
           if (modelIlosciowy && (modelIlosciowy.tryb_ewidencji === 'ilosciowe' || modelIlosciowy.typ_sprzetu === 'ilosciowe')) {
             const qty = Number(p.ilosc || 0);
             if (!qty || qty <= 0) {
@@ -1056,7 +1015,6 @@ export class MagazynService {
             });
             continue;
           }
-
           throw new BadRequestException('WZ/PZ może zawierać konkretne egzemplarze albo sprzęt ilościowy. Dla zwykłego sprzętu zeskanuj egzemplarz albo case.');
         }
 
@@ -1076,7 +1034,9 @@ export class MagazynService {
           throw new BadRequestException(`Nie znaleziono egzemplarza #${id_egzemplarza}.`);
         }
 
-        const isCase = egz.model?.typ_sprzetu === 'opakowanie' || (egz.zawartosc_case?.length || 0) > 0;
+        // WYKLUCZAMY RACK Z TEJ LOGIKI (Rack nie rozpakowuje się na dokumencie)
+        const isCase = egz.model?.typ_sprzetu === 'opakowanie';
+        
         if (isCase) {
           const contents = (egz.zawartosc_case || []).filter((child: any) => child.model?.typ_sprzetu !== 'opakowanie');
           if (!contents.length) {
@@ -1106,6 +1066,7 @@ export class MagazynService {
           throw new BadRequestException('Opakowanie/case nie może być pozycją dokumentu WZ/PZ.');
         }
 
+        // Rack wpada standardowo jako pojedyncza pozycja dokumentu WZ
         expandedPozycje.push({
           ...p,
           id_modelu: egz.id_modelu,
@@ -1122,9 +1083,6 @@ export class MagazynService {
       const id_wydarzenia = this.cleanNumber(dto.id_wydarzenia);
       const id_wynajmu = this.cleanNumber(dto.id_wynajmu);
 
-      // EVENTFLOW_PRODUCT_POLISH_V41:
-      // Przy wynajmie wymagamy osoby odbierającej, ale przy wydarzeniu wystarczy podpis konta użytkownika
-      // zapisywany jako użytkownik tworzący dokument. Dzięki temu WZ z wydarzenia nie wymaga pola klienta.
       if (id_wynajmu && typ === 'wydanie' && !this.cleanString(dto.osoba_odbierajaca)) {
         throw new BadRequestException('Przy wydaniu do wynajmu wpisz osobę odbierającą sprzęt.');
       }
@@ -1156,14 +1114,13 @@ export class MagazynService {
         include: { pozycje: true },
       });
 
-      // EVENTFLOW_PRODUCT_POLISH_V37:
-      // Sprzęt ilościowy realnie zmienia stan modelu: WZ zmniejsza, PZ zwiększa.
       if (typ === 'wydanie' || typ === 'przyjecie') {
         const deltas = new Map<number, number>();
         for (const p of expandedPozycje) {
           const modelId = this.cleanNumber(p.id_modelu);
           const egzId = this.cleanNumber(p.id_egzemplarza);
           if (!modelId || egzId) continue;
+          
           const qty = Number(p.ilosc || 0);
           if (!qty) continue;
           deltas.set(modelId, (deltas.get(modelId) || 0) + (typ === 'wydanie' ? -qty : qty));
@@ -1186,14 +1143,12 @@ export class MagazynService {
           nowa_wartosc: JSON.stringify({ ...dto, pozycje_count: expandedPozycje.length, case_expanded: expandedPozycje.length !== pozycje.length }),
         },
       });
+
       return doc;
     });
   }
 
   async getSprzetWydarzenia(id_wydarzenia: number, id_organizacji: number) {
-    // EVENTFLOW_PRODUCT_POLISH_V32:
-    // Plan sprzętu wydarzenia trzymamy w dedykowanej tabeli po modelach + ilościach.
-    // Nie używamy już technicznego Wynajmu SPRZET-EVENT, bo wynajem i wydarzenie to osobne byty.
     const [wydarzenie, planPozycje, dokumenty] = await Promise.all([
       this.prisma.extendedClient.wydarzenie.findFirst({
         where: { id: id_wydarzenia, id_organizacji, aktywny: true },
@@ -1220,6 +1175,7 @@ export class MagazynService {
         orderBy: { data_operacji: 'desc' },
       }),
     ]);
+
     if (!wydarzenie) throw new NotFoundException('Nie znaleziono wydarzenia');
 
     const toNumber = (value: any) => Number(value || 0);
@@ -1307,10 +1263,7 @@ export class MagazynService {
     return this.prisma.extendedClient.$transaction(async (tx) => {
       const wydarzenie = await tx.wydarzenie.findFirst({ where: { id: id_wydarzenia, id_organizacji, aktywny: true } });
       if (!wydarzenie) throw new NotFoundException('Nie znaleziono wydarzenia');
-
-      // EVENTFLOW_PRODUCT_POLISH_V32:
-      // Plan sprzętu wydarzenia zapisujemy w pozycje_sprzetu_wydarzen.
-      // Nie tworzymy tu wynajmu, bo wynajem jest osobnym bytem biznesowym.
+      
       if (dto?.replace === true) {
         await tx.pozycjaSprzetuWydarzenia.updateMany({
           where: { id_organizacji, id_wydarzenia, aktywny: true },
@@ -1323,14 +1276,14 @@ export class MagazynService {
         let id_modelu = this.cleanNumber(p.id_modelu);
         const id_egzemplarza = this.cleanNumber(p.id_egzemplarza);
         const ilosc = this.cleanNumber(p.ilosc) || 0;
+        
         if (ilosc <= 0) continue;
-
         if (!id_modelu && id_egzemplarza) {
           const egz = await tx.egzemplarz.findFirst({ where: { id: id_egzemplarza, id_organizacji }, select: { id_modelu: true } });
           id_modelu = egz?.id_modelu || null;
         }
         if (!id_modelu) continue;
-
+        
         const existing = byModel.get(id_modelu) || { ilosc: 0, uwagi: this.cleanString(p.uwagi), kolejnosc: byModel.size + 1 };
         existing.ilosc += ilosc;
         byModel.set(id_modelu, existing);
@@ -1340,6 +1293,7 @@ export class MagazynService {
         const existing = await tx.pozycjaSprzetuWydarzenia.findFirst({
           where: { id_organizacji, id_wydarzenia, id_modelu },
         });
+
         if (existing) {
           await tx.pozycjaSprzetuWydarzenia.update({
             where: { id: existing.id },
@@ -1372,5 +1326,4 @@ export class MagazynService {
       });
     });
   }
-
 }

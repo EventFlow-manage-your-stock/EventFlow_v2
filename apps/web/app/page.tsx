@@ -150,7 +150,7 @@ export default function LandingPage() {
               <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/40 to-transparent z-20"></div>
               <div className="p-4 bg-slate-100/50 border-b border-slate-200 flex items-center gap-2 backdrop-blur-3xl dark:bg-white/5 dark:border-white/5">
                 <div className="flex gap-2"><div className="w-3 h-3 rounded-full bg-slate-300 dark:bg-slate-700"></div><div className="w-3 h-3 rounded-full bg-slate-300 dark:bg-slate-700"></div><div className="w-3 h-3 rounded-full bg-slate-300 dark:bg-slate-700"></div></div>
-                <div className="mx-auto bg-white rounded-md px-3 py-1 text-[10px] font-bold text-slate-500 border border-slate-200 shadow-sm dark:bg-black/20 dark:text-slate-400 dark:border-white/5">app.eventflow.pl</div>
+                <div className="mx-auto bg-white rounded-md px-3 py-1 text-[10px] font-bold text-slate-500 border border-slate-200 shadow-sm dark:bg-black/20 dark:text-slate-400 dark:border-white/5">www.event-flow.pl</div>
               </div>
               <div className="grid grid-cols-4 h-[400px] lg:h-[600px] p-6 gap-6 bg-slate-50 dark:bg-gradient-to-br dark:from-slate-900/80 dark:to-[#030712]/90">
                 <div className="col-span-1 border border-slate-200 rounded-2xl bg-white shadow-sm hidden md:block p-4 space-y-4 dark:border-white/5 dark:bg-black/20 dark:shadow-none">

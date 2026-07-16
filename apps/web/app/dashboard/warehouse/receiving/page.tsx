@@ -59,13 +59,11 @@ export default function ReceivingPage() {
   }
 
   function addItem(item: any) {
-    // EVENTFLOW_PRODUCT_POLISH_V15: dokument WZ/PZ pokazuje i zapisuje wyłącznie fizyczne egzemplarze sprzętu.
-    if (item?.model?.typ_sprzetu === 'opakowanie') {
+    if (item?.model?.typ_sprzetu === 'opakowanie' && item?.rowType !== 'case') {
       setError('Case/opakowanie nie może być pozycją dokumentu. Zeskanuj case, aby automatycznie dodać sprzęt ze środka.');
       return;
     }
-    // EVENTFLOW_PRODUCT_POLISH_V14:
-    // Case/opakowanie nie trafia do dokumentu jako pozycja. Po skanie case dodajemy egzemplarze z wnętrza.
+
     if (item?.isCase || item?.rowType === 'case') {
       const contents = item.contents || item.zawartosc_case || [];
       if (!contents.length) {
@@ -77,14 +75,17 @@ export default function ReceivingPage() {
       contents.forEach((child: any) => addItem({ ...child, system_case_scan: meta, id_zeskanowanego_case: meta?.id, nazwa_zeskanowanego_case: meta?.nazwa }));
       return;
     }
+
     const idEgzemplarza = item.id_egzemplarza || item.id;
     if (!idEgzemplarza) {
-      setError('Do dokumentu można dodać tylko konkretny egzemplarz sprzętu, nie model ani pozycję ręczną.');
+      setError('Do dokumentu można dodać tylko konkretny egzemplarz sprzętu, nie model ani pozycję.');
       return;
     }
+
     const modelName = item.nazwa_modelu || item.model?.nazwa || itemName(item);
     const number = item.numer_egzemplarza || item.numer_urzadzenia || '';
-    const displayName = [modelName, item.nazwa && item.nazwa !== modelName ? item.nazwa : null, number ? `nr ${number}` : null].filter(Boolean).join(' · ');
+    const displayName = [modelName, item.nazwa && item.nazwa !== modelName ? item.nazwa : null, number ? `nr ${number}` : null].filter(Boolean).join(' | ');
+
     setSelected((prev) => {
       const idx = prev.findIndex((p) => p.id_egzemplarza === idEgzemplarza);
       if (idx >= 0) {
@@ -104,6 +105,7 @@ export default function ReceivingPage() {
         system_case_scan: item.system_case_scan || item.case_scan || null,
         id_zeskanowanego_case: item.id_zeskanowanego_case,
         nazwa_zeskanowanego_case: item.nazwa_zeskanowanego_case,
+        uwagi: item.uwagi || '', // <--- PRZENIESIENIE ZAWARTOŚCI RACKA DO UWAG WZ/PZ
       }];
     });
   }
