@@ -54,12 +54,10 @@ export class SerwisService {
     if (statusy.length === 0) {
       await this.prisma.extendedClient.statusSerwisu.createMany({
         data: [
-          // EVENTFLOW_PRODUCT_POLISH_V4: statusy zgodne ze wzorem ze zrzutu.
-          { id_organizacji, nazwa: 'Działa', kolor: '#22c55e', kolejnosc: 1 },
-          { id_organizacji, nazwa: 'Wymaga serwisu (działa)', kolor: '#facc15', kolejnosc: 2 },
-          { id_organizacji, nazwa: 'Wymaga serwisu (nie działa)', kolor: '#ef4444', kolejnosc: 3 },
-          { id_organizacji, nazwa: 'W serwisie', kolor: '#2563eb', kolejnosc: 4 },
-          { id_organizacji, nazwa: 'Naprawiony', kolor: '#16a34a', kolejnosc: 5 },
+          // EVENTFLOW_PRODUCT_POLISH_V4: statusy zgodne ze wzorem ze zrzutu. { id_organizacji, nazwa: 'Wymaga serwisu (działa)', kolor: '#facc15', kolejnosc: 1 },
+          { id_organizacji, nazwa: 'Wymaga serwisu (nie działa)', kolor: '#ef4444', kolejnosc: 2 },
+          { id_organizacji, nazwa: 'W serwisie', kolor: '#2563eb', kolejnosc: 3 },
+          { id_organizacji, nazwa: 'Naprawiony', kolor: '#16a34a', kolejnosc: 4 },
         ]
       });
 

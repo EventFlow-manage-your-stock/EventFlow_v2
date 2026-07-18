@@ -32,6 +32,24 @@ export class MagazynService {
     return value === true || value === 'true' || value === 1 || value === '1' || value === 'ilosciowe' || value === 'ilościowe';
   }
 
+  // EVENTFLOW_PATCH_10: sprzęt ilościowy może być oznaczony flagą, trybem, typem albo mieć stan ilościowy i brak egzemplarzy.
+  private isModelSprzetIlosciowy(model: any): boolean {
+    if (!model) return false;
+    const text = [model.tryb_ewidencji, model.typ_sprzetu, model.typ, model.rodzaj].filter(Boolean).join(' ').toLowerCase();
+    const hasNoInstances = Array.isArray(model.egzemplarze) && model.egzemplarze.length === 0;
+    const hasQuantityStock = Number(model.ilosc_magazynowa || 0) > 0 || Number(model.stan_ilosciowy || 0) > 0;
+    return Boolean(
+      model.sprzet_ilosciowy === true ||
+      model.czy_ilosciowy === true ||
+      text.includes('ilosciowe') ||
+      text.includes('ilościowe') ||
+      text.includes('sprzet_ilosciowy') ||
+      text.includes('sprzęt_ilościowy') ||
+      (hasNoInstances && hasQuantityStock)
+    );
+  }
+
+
   private normalizeKodKreskowyModelu(dto: any, ilosciowy: boolean): string | null {
     if (!ilosciowy) return null;
     const code = this.cleanString(dto?.kod_kreskowy || dto?.kod_modelu || dto?.sku);
@@ -824,7 +842,7 @@ export class MagazynService {
         include: { kategoria: true, egzemplarze: { where: { aktywny: true }, take: 1 } },
       });
 
-      if (modelIlosciowy && (modelIlosciowy.tryb_ewidencji === 'ilosciowe' || modelIlosciowy.typ_sprzetu === 'ilosciowe' || (modelIlosciowy.egzemplarze || []).length === 0)) {
+      if (modelIlosciowy && this.isModelSprzetIlosciowy(modelIlosciowy)) {
         return {
           rowType: 'ilosciowy_model',
           quantityOnly: true,
@@ -863,7 +881,7 @@ export class MagazynService {
     const makeCasePayload = (caseRow: any, reason = 'case') => {
       const meta = this.caseScanMeta(caseRow);
       const contents = (caseRow.zawartosc_case || [])
-        .filter((e: any) => e.aktywny !== false && e.model?.typ_sprzetu !== 'opakowanie')
+        .filter((e: any) => e.aktywny !== false && e.id !== caseRow.id && !this.isCaseOrPackagingRow(e))
         .map((child: any) => ({
           ...normalize(child),
           system_case_scan: meta,
@@ -891,7 +909,7 @@ export class MagazynService {
     };
 
     // LOGIKA CASE vs RACK
-    const isDirectCase = egzemplarz.model?.typ_sprzetu === 'opakowanie';
+    const isDirectCase = this.isCaseOrPackagingRow(egzemplarz);
     if (isDirectCase) {
       return makeCasePayload(egzemplarz, 'direct_case_scan');
     }
@@ -904,7 +922,7 @@ export class MagazynService {
     ].filter(Boolean).map((v: any) => String(v));
 
     if (parentCase && parentCaseCodes.includes(String(kod)) && (parentCase.zawartosc_case?.length || 0) > 0) {
-      if (parentCase.model?.typ_sprzetu === 'opakowanie') {
+      if (this.isCaseOrPackagingRow(parentCase)) {
         return makeCasePayload(parentCase, 'parent_case_code_matched');
       }
     }
@@ -912,14 +930,14 @@ export class MagazynService {
     // LOGIKA RACK (Zwracamy pojedynczy egzemplarz, ale doklejamy zawartość jako uwagi)
     let uwagiDodatkowe = '';
 
-    if (egzemplarz.model?.typ_sprzetu === 'rack') {
+    if (this.isRackLikeModel(egzemplarz.model)) {
         const contents = (egzemplarz.zawartosc_case || [])
           .filter((c: any) => c.aktywny !== false)
           .map((c: any) => c.nazwa || c.model?.nazwa || c.numer_egzemplarza || c.sn)
           .filter(Boolean)
           .join(', ');
         if (contents) uwagiDodatkowe = `[RACK] Zawiera: ${contents}`;
-    } else if (parentCase && parentCase.model?.typ_sprzetu === 'rack') {
+    } else if (parentCase && this.isRackLikeModel(parentCase.model)) {
         // Jeśli zeskanowano element będący wewnątrz racka, zwracamy od razu cały rack (skaner chwycił urządzenie przez siatkę case'a)
         const contents = (parentCase.zawartosc_case || [])
           .filter((c: any) => c.aktywny !== false)
@@ -941,6 +959,14 @@ export class MagazynService {
     };
   }
 
+  
+  // EVENTFLOW_CASE_SCAN_FIX_V4: case/opakowanie nie jest pozycją WZ/PZ; rozpakowujemy tylko sprzęt ze środka.
+  private isCaseOrPackagingRow(row: any): boolean {
+    const typ = [row?.model?.typ_sprzetu, row?.typ_sprzetu, row?.typ, row?.rodzaj, row?.rowType].filter(Boolean).join(' ').toLowerCase();
+    const nazwa = [row?.model?.nazwa, row?.nazwa_modelu, row?.nazwa].filter(Boolean).join(' ').toLowerCase();
+    const kod = [row?.kod, row?.kod_kreskowy, row?.qr_kod, row?.zewnetrzny_kod_kreskowy, row?.zewnetrzny_qr_kod, row?.sn].filter(Boolean).join(' ').trim().toLowerCase();
+    return row?.isCase === true || row?.rowType === 'case' || typ.includes('opakowanie') || typ === 'case' || typ.includes('skrzyn') || kod.startsWith('case-') || /^case(\s|[-_#]|$)/.test(nazwa) || nazwa.includes('flight case') || nazwa.includes('transport case');
+  }
   private nextDocumentNumber(prefix: string) {
     const now = new Date();
     return `${prefix}/${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${Date.now().toString().slice(-6)}`;
@@ -993,10 +1019,10 @@ export class MagazynService {
           const id_modelu = this.cleanNumber(p.id_modelu);
           const modelIlosciowy = id_modelu ? await tx.modelSprzetu.findFirst({
             where: { id: id_modelu, id_organizacji, aktywny: true },
-            include: { kategoria: true },
+            include: { kategoria: true, egzemplarze: { where: { aktywny: true }, take: 1 } },
           }) : null;
           
-          if (modelIlosciowy && (modelIlosciowy.tryb_ewidencji === 'ilosciowe' || modelIlosciowy.typ_sprzetu === 'ilosciowe')) {
+          if (modelIlosciowy && this.isModelSprzetIlosciowy(modelIlosciowy)) {
             const qty = Number(p.ilosc || 0);
             if (!qty || qty <= 0) {
               throw new BadRequestException(`Podaj ilość dla sprzętu ilościowego: ${modelIlosciowy.nazwa}.`);
@@ -1015,7 +1041,7 @@ export class MagazynService {
             });
             continue;
           }
-          throw new BadRequestException('WZ/PZ może zawierać konkretne egzemplarze albo sprzęt ilościowy. Dla zwykłego sprzętu zeskanuj egzemplarz albo case.');
+          throw new BadRequestException('WZ/PZ może zawierać konkretne egzemplarze albo sprzęt ilościowy. Dla zwykłego sprzętu zeskanuj egzemplarz albo case. Dla sprzętu ilościowego zeskanuj kod modelu i podaj liczbę sztuk.');
         }
 
         const egz = await tx.egzemplarz.findFirst({
@@ -1035,10 +1061,10 @@ export class MagazynService {
         }
 
         // WYKLUCZAMY RACK Z TEJ LOGIKI (Rack nie rozpakowuje się na dokumencie)
-        const isCase = egz.model?.typ_sprzetu === 'opakowanie';
+        const isCase = this.isCaseOrPackagingRow(egz);
         
         if (isCase) {
-          const contents = (egz.zawartosc_case || []).filter((child: any) => child.model?.typ_sprzetu !== 'opakowanie');
+          const contents = (egz.zawartosc_case || []).filter((child: any) => child.id !== egz.id && !this.isCaseOrPackagingRow(child));
           if (!contents.length) {
             throw new BadRequestException('Zeskanowany case jest pusty albo nie zawiera egzemplarzy sprzętu.');
           }
@@ -1062,7 +1088,7 @@ export class MagazynService {
           continue;
         }
 
-        if (egz.model?.typ_sprzetu === 'opakowanie') {
+        if (this.isCaseOrPackagingRow(egz)) {
           throw new BadRequestException('Opakowanie/case nie może być pozycją dokumentu WZ/PZ.');
         }
 
@@ -1326,4 +1352,332 @@ export class MagazynService {
       });
     });
   }
+
+  private isRackLikeModel(model: any): boolean {
+    const values = [
+      model?.typ,
+      model?.rodzaj,
+      model?.typ_modelu,
+      model?.nazwa,
+      model?.kategoria?.nazwa,
+      model?.kategoria?.sciezka,
+      model?.kategoria?.ścieżka,
+    ]
+      .filter(Boolean)
+      .map((v) => String(v).toLowerCase());
+
+    return values.some((v) =>
+      v.includes('rack') ||
+      v.includes('raki') ||
+      v.includes('szafa rack') ||
+      v.includes('racki')
+    );
+  }
+
+
+  private PATCH12_text(value: any): string {
+    return String(value || '').trim();
+  }
+
+  private PATCH12_code(value: any): string {
+    return String(value || '').trim().replace(/\s+/g, '');
+  }
+
+  private PATCH12_codes(row: any): string[] {
+    const model = row?.model || {};
+    return [row?.kod, row?.kod_kreskowy, row?.zewnetrzny_kod_kreskowy, row?.zewnetrzny_qr_kod, row?.qr_kod, row?.sn, model?.kod, model?.kod_kreskowy]
+      .filter(Boolean)
+      .map((v: any) => this.PATCH12_code(v))
+      .filter(Boolean);
+  }
+
+  private PATCH12_isRackLikeForScan(row: any): boolean {
+    const model = row?.model || {};
+    const text = [row?.typ_sprzetu, row?.typ, row?.rodzaj, row?.nazwa, model?.typ_sprzetu, model?.typ, model?.rodzaj, model?.nazwa, model?.kategoria?.nazwa]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+    return /(^|[^a-ząćęłńóśźż])rack([^a-ząćęłńóśźż]|$)/i.test(text) || text.includes('racki') || text.includes('szafa rack');
+  }
+
+  private PATCH12_isCaseCode(row: any): boolean {
+    if (this.PATCH12_isRackLikeForScan(row)) return false;
+    return this.PATCH12_codes(row).some((code) => /^01\d+/.test(code));
+  }
+
+
+
+
+  // EF_FINAL_QUANTITY_SCAN_HELPER
+  private efNormalizeScanCode(value: any): string {
+    return String(value ?? '').trim().replace(/\s+/g, '').toLowerCase();
+  }
+
+  private efQuoteIdent(value: string): string {
+    return '"' + String(value).replace(/"/g, '""') + '"';
+  }
+
+  private efLooksLikeQuantityModel(row: any, tableName: string): boolean {
+    const lowerTable = String(tableName || '').toLowerCase();
+
+    const text = Object.values(row || {})
+      .filter((v) => v !== null && v !== undefined)
+      .map((v) => String(v).toLowerCase())
+      .join(' ');
+
+    if (text.includes('ilosciow')) return true;
+    if (text.includes('ilościow')) return true;
+
+    if (String(row?.tryb_ewidencji || '').toLowerCase().includes('ilosciow')) return true;
+    if (String(row?.tryb_ewidencji || '').toLowerCase().includes('ilościow')) return true;
+    if (String(row?.typ_ewidencji || '').toLowerCase().includes('ilosciow')) return true;
+    if (String(row?.rodzaj_ewidencji || '').toLowerCase().includes('ilosciow')) return true;
+
+    if (row?.sprzet_ilosciowy === true) return true;
+    if (row?.czy_ilosciowy === true) return true;
+
+    if (row?.ilosc_magazynowa !== undefined && row?.ilosc_magazynowa !== null) return true;
+    if (row?.['ilość_magazynowa'] !== undefined && row?.['ilość_magazynowa'] !== null) return true;
+
+    if (lowerTable.includes('model')) return true;
+
+    return false;
+  }
+
+  private async efFindQuantityModelByAnyCode(kod: string, id_organizacji: number): Promise<any | null> {
+    const prismaAny: any = this.prisma as any;
+    const normalized = this.efNormalizeScanCode(kod);
+
+    if (!normalized) return null;
+    if (normalized.startsWith('01')) return null;
+
+    const codeColumns: any[] = await prismaAny.$queryRawUnsafe(`
+      select table_name, column_name
+      from information_schema.columns
+      where table_schema = 'public'
+        and data_type in ('character varying', 'text')
+        and (
+          column_name ilike '%kod%'
+          or column_name ilike '%barcode%'
+          or column_name ilike '%kresk%'
+          or column_name ilike '%qr%'
+          or column_name ilike '%sn%'
+        )
+      order by table_name, column_name
+    `);
+
+    for (const col of codeColumns) {
+      const tableName = String(col.table_name);
+      const columnName = String(col.column_name);
+      const lowerTable = tableName.toLowerCase();
+
+      if (
+        lowerTable.includes('pozycj') ||
+        lowerTable.includes('dokument') ||
+        lowerTable.includes('wydan') ||
+        lowerTable.includes('przyjec') ||
+        lowerTable.includes('wynaj') ||
+        lowerTable.includes('ofert')
+      ) {
+        continue;
+      }
+
+      if (
+        lowerTable.includes('egzemplarz') ||
+        lowerTable.includes('egzemplarze')
+      ) {
+        continue;
+      }
+
+      const cols: any[] = await prismaAny.$queryRawUnsafe(
+        `
+        select column_name
+        from information_schema.columns
+        where table_schema = 'public'
+          and table_name = $1
+        `,
+        tableName
+      );
+
+      const names = cols.map((c) => String(c.column_name));
+      const hasOrg = names.includes('id_organizacji');
+
+      const tableSql = this.efQuoteIdent(tableName);
+      const columnSql = this.efQuoteIdent(columnName);
+      const orgWhere = hasOrg ? `and "id_organizacji" = $2` : '';
+
+      const rows: any[] = await prismaAny.$queryRawUnsafe(
+        `
+        select *
+        from ${tableSql}
+        where lower(regexp_replace(coalesce(${columnSql}::text, ''), '\\s+', '', 'g')) = $1
+        ${orgWhere}
+        limit 5
+        `,
+        normalized,
+        Number(id_organizacji || 1)
+      );
+
+      for (const row of rows) {
+        if (!this.efLooksLikeQuantityModel(row, tableName)) continue;
+
+        const idModelu =
+          row.id ??
+          row.id_modelu ??
+          row.id_modelu_sprzetu ??
+          row.id_sprzetu ??
+          null;
+
+        const nazwa =
+          row.nazwa ??
+          row.nazwa_modelu ??
+          row.model ??
+          row.name ??
+          'Sprzęt ilościowy';
+
+        const iloscDostepna =
+          row.ilosc_magazynowa ??
+          row['ilość_magazynowa'] ??
+          row.ilosc_dostepna ??
+          row.ilosc ??
+          row.stan ??
+          null;
+
+        return {
+          rowType: 'ilosciowy_model',
+          quantityOnly: true,
+          isQuantity: true,
+          sprzet_ilosciowy: true,
+          id: idModelu,
+          id_modelu: idModelu,
+          nazwa,
+          nazwa_modelu: nazwa,
+          kod,
+          kod_kreskowy: kod,
+          jednostka: row.jednostka || 'szt.',
+          ilosc: 1,
+          ilosc_dostepna: iloscDostepna,
+          ilosc_magazynowa: iloscDostepna,
+          message: 'Zeskanowano sprzęt ilościowy. Podaj ilość do wydania.',
+          scan_reason: 'quantity_model_by_code',
+          source_table: tableName,
+          source_column: columnName,
+        };
+      }
+    }
+
+    return null;
+  }
+
+  async znajdzSprzetDlaWydawkiPoKodzie(kod: string, id_organizacji: number) {
+    const efQuantityModel = await this.efFindQuantityModelByAnyCode(kod, id_organizacji);
+
+    if (efQuantityModel) {
+      return efQuantityModel;
+    }
+
+    if (typeof (this as any).znajdzSprzetPoKodzie === 'function') {
+      return (this as any).znajdzSprzetPoKodzie(kod, id_organizacji);
+    }
+
+    throw new Error(`Nie znaleziono sprzętu dla kodu: ${kod}`);
+  }
+
+  // EVENTFLOW_PRODUCT_POLISH_VMS: Transfer między wydarzeniami
+  async transferMiedzyWydarzeniami(dto: any, id_organizacji: number, id_uzytkownika: number | null) {
+    if (!dto.sourceEventId || !dto.targetEventId || !dto.items || dto.items.length === 0) {
+      throw new BadRequestException('Brak wymaganych danych do transferu.');
+    }
+
+    return this.prisma.extendedClient.$transaction(async (tx) => {
+      // 1. Zdejmujemy sprzęt z eventu źródłowego (Generujemy techniczne PZ)
+      const pz = await tx.wydanieMagazynowe.create({
+        data: {
+          id_organizacji,
+          id_wydarzenia: Number(dto.sourceEventId),
+          typ: 'przyjecie',
+          numer: `PZ-TR/${new Date().getFullYear()}/${Date.now().toString().slice(-5)}`,
+          uwagi: `Automatyczny zwrot z powodu transferu bezpośredniego na wydarzenie #${dto.targetEventId}`,
+          id_uzytkownika_utworzyl: id_uzytkownika,
+          pozycje: {
+            create: dto.items.map((i: any) => ({
+              id_organizacji,
+              id_modelu: i.id_modelu || null,
+              id_egzemplarza: i.id_egzemplarza || null,
+              nazwa: i.nazwa,
+              ilosc: Number(i.ilosc_transfer || 1),
+              status: 'przyjety',
+              uwagi: 'Transfer między-wydarzeniowy'
+            }))
+          }
+        }
+      });
+
+      // 2. Wydajemy sprzęt na event docelowy (Generujemy techniczne WZ)
+      const wz = await tx.wydanieMagazynowe.create({
+        data: {
+          id_organizacji,
+          id_wydarzenia: Number(dto.targetEventId),
+          typ: 'wydanie',
+          numer: `WZ-TR/${new Date().getFullYear()}/${Date.now().toString().slice(-5)}`,
+          uwagi: `Automatyczne wydanie z transferu bezpośredniego z wydarzenia #${dto.sourceEventId}`,
+          id_uzytkownika_utworzyl: id_uzytkownika,
+          pozycje: {
+            create: dto.items.map((i: any) => ({
+              id_organizacji,
+              id_modelu: i.id_modelu || null,
+              id_egzemplarza: i.id_egzemplarza || null,
+              nazwa: i.nazwa,
+              ilosc: Number(i.ilosc_transfer || 1),
+              status: 'wydany',
+              uwagi: 'Transfer między-wydarzeniowy'
+            }))
+          }
+        }
+      });
+
+      // (Uwaga: Przy sprzęcie ilościowym transakcje +X i -X bilansują się w głównym magazynie
+      // na zero, więc nie musimy ręcznie modyfikować pola ilosc_magazynowa)
+
+      // 3. Opcjonalnie: Tworzymy zadanie transportowe dla ekipy
+      if (dto.task && (dto.task.przypisani?.length > 0 || dto.task.id_pojazdu)) {
+        const zadanie = await tx.zadanie.create({
+          data: {
+            id_organizacji,
+            id_tworcy: id_uzytkownika,
+            tytul: `Transfer logistyczny: ${dto.sourceEventName} ➔ ${dto.targetEventName}`,
+            opis: dto.task.uwagi || 'Zadanie wygenerowane automatycznie przy transferze sprzętu z paki do paki.',
+            typ_zadania: 'transport',
+            status: 'nowe',
+            data_start: dto.task.data_start ? new Date(dto.task.data_start) : null,
+            id_wydarzenia: Number(dto.targetEventId),
+            id_pojazdu: dto.task.id_pojazdu ? Number(dto.task.id_pojazdu) : null,
+          }
+        });
+
+        if (dto.task.przypisani?.length > 0) {
+          await tx.zadanieUzytkownik.createMany({
+            data: dto.task.przypisani.map((uid: string | number) => ({
+              id_organizacji,
+              id_zadania: zadanie.id,
+              id_uzytkownika: Number(uid)
+            }))
+          });
+        }
+      }
+
+      await tx.logZmian.create({
+        data: {
+          id_organizacji,
+          id_uzytkownika,
+          typ_obiektu: 'Magazyn',
+          akcja: 'TRANSFER_MIEDZY_EVENTOWY',
+          nowa_wartosc: JSON.stringify({ z: dto.sourceEventId, do: dto.targetEventId, pozycji: dto.items.length }),
+        }
+      });
+
+      return { success: true, pzId: pz.id, wzId: wz.id };
+    });
+  }
+
 }

@@ -158,10 +158,46 @@ export default function OfferDetailsPage() {
   const { roots: equipmentCategoryRoots, byId: equipmentCategoryById } = useMemo(() => buildCategoryTree(equipmentCategories), [equipmentCategories]);
   const activeEquipmentRootObj = equipmentRoot !== 'all' ? equipmentCategoryById.get(equipmentRoot) : null;
 
+  // EVENTFLOW_PATCH_10: w ofercie wybieramy modele sprzętu i racki, ale nie case/opakowania.
+  function ef10OfferText(...values: any[]) {
+    return values.filter(Boolean).map((v) => String(v)).join(' ').toLowerCase();
+  }
+  function ef10OfferCodes(row: any): string[] {
+    return [row?.kod, row?.kod_kreskowy, row?.barcode, row?.qr_kod, row?.sn, row?.numer, row?.nr]
+      .filter((v) => v !== null && v !== undefined && String(v).trim() !== '')
+      .map((v) => String(v));
+  }
+  function ef10OfferHasCasePrefix(row: any) {
+    return ef10OfferCodes(row).some((v) => String(v).replace(/[^0-9A-Za-z]/g, '').startsWith('01'));
+  }
+  function ef10OfferRackLike(row: any) {
+    const text = ef10OfferText(row?.nazwa, row?.kategoria_nazwa, row?.kategoria?.nazwa, row?.typ_sprzetu);
+    return /\brack\b|racki|szafa rack|rackowa|case rack|rack 19|19"|19 cal/.test(text);
+  }
+  function ef10OfferCaseLike(row: any) {
+    if (!row) return false;
+    if (ef10OfferRackLike(row)) return false;
+    const text = ef10OfferText(row?.nazwa, row?.kategoria_nazwa, row?.kategoria?.nazwa, row?.typ_sprzetu, row?.typ, row?.rodzaj, row?.opis);
+    return Boolean(
+      ef10OfferHasCasePrefix(row) ||
+      text.includes('opakowanie') ||
+      text.includes('case') ||
+      text.includes('flightcase') ||
+      text.includes('flight case') ||
+      text.includes('skrzyn') ||
+      text.includes('waliz') ||
+      text.includes('torba')
+    );
+  }
+  function ef10ShouldShowOfferModel(model: any) {
+    return ef10OfferRackLike(model) || !ef10OfferCaseLike(model);
+  }
+
+
   function totalForEquipmentCategory(categoryId: string) {
-    if (categoryId === 'all') return models.length;
+    if (categoryId === 'all') return models.filter((m: any) => ef10ShouldShowOfferModel(m)).length;
     const ids = descendantsOf(categoryId, equipmentCategoryById);
-    return models.filter((m: any) => ids.has(modelCategoryId(m))).length;
+    return models.filter((m: any) => ef10ShouldShowOfferModel(m) && ids.has(modelCategoryId(m))).length;
   }
 
   const equipmentModels = useMemo(() => {
@@ -169,8 +205,7 @@ export default function OfferDetailsPage() {
     const selectedCategoryId = equipmentSub || (equipmentRoot === 'all' ? '' : equipmentRoot);
     const selectedIds = selectedCategoryId ? descendantsOf(selectedCategoryId, equipmentCategoryById) : null;
 
-    return models
-      .filter((m: any) => {
+    return models.filter((m: any) => ef10ShouldShowOfferModel(m)).filter((m: any) => {
         const catId = modelCategoryId(m);
         const categoryLabel = categoryPath(catId, equipmentCategoryById) || m.kategoria_nazwa || m.kategoria?.nazwa || 'Bez kategorii';
         const matchesCategory = !selectedIds || selectedIds.has(catId);
@@ -518,7 +553,7 @@ export default function OfferDetailsPage() {
               <div className="mt-4 rounded-[24px] bg-slate-50 p-4">
                 <p className="mb-3 text-[11px] font-black uppercase tracking-wider text-slate-400">Kategorie główne</p>
                 <div className="flex max-h-[190px] flex-wrap gap-2 overflow-y-auto pr-1">
-                  <button type="button" onClick={() => { setEquipmentRoot('all'); setEquipmentSub(''); }} className={`rounded-2xl px-4 py-3 text-sm font-black ${equipmentRoot === 'all' ? 'bg-cyan-600 text-white shadow-sm' : 'bg-white text-slate-700 hover:bg-cyan-50'}`}>Wszystkie <span className="opacity-60">{models.length}</span></button>
+                  <button type="button" onClick={() => { setEquipmentRoot('all'); setEquipmentSub(''); }} className={`rounded-2xl px-4 py-3 text-sm font-black ${equipmentRoot === 'all' ? 'bg-cyan-600 text-white shadow-sm' : 'bg-white text-slate-700 hover:bg-cyan-50'}`}>Wszystkie <span className="opacity-60">{models.filter((m: any) => ef10ShouldShowOfferModel(m)).length}</span></button>
                   {equipmentCategoryRoots.map((root: any) => <button key={root.id} type="button" onClick={() => { setEquipmentRoot(String(root.id)); setEquipmentSub(''); }} className={`rounded-2xl px-4 py-3 text-sm font-black ${equipmentRoot === String(root.id) ? 'bg-cyan-600 text-white shadow-sm' : 'bg-white text-slate-700 hover:bg-cyan-50'}`}>{root.nazwa} <span className="opacity-60">{totalForEquipmentCategory(String(root.id))}</span></button>)}
                 </div>
               </div>
@@ -606,7 +641,7 @@ export default function OfferDetailsPage() {
       </form>
     </SimpleModal>}
 
-    {showItem && <SimpleModal title={`Dodaj pozycję ręczną do: ${showItem.nazwa}`} onClose={() => setShowItem(null)}><form onSubmit={addItem} className="space-y-4"><div className="grid gap-4 md:grid-cols-2"><Field label="Typ pozycji"><select className={inputClass} value={form.typ_pozycji || 'sprzet'} onChange={e => setForm({ ...form, typ_pozycji: e.target.value })}>{positionTypes.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}</select></Field><Field label="Model sprzętu"><select className={inputClass} value={form.id_modelu || ''} onChange={e => { const m = models.find((x: any) => String(x.id) === e.target.value); setForm({ ...form, id_modelu: e.target.value, nazwa: m?.nazwa || form.nazwa, cena_netto: m?.cena_podstawowa || form.cena_netto || 0 }); }}><option value="">Pozycja ręczna</option>{models.map((m: any) => <option key={m.id} value={m.id}>{m.nazwa}</option>)}</select></Field><Field label="Nazwa"><input className={inputClass} required value={form.nazwa || ''} onChange={e => setForm({ ...form, nazwa: e.target.value })} /></Field><Field label="Cena netto"><input type="number" step="0.01" className={inputClass} value={form.cena_netto || ''} onChange={e => setForm({ ...form, cena_netto: e.target.value })} /></Field><Field label="Liczba"><input type="number" step="0.01" className={inputClass} value={form.ilosc || 1} onChange={e => setForm({ ...form, ilosc: e.target.value })} /></Field><Field label="Dni pracy"><input type="number" step="0.01" className={inputClass} value={form.dni_pracy || 1} onChange={e => setForm({ ...form, dni_pracy: e.target.value })} /></Field><Field label="Rabat %"><input type="number" step="0.01" className={inputClass} value={form.rabat_proc || 0} onChange={e => setForm({ ...form, rabat_proc: e.target.value })} /></Field><Field label="VAT %"><input type="number" step="0.01" className={inputClass} value={form.vat || 23} onChange={e => setForm({ ...form, vat: e.target.value })} /></Field></div><Field label="Opis"><textarea className={inputClass} value={form.opis || ''} onChange={e => setForm({ ...form, opis: e.target.value })} /></Field><div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setShowItem(null)}>Anuluj</Button><Button type="submit">Dodaj pozycję</Button></div></form></SimpleModal>}
+    {showItem && <SimpleModal title={`Dodaj pozycję ręczną do: ${showItem.nazwa}`} onClose={() => setShowItem(null)}><form onSubmit={addItem} className="space-y-4"><div className="grid gap-4 md:grid-cols-2"><Field label="Typ pozycji"><select className={inputClass} value={form.typ_pozycji || 'sprzet'} onChange={e => setForm({ ...form, typ_pozycji: e.target.value })}>{positionTypes.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}</select></Field><Field label="Model sprzętu"><select className={inputClass} value={form.id_modelu || ''} onChange={e => { const m = models.filter((x: any) => ef10ShouldShowOfferModel(x)).find((x: any) => String(x.id) === e.target.value); setForm({ ...form, id_modelu: e.target.value, nazwa: m?.nazwa || form.nazwa, cena_netto: m?.cena_podstawowa || form.cena_netto || 0 }); }}><option value="">Pozycja ręczna</option>{models.filter((m: any) => ef10ShouldShowOfferModel(m)).map((m: any) => <option key={m.id} value={m.id}>{m.nazwa}</option>)}</select></Field><Field label="Nazwa"><input className={inputClass} required value={form.nazwa || ''} onChange={e => setForm({ ...form, nazwa: e.target.value })} /></Field><Field label="Cena netto"><input type="number" step="0.01" className={inputClass} value={form.cena_netto || ''} onChange={e => setForm({ ...form, cena_netto: e.target.value })} /></Field><Field label="Liczba"><input type="number" step="0.01" className={inputClass} value={form.ilosc || 1} onChange={e => setForm({ ...form, ilosc: e.target.value })} /></Field><Field label="Dni pracy"><input type="number" step="0.01" className={inputClass} value={form.dni_pracy || 1} onChange={e => setForm({ ...form, dni_pracy: e.target.value })} /></Field><Field label="Rabat %"><input type="number" step="0.01" className={inputClass} value={form.rabat_proc || 0} onChange={e => setForm({ ...form, rabat_proc: e.target.value })} /></Field><Field label="VAT %"><input type="number" step="0.01" className={inputClass} value={form.vat || 23} onChange={e => setForm({ ...form, vat: e.target.value })} /></Field></div><Field label="Opis"><textarea className={inputClass} value={form.opis || ''} onChange={e => setForm({ ...form, opis: e.target.value })} /></Field><div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setShowItem(null)}>Anuluj</Button><Button type="submit">Dodaj pozycję</Button></div></form></SimpleModal>}
   </div>;
 }
 

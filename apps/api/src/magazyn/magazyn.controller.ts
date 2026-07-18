@@ -201,12 +201,13 @@ export class MagazynController {
 
 
   // EVENTFLOW_PRODUCT_POLISH_V13: skanowanie kodów kreskowych/QR/SN podczas wydań i przyjęć.
-  @Get('skan')
-  async skanujSprzet(@Query('kod') kod: string, @Req() req: Request) {
-    return this.magazynService.znajdzSprzetPoKodzie(kod, Number((req.user as any).id_organizacji));
-  }
-
-  // EVENTFLOW_PRODUCT_POLISH_V12: dokumenty magazynowe WZ/PZ z podpisem i pozycjami.
+  @Get('skan') async skanujSprzet(@Query('kod') kod: string, @Req() req: Request) {
+  return this.magazynService.znajdzSprzetDlaWydawkiPoKodzie(
+    kod,
+    Number((req.user as any).id_organizacji)
+  );
+}
+ 
   @Get('dokumenty')
   async getDokumentyMagazynowe(@Req() req: Request, @Query() query: any) {
     return this.magazynService.getDokumentyMagazynowe(Number((req.user as any).id_organizacji), query);
@@ -231,6 +232,16 @@ export class MagazynController {
   @Post('wydarzenia/:id/sprzet')
   async dodajSprzetDoWydarzenia(@Param('id', ParseIntPipe) id: number, @Body() dto: any, @Req() req: Request) {
     return this.magazynService.dodajSprzetDoWydarzenia(id, dto, Number((req.user as any).id_organizacji));
+  }
+
+  @Post('transfer')
+  async transferMiedzyWydarzeniami(@Body() dto: any, @Req() req: Request) {
+    const rawUserId = (req.user as any).id || (req.user as any).sub;
+    return this.magazynService.transferMiedzyWydarzeniami(
+      dto, 
+      Number((req.user as any).id_organizacji), 
+      rawUserId ? Number(rawUserId) : null
+    );
   }
 
 }

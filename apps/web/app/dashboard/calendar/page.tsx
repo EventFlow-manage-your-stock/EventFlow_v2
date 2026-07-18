@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { CalendarPlus, ChevronLeft, ChevronRight, Loader2, Search, Info } from 'lucide-react';
+import { Suspense, useEffect, useMemo, useState, useRef } from 'react';
+import { Calendar, CalendarPlus, ChevronLeft, ChevronRight, Loader2, Search, Info, MapPin, Clock } from 'lucide-react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { api } from '../../../lib/api';
 import { Button, Card, PageTitle } from '../../../components/ProductUI';
 import { QuickAddCalendarModal } from '../../../components/QuickAddCalendarModal';
@@ -38,9 +39,9 @@ const typeLabels: Record<string, string> = {
 const typeFallbackColor: Record<string, string> = {
   wydarzenie: '#0891B2',
   wypozyczenie: '#F97316',
-  urlop: '#22C55E',
+  urlop: '#020617',
   serwis: '#DC2626',
-  flota: '#2563EB',
+  flota: '#22C55E',
 };
 
 const CALENDAR_BAR_TOP = 92;
@@ -59,7 +60,10 @@ function endOfWeek(date: Date) { const d = startOfWeek(date); d.setDate(d.getDat
 function endOfDay(date: Date) { const d = new Date(date); d.setHours(23, 59, 59, 999); return d; }
 function startOfDay(date: Date) { const d = new Date(date); d.setHours(0, 0, 0, 0); return d; }
 function addDays(date: Date, days: number) { const d = new Date(date); d.setDate(d.getDate() + days); return d; }
-function iso(d: Date) { return d.toISOString().slice(0, 10); }
+function iso(d: Date) {
+  const offset = d.getTimezoneOffset() * 60000;
+  return new Date(d.getTime() - offset).toISOString().slice(0, 10);
+}
 function sameDay(a: Date, b: Date) { return a.toDateString() === b.toDateString(); }
 function normalizeType(t: string) { return t === 'wynajem' ? 'wypozyczenie' : t; }
 function itemUrl(item: CalendarItem) {
@@ -102,16 +106,92 @@ function dayDiff(a: Date, b: Date) {
   return Math.round((startOfDay(a).getTime() - startOfDay(b).getTime()) / 86400000);
 }
 
-export default function CalendarPage() {
+function formatTooltipDate(dStr: string) {
+  const d = new Date(dStr);
+  return d.toLocaleString('pl-PL', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+}
+
+// ==========================================
+// Główny komponent z logiką
+// ==========================================
+function CalendarContent() {
+  const searchParams = useSearchParams();
+  const dateParam = searchParams?.get('date');
+
   const [view, setView] = useState<View>('miesiąc');
   const [cursor, setCursor] = useState(new Date());
+  const [isInitialized, setIsInitialized] = useState(false);
   const [items, setItems] = useState<CalendarItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  
   const [showAdd, setShowAdd] = useState(false);
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
+  
   const [search, setSearch] = useState('');
   const [activeTypes, setActiveTypes] = useState<string[]>(['wydarzenie', 'wypozyczenie', 'urlop', 'flota']);
   const [dict, setDict] = useState<any>({ typy: [], statusy: [], kontrahenci: [], miejsca: [], uzytkownicy: [] });
+
+  const dateInputRef = useRef<HTMLInputElement>(null);
+
+  // Stan i logika tooltipa
+  const [tooltip, setTooltip] = useState<{ show: boolean; item: CalendarItem | null; x: number; y: number }>({ show: false, item: null, x: 0, y: 0 });
+  const hoverTimer = useRef<NodeJS.Timeout | null>(null);
+
+  const handleBarEnter = (e: React.MouseEvent, item: CalendarItem) => {
+    if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    
+    hoverTimer.current = setTimeout(() => {
+      let x = rect.left + rect.width / 2;
+      const y = rect.top - 8;
+      
+      // Zabezpieczenie przed obcięciem z lewej/prawej strony okna
+      if (typeof window !== 'undefined') {
+        if (x < 150) x = 150;
+        if (x > window.innerWidth - 150) x = window.innerWidth - 150;
+      }
+      
+      setTooltip({ show: true, item, x, y });
+    }, 400); // 400ms opóźnienia na pojawienie się dymka
+  };
+
+  const handleBarLeave = () => {
+    if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    setTooltip(prev => ({ ...prev, show: false }));
+  };
+
+  useEffect(() => {
+    let targetDate = new Date();
+    let targetView: View = 'miesiąc';
+
+    if (typeof window !== 'undefined') {
+      const savedView = sessionStorage.getItem('ef_cal_view') as View;
+      if (savedView && views.includes(savedView)) targetView = savedView;
+
+      const savedCursor = sessionStorage.getItem('ef_cal_cursor');
+      if (savedCursor) {
+        const d = new Date(savedCursor);
+        if (!isNaN(d.getTime())) targetDate = d;
+      }
+    }
+
+    if (dateParam) {
+      const d = new Date(dateParam);
+      if (!isNaN(d.getTime())) targetDate = d;
+    }
+
+    setView(targetView);
+    setCursor(targetDate);
+    setIsInitialized(true);
+  }, [dateParam]);
+
+  useEffect(() => {
+    if (isInitialized && typeof window !== 'undefined') {
+      sessionStorage.setItem('ef_cal_view', view);
+      sessionStorage.setItem('ef_cal_cursor', cursor.toISOString());
+    }
+  }, [view, cursor, isInitialized]);
 
   const range = useMemo(() => {
     if (view === 'dzień') {
@@ -147,7 +227,10 @@ export default function CalendarPage() {
     }
   }
 
-  useEffect(() => { load(); }, [view, cursor.getFullYear(), cursor.getMonth(), cursor.getDate()]);
+  useEffect(() => {
+    if (!isInitialized) return;
+    load();
+  }, [view, cursor.getFullYear(), cursor.getMonth(), cursor.getDate(), isInitialized]);
 
   const days = useMemo(() => {
     const count = view === 'dzień' ? 1 : view === 'tydzień' ? 7 : 42;
@@ -172,7 +255,6 @@ export default function CalendarPage() {
 
   function move(mult: number) {
     const d = new Date(cursor);
-    // Usprawnienie zmiany dat: uwzględnia również poprawny skok dla "lista"
     if (view === 'miesiąc' || view === 'lista') d.setMonth(d.getMonth() + mult);
     else d.setDate(d.getDate() + (view === 'tydzień' ? 7 * mult : mult));
     setCursor(d);
@@ -181,23 +263,63 @@ export default function CalendarPage() {
   function toggleType(type: string) {
     setActiveTypes((prev) => prev.includes(type) ? prev.filter((t) => t !== type) : [...prev, type]);
   }
+  
+  function handleDayClick(day: Date) {
+    setSelectedDate(day);
+    setShowAdd(true);
+  }
 
   const title = cursor.toLocaleDateString('pl-PL', { month: 'long', year: 'numeric', day: view === 'dzień' ? 'numeric' : undefined });
 
+  if (!isInitialized) return <div className="flex h-80 items-center justify-center"><Loader2 className="animate-spin text-cyan-600 w-8 h-8" /></div>;
+
   return (
-    <div className="mx-auto max-w-[1800px] space-y-4">
+    <div className="mx-auto max-w-[1800px] space-y-4 relative">
       <PageTitle
         eyebrow="Kalendarz"
         title="Kalendarz operacyjny"
-        description="Wydarzenia wielodniowe łączą się w paski tygodniowe. Kolor wydarzenia pochodzi z typu wydarzenia. Status jest tylko ikoną przed nazwą."
-        action={<Button onClick={() => setShowAdd(true)}><CalendarPlus size={16} className="inline mr-1" /> Dodaj</Button>}
+        description="Wydarzenia wielodniowe łączą się w paski tygodniowe. Kliknij wybrany dzień, aby szybko dodać w nim operację. Kliknij w nazwę miesiąca by otworzyć szybki wybór daty."
+        action={
+          <Button onClick={() => { setSelectedDate(undefined); setShowAdd(true); }}>
+            <CalendarPlus size={16} className="inline mr-1" /> Dodaj
+          </Button>
+        }
       />
 
       <Card className="!p-4 border-slate-200 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <button onClick={() => move(-1)} className="rounded-xl border p-2 hover:bg-slate-50 transition-colors"><ChevronLeft size={18} /></button>
-            <p className="min-w-[240px] text-center text-2xl font-medium uppercase tracking-tight text-slate-800">{title}</p>
+            
+            <div 
+              className="relative flex items-center justify-center min-w-[240px] group cursor-pointer"
+              onClick={() => {
+                if (dateInputRef.current && 'showPicker' in dateInputRef.current) {
+                  try {
+                    dateInputRef.current.showPicker();
+                  } catch (e) {
+                    console.error("Browser doesn't support showPicker", e);
+                  }
+                }
+              }}
+            >
+              <p className="text-center text-2xl font-medium uppercase tracking-tight text-slate-800 group-hover:text-cyan-600 transition-colors flex items-center gap-2">
+                {title} <Calendar size={20} className="text-slate-400 group-hover:text-cyan-600 transition-colors" />
+              </p>
+              <input
+                ref={dateInputRef}
+                type="date"
+                title="Wybierz datę"
+                className="absolute w-px h-px opacity-0 pointer-events-none -z-10"
+                value={iso(cursor)}
+                onChange={(e) => {
+                  if (e.target.value) {
+                    setCursor(new Date(e.target.value));
+                  }
+                }}
+              />
+            </div>
+
             <button onClick={() => move(1)} className="rounded-xl border p-2 hover:bg-slate-50 transition-colors"><ChevronRight size={18} /></button>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -241,6 +363,9 @@ export default function CalendarPage() {
                 cursor={cursor}
                 view={view}
                 items={filteredItems.filter((i) => itemActiveOnRange(i, startOfDay(week[0] as Date), endOfDay(week[week.length - 1] as Date)))}
+                onDayClick={handleDayClick}
+                onBarEnter={handleBarEnter}
+                onBarLeave={handleBarLeave}
               />
             ))}
           </div>
@@ -280,13 +405,77 @@ export default function CalendarPage() {
         </Card>
       </div>
 
-      {showAdd && <QuickAddCalendarModal dict={dict} onClose={() => setShowAdd(false)} onSaved={() => { setShowAdd(false); load(); }} />}
+      {showAdd && <QuickAddCalendarModal dict={dict} initialDate={selectedDate} onClose={() => { setShowAdd(false); setSelectedDate(undefined); }} onSaved={() => { setShowAdd(false); setSelectedDate(undefined); load(); }} />}
+
+      {/* TOOLTIP WYDARZENIA */}
+      {tooltip.show && tooltip.item && (
+        <div
+          className="fixed z-[100] w-[320px] -translate-x-1/2 -translate-y-full pb-3 pointer-events-none animate-in fade-in zoom-in-95 duration-200"
+          style={{ left: tooltip.x, top: tooltip.y }}
+        >
+          <div className="rounded-2xl border border-slate-200 bg-white/95 p-4 shadow-2xl backdrop-blur-xl">
+            
+            {/* Header: Ikona + Tytuł */}
+            <div className="mb-3 border-b border-slate-100 pb-3 flex items-start gap-2.5">
+              <span 
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs text-white shadow-sm" 
+                style={{ backgroundColor: tooltip.item.kolor || '#0891B2' }}
+              >
+                {tooltip.item.ikona || '•'}
+              </span>
+              <p className="min-w-0 flex-1 font-black text-slate-900 leading-tight">
+                {tooltip.item.tytul}
+              </p>
+            </div>
+
+            {/* Informacje czas/miejsce */}
+            <div className="space-y-2.5 text-xs font-bold text-slate-500 mb-4">
+              <div className="flex items-start gap-2">
+                <Clock size={14} className="text-slate-400 mt-0.5 shrink-0" />
+                <span>
+                  {formatTooltipDate(tooltip.item.start)} 
+                  {tooltip.item.koniec && tooltip.item.koniec !== tooltip.item.start && (
+                    <> → <br className="block sm:hidden" />{formatTooltipDate(tooltip.item.koniec)}</>
+                  )}
+                </span>
+              </div>
+
+              {tooltip.item.miejsce && (
+                <div className="flex items-start gap-2">
+                  <MapPin size={14} className="text-slate-400 mt-0.5 shrink-0" />
+                  <span className="line-clamp-2">{tooltip.item.miejsce}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Statusy poboczne */}
+            <div className="flex flex-wrap gap-1.5">
+              {tooltip.item.status && (
+                <span className="rounded-md bg-slate-100 px-2 py-1 text-[10px] font-black uppercase tracking-wider text-slate-600">
+                  {tooltip.item.status}
+                </span>
+              )}
+              {tooltip.item.statusMagazynowy && (
+                <span className="rounded-md bg-orange-50 px-2 py-1 text-[10px] font-black uppercase tracking-wider text-orange-600">
+                  {tooltip.item.ikonaMagazynowa || '📦'} {tooltip.item.statusMagazynowy}
+                </span>
+              )}
+              {tooltip.item.statusKsiegowy && (
+                <span className="rounded-md bg-emerald-50 px-2 py-1 text-[10px] font-black uppercase tracking-wider text-emerald-600">
+                  {tooltip.item.ikonaKsiegowa || '💰'} {tooltip.item.statusKsiegowy}
+                </span>
+              )}
+            </div>
+
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function WeekStrip({ week, cursor, view, items }: { week: Date[]; cursor: Date; view: View; items: CalendarItem[] }) {
-  if (!week || week.length === 0) return null; // Zabezpieczenie typu przed błędem TS(2345)
+function WeekStrip({ week, cursor, view, items, onDayClick, onBarEnter, onBarLeave }: { week: Date[]; cursor: Date; view: View; items: CalendarItem[], onDayClick: (d: Date) => void, onBarEnter: (e: React.MouseEvent, item: CalendarItem) => void, onBarLeave: () => void }) {
+  if (!week || week.length === 0) return null;
   const isDay = view === 'dzień';
   const weekStart = startOfDay(week[0] as Date); 
   const weekEnd = endOfDay(week[week.length - 1] as Date);
@@ -305,12 +494,17 @@ function WeekStrip({ week, cursor, view, items }: { week: Date[]; cursor: Date; 
         return (
           <div
             key={day.toISOString()}
-            className={`relative min-h-[172px] border-r border-slate-100 p-2 transition-colors ${today ? 'bg-cyan-50/40 ring-1 ring-inset ring-cyan-200' : outsideMonth ? 'bg-slate-50/80' : 'bg-white'}`}
+            onClick={() => onDayClick(day)}
+            className={`group relative min-h-[172px] border-r border-slate-100 p-2 transition-colors cursor-pointer ${today ? 'bg-cyan-50/40 ring-1 ring-inset ring-cyan-200 hover:bg-cyan-100/50' : outsideMonth ? 'bg-slate-50/80 hover:bg-slate-100' : 'bg-white hover:bg-slate-50'}`}
             style={{ minHeight: `${weekMinHeight}px`, paddingTop: `${CALENDAR_BAR_TOP + maxRow * (CALENDAR_BAR_ROW_HEIGHT + CALENDAR_BAR_ROW_GAP)}px` }}
           >
-            <div className="absolute left-3 top-3">
+            <div className="absolute right-2 top-2 z-10 opacity-0 transition-all duration-300 group-hover:opacity-100 text-cyan-600 bg-cyan-100 rounded-md p-1 shadow-sm">
+              <CalendarPlus size={14} />
+            </div>
+
+            <div className="absolute left-3 top-3 pointer-events-none">
               <p className={`text-[11px] font-semibold uppercase tracking-wide ${today ? 'text-cyan-700' : 'text-slate-400'}`}>{day.toLocaleDateString('pl-PL', { weekday: 'short' })}</p>
-              <p className={`leading-none mt-1 transition-all ${today ? 'inline-flex items-center justify-center min-w-[32px] h-8 rounded-xl bg-cyan-600 text-xl font-medium text-white shadow-md px-2' : 'text-3xl font-medium text-slate-400'}`}>{day.getDate()}</p>
+              <p className={`leading-none mt-1 transition-all ${today ? 'inline-flex items-center justify-center min-w-[32px] h-8 rounded-xl bg-cyan-600 text-xl font-medium text-white shadow-md px-2' : 'text-3xl font-medium text-slate-400 group-hover:text-cyan-600'}`}>{day.getDate()}</p>
             </div>
           </div>
         );
@@ -321,7 +515,7 @@ function WeekStrip({ week, cursor, view, items }: { week: Date[]; cursor: Date; 
         style={{ top: `${CALENDAR_BAR_TOP}px`, gridTemplateRows: `repeat(${maxRow}, ${CALENDAR_BAR_ROW_HEIGHT}px)`, rowGap: `${CALENDAR_BAR_ROW_GAP}px` }}
       >
         {bars.map((bar) => (
-          <CalendarBar key={bar.key} bar={bar} />
+          <CalendarBar key={bar.key} bar={bar} onMouseEnter={onBarEnter} onMouseLeave={onBarLeave} />
         ))}
       </div>
     </div>
@@ -378,12 +572,13 @@ function buildBars(items: CalendarItem[], weekStart: Date, weekEnd: Date, column
   return out;
 }
 
-function CalendarBar({ bar }: { bar: any }) {
+function CalendarBar({ bar, onMouseEnter, onMouseLeave }: { bar: any, onMouseEnter: (e: React.MouseEvent, item: CalendarItem) => void, onMouseLeave: () => void }) {
   const radius = bar.isWeekStart && bar.isWeekEnd ? 'rounded-md' : bar.isWeekStart ? 'rounded-l-md rounded-r-none' : bar.isWeekEnd ? 'rounded-r-md rounded-l-none' : 'rounded-sm';
   return (
     <Link
       href={itemUrl(bar.item)}
-      title={`${bar.item.status || ''} | ${bar.item.tytul || ''}`}
+      onMouseEnter={(e) => onMouseEnter(e, bar.item)}
+      onMouseLeave={onMouseLeave}
       className={`pointer-events-auto block truncate px-2.5 py-[2px] text-[13px] font-medium leading-[20px] text-white shadow-sm transition-all hover:brightness-110 hover:shadow-md ${radius}`}
       style={{
         gridColumn: `${bar.startCol + 1} / ${bar.endCol + 2}`,
@@ -402,4 +597,15 @@ function CalendarBar({ bar }: { bar: any }) {
 
 function List({ items }: { items: CalendarItem[] }) {
   return <Card className="border-slate-200 shadow-sm"><div className="space-y-3">{items.map((i) => <Link href={itemUrl(i)} key={`${i.typ}-${i.id}`} className="flex items-center justify-between rounded-2xl border border-slate-100 p-4 transition-all hover:border-cyan-200 hover:bg-cyan-50/50 hover:shadow-sm"><div><p className="font-semibold text-slate-800"><span className="mr-2 opacity-80">{i.ikona || '•'}</span>{i.tytul}</p><p className="mt-1 text-sm font-medium text-slate-500">{typeLabels[i.typ] || i.typ} • {i.status}{i.statusMagazynowy ? ` • ${i.ikonaMagazynowa || '📦'} ${i.statusMagazynowy}` : ''}{i.statusKsiegowy ? ` • ${i.ikonaKsiegowa || '💰'} ${i.statusKsiegowy}` : ''}</p></div><p className="text-sm font-medium text-slate-500">{i.start ? new Date(i.start).toLocaleString('pl-PL') : '-'}</p></Link>)}{items.length === 0 && <p className="p-8 text-center font-medium text-slate-400">Brak wpisów w wybranym zakresie.</p>}</div></Card>;
+}
+
+// ==========================================
+// Bezpieczny Wrapper (Wymagany przez Next.js)
+// ==========================================
+export default function CalendarPage() {
+  return (
+    <Suspense fallback={<div className="flex h-screen items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-cyan-600" /></div>}>
+      <CalendarContent />
+    </Suspense>
+  );
 }

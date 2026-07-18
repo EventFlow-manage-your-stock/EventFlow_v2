@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { ArrowLeft, Copy, Loader2, Plus, Save, Truck } from 'lucide-react';
+import { ArrowLeft, Copy, Loader2, Plus, Save, Truck, Calendar } from 'lucide-react';
 import { api } from '../../../../lib/api';
 import { Button, Card, Field, inputClass } from '../../../../components/ProductUI';
 import { OfferDuplicateTargetModal } from '../../../../components/OfferDuplicateTargetModal';
@@ -118,8 +118,39 @@ export default function RentalDetailsPage() {
 
   return <div className="mx-auto max-w-[1600px] space-y-5">
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <button onClick={() => router.back()} className="inline-flex items-center gap-1 rounded-xl border px-3 py-2 text-sm font-bold text-slate-500 hover:bg-slate-50"><ArrowLeft size={16} /> Powrót</button>
-      <div className="flex gap-2"><Button variant="secondary" onClick={() => router.back()}><ArrowLeft size={16} className="inline" /> Powrót</Button><Button onClick={save} disabled={saving}><Save size={16} className="inline" /> {saving ? 'Zapisywanie...' : 'Zapisz'}</Button></div>
+      <div className="flex items-center gap-2 text-sm font-bold text-slate-500">
+        <button 
+          onClick={() => router.back()} 
+          title="Wraca do poprzednio odwiedzonej strony (Historia przeglądarki)"
+          className="inline-flex items-center gap-1 rounded-xl border px-3 py-2 hover:bg-slate-50"
+        >
+          <ArrowLeft size={16} /> Powrót
+        </button>
+        <span>/</span>
+        <Link href="/dashboard/calendar" className="hover:text-cyan-700">Kalendarz</Link>
+        <span>/</span>
+        <span className="font-black text-slate-900">{isNew ? 'Nowe wypożyczenie' : form.numer || `Wynajem #${params.id}`}</span>
+      </div>
+      
+      <div className="flex flex-wrap gap-2">
+
+        {!isNew && (form.data_wydania || item?.data_wydania) && (
+          <Button 
+            variant="secondary" 
+            onClick={() => {
+              const targetDate = form.data_wydania || item?.data_wydania;
+              router.push(`/dashboard/calendar?date=${targetDate.slice(0, 10)}`);
+            }}
+            title="Przenosi do kalendarza, ustawiając go od razu na dacie tego wypożyczenia"
+          >
+            <Calendar size={16} className="inline mr-1 text-cyan-600" /> Cofnij do daty w kalendarzu
+          </Button>
+        )}
+
+        <Button onClick={save} disabled={saving}>
+          <Save size={16} className="inline mr-1" /> {saving ? 'Zapisywanie...' : 'Zapisz'}
+        </Button>
+      </div>
     </div>
 
     {error && <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-700">{error}</div>}

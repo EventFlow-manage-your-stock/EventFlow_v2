@@ -19,7 +19,10 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "jest --config ./test/jest-e2e.json"
+    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "import:sprzet": "node scripts/import-sprzet-case-excel.mjs",
+    "import:magazyn:all": "node scripts/import-wszystkie-magazyny.js",
+    "import:opakowania": "node scripts/import-sprzet-case-excel.mjs.backup_bez_case_assignment"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
@@ -40,6 +43,7 @@
     "pg": "^8.22.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
+    "xlsx": "^0.18.5",
     "zustand": "^5.0.14"
   },
   "devDependencies": {

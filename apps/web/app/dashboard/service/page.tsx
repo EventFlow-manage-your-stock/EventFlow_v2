@@ -14,7 +14,7 @@ export default function ServicePage(){
   const router = useRouter();
   const [items,setItems]=useState<any[]>([]); const [statuses,setStatuses]=useState<any[]>([]); const [egz,setEgz]=useState<any[]>([]);
   const [show,setShow]=useState(false); const [form,setForm]=useState<any>({}); const [view,setView]=useState<'kanban'|'lista'>('kanban'); const [error,setError]=useState('');
-  async function load(){const [z,s,e]=await Promise.all([api.get('/api/serwis').catch(()=>({data:[]})),api.get('/api/serwis/statusy').catch(()=>({data:[]})),api.get('/api/magazyn/wszystkie-egzemplarze').catch(()=>({data:[]}))]); setItems(z.data||[]); setStatuses(s.data||[]); setEgz(e.data||[]);}
+  async function load(){const [z,s,e]=await Promise.all([api.get('/api/serwis').catch(()=>({data:[]})),api.get('/api/serwis/statusy').catch(()=>({data:[]})),api.get('/api/magazyn/wszystkie-egzemplarze').catch(()=>({data:[]}))]); setItems(z.data||[]); setStatuses((s.data||[]).filter((x:any)=>String(x.nazwa||'').toLowerCase()!=='działa')); setEgz(e.data||[]);}
   useEffect(()=>{load()},[]);
   const grouped=useMemo(()=>statuses.map((s:any)=>({...s, items:items.filter((i:any)=>i.id_statusu_serwisu===s.id || i.status?.id===s.id)})),[statuses,items]);
   async function save(e:any){e.preventDefault(); setError(''); try{await api.post('/api/serwis',form); setShow(false); setForm({}); load();}catch(err:any){setError(err?.response?.data?.message || err.message || 'Nie udało się zapisać zgłoszenia.')}}

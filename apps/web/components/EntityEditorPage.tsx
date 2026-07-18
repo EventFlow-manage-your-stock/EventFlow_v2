@@ -1,5 +1,13 @@
 'use client';
 
+export const defaultTabs = [
+  { id: 'dane', key: 'dane', label: 'Dane' },
+  { id: 'notatki', key: 'notatki', label: 'Notatki' },
+  { id: 'historia', key: 'historia', label: 'Historia' },
+];
+
+
+
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';

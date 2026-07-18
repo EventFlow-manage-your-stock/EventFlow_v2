@@ -7,10 +7,6 @@ import { googleMapsDirectionsUrl } from '../lib/googleMaps';
 import { Button, Field, inputClass } from './ProductUI';
 import { SimpleModal } from './SimpleModal';
 
-function dt(date: Date) {
-  return date.toISOString().slice(0, 16);
-}
-
 export type QuickAddDictionaries = {
   typy?: any[];
   statusy?: any[];
@@ -23,19 +19,31 @@ export function QuickAddCalendarModal({
   dict,
   onClose,
   onSaved,
+  initialDate,
 }: {
   dict: QuickAddDictionaries;
   onClose: () => void;
   onSaved: () => void;
+  initialDate?: Date;
 }) {
-  // EVENTFLOW_PRODUCT_POLISH_V5:
-  // Jeden wspólny modal dla Kokpitu i Kalendarza. Dzięki temu przycisk Dodaj
-  // w kokpicie robi dokładnie to samo, co Dodaj w kalendarzu, bez przechodzenia na /calendar.
-  const [form, setForm] = useState<any>({
-    typ: 'wydarzenie',
-    data_start: dt(new Date()),
-    data_koniec: dt(new Date(Date.now() + 3600000)),
+  const [form, setForm] = useState<any>(() => {
+    // Jeżeli dostaliśmy datę z kliknięcia w kalendarz lub bierzemy dzisiejszą
+    const start = initialDate ? new Date(initialDate) : new Date();
+    
+    // Zmieniamy format na YYYY-MM-DD
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const startDateStr = `${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}`;
+
+    return {
+      typ: 'wydarzenie',
+      nazwa: '',
+      startDate: startDateStr,
+      startTime: '', // Puste domyślnie = opcjonalna godzina
+      endDate: startDateStr,
+      endTime: '',
+    };
   });
+
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -43,8 +51,21 @@ export function QuickAddCalendarModal({
     e.preventDefault();
     setSaving(true);
     setError('');
+    
     try {
-      await api.post('/api/kalendarz/szybkie-dodanie', form);
+      const payload = { ...form };
+      
+      // Złożenie dat i czasów przed wysyłką do backendu
+      // Jeżeli użytkownik nie podał godziny, dajemy 00:00:00 dla startu i 23:59:59 dla końca (cały dzień)
+      payload.data_start = form.startTime 
+        ? `${form.startDate}T${form.startTime}:00` 
+        : `${form.startDate}T00:00:00`;
+        
+      payload.data_koniec = form.endTime 
+        ? `${form.endDate}T${form.endTime}:00` 
+        : `${form.endDate}T23:59:59`;
+
+      await api.post('/api/kalendarz/szybkie-dodanie', payload);
       onSaved();
     } catch (err: any) {
       setError(err?.response?.data?.message || err?.message || 'Nie udało się zapisać wpisu.');
@@ -70,15 +91,26 @@ export function QuickAddCalendarModal({
               <option value="urlop">Urlop</option>
             </select>
           </Field>
+          
           <Field label={typ === 'urlop' ? 'Nazwa / opis urlopu' : 'Nazwa'}>
             <input className={inputClass} value={form.nazwa || ''} onChange={(e) => setForm({ ...form, nazwa: e.target.value })} required={typ !== 'urlop'} />
           </Field>
-          <Field label="Start">
-            <input type="datetime-local" className={inputClass} value={form.data_start} onChange={(e) => setForm({ ...form, data_start: e.target.value })} />
+
+          {/* ODDZIELNE POLA DATY I CZASU */}
+          <Field label="Data startu">
+            <input type="date" className={inputClass} value={form.startDate || ''} onChange={(e) => setForm({ ...form, startDate: e.target.value })} required />
           </Field>
-          <Field label="Koniec">
-            <input type="datetime-local" className={inputClass} value={form.data_koniec} onChange={(e) => setForm({ ...form, data_koniec: e.target.value })} />
+          <Field label="Godzina startu (Opcjonalnie)">
+            <input type="time" className={inputClass} value={form.startTime || ''} onChange={(e) => setForm({ ...form, startTime: e.target.value })} />
           </Field>
+
+          <Field label="Data końca">
+            <input type="date" className={inputClass} value={form.endDate || ''} onChange={(e) => setForm({ ...form, endDate: e.target.value })} required />
+          </Field>
+          <Field label="Godzina końca (Opcjonalnie)">
+            <input type="time" className={inputClass} value={form.endTime || ''} onChange={(e) => setForm({ ...form, endTime: e.target.value })} />
+          </Field>
+          {/* KONIEC ODDZIELNYCH PÓL */}
 
           {typ === 'urlop' ? (
             <>
@@ -103,7 +135,7 @@ export function QuickAddCalendarModal({
               <Field label="Status">
                 <select className={inputClass} value={form.id_statusu_wydarzenia || ''} onChange={(e) => setForm({ ...form, id_statusu_wydarzenia: e.target.value })}>
                   <option value="">Wybierz</option>
-                  {(dict.statusy || []).map((s: any) => <option key={s.id} value={s.id}>{s.ikona || '●'} {s.nazwa}</option>)}
+                  {(dict.statusy || []).map((s: any) => <option key={s.id} value={s.id}>{s.ikona || ' '} {s.nazwa}</option>)}
                 </select>
               </Field>
               <Field label="Klient">

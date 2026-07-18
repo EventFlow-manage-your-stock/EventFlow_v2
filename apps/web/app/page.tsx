@@ -110,7 +110,7 @@ export default function LandingPage() {
               initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.8, ease: "easeOut" }}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/60 border border-slate-200 text-xs font-black tracking-widest text-cyan-700 mb-8 backdrop-blur-xl shadow-sm dark:bg-white/5 dark:border-white/10 dark:text-cyan-400 dark:shadow-cyan-900/20"
             >
-              <Sparkles size={14} /> KONTROLA NAD KAŻDYM KABLEM I PRACOWNIKIEM
+              <Sparkles size={14} /> KONTROLA NAD KAŻDYM SPRZĘTEM, WYDARZENIEM I PRACOWNIKIEM
             </motion.div>
             
             <motion.h1 
@@ -125,7 +125,7 @@ export default function LandingPage() {
               initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8, delay: 0.2, ease: "easeOut" }}
               className="text-lg lg:text-xl text-slate-600 dark:text-slate-400 max-w-3xl mx-auto mb-12 leading-relaxed font-medium"
             >
-              Przestań tracić pieniądze na zagubionym sprzęcie i zapomnij o overbookingu. EventFlow to zaawansowany system WMS i ERP, który zamienia stres branży eventowej w czysty, zorganizowany proces.
+              EventFlow to zaawansowany system WMS i ERP, który zamienia stres branży eventowej w czysty, zorganizowany proces.
             </motion.p>
 
             <motion.div 

@@ -10,6 +10,33 @@ import { DataTable } from '../../../../components/DataTable';
 
 function d(v: any) { return v ? new Date(v).toLocaleString('pl-PL') : '-'; }
 function itemName(item: any) { return item?.nazwa || item?.model?.nazwa || item?.egzemplarz?.nazwa || 'Pozycja sprzętu'; }
+
+// EVENTFLOW_CASE_SCAN_FIX_V4: case/opakowanie po skanie nie jest pozycją dokumentu; dodajemy tylko zawartość case.
+function eventflowCaseText(...values: any[]) { return values.filter(Boolean).map((v) => String(v).trim()).filter(Boolean).join(' ').toLowerCase(); }
+function eventflowIsCaseOrPackagingItem(item: any) {
+  const typ = eventflowCaseText(item?.model?.typ_sprzetu, item?.typ_sprzetu, item?.typ, item?.rodzaj);
+  const nazwa = eventflowCaseText(item?.model?.nazwa, item?.nazwa_modelu, item?.nazwa);
+  const kod = eventflowCaseText(item?.kod, item?.kod_kreskowy, item?.qr_kod, item?.zewnetrzny_kod_kreskowy, item?.zewnetrzny_qr_kod, item?.sn);
+  return typ.includes('opakowanie') || typ === 'case' || typ.includes('skrzyn') || kod.startsWith('case-') || /^case(\s|[-_#]|$)/.test(nazwa) || nazwa.includes('flight case') || nazwa.includes('transport case');
+}
+function eventflowCaseIds(item: any) { return new Set([item?.id, item?.id_egzemplarza].filter((v) => v !== null && v !== undefined).map((v) => String(v))); }
+function eventflowCaseCodes(item: any) { return new Set([item?.kod, item?.kod_kreskowy, item?.qr_kod, item?.zewnetrzny_kod_kreskowy, item?.zewnetrzny_qr_kod, item?.sn].filter(Boolean).map((v) => String(v).trim().toLowerCase())); }
+function eventflowUniqueCaseContents(contents: any[], caseRow: any) {
+  const caseIds = eventflowCaseIds(caseRow);
+  const caseCodes = eventflowCaseCodes(caseRow);
+  const seen = new Set();
+  return (Array.isArray(contents) ? contents : []).filter((child: any) => {
+    const childId = String(child?.id_egzemplarza || child?.id || '');
+    const childCode = String(child?.kod || child?.kod_kreskowy || child?.qr_kod || child?.zewnetrzny_kod_kreskowy || child?.zewnetrzny_qr_kod || child?.sn || '').trim().toLowerCase();
+    if (childId && caseIds.has(childId)) return false;
+    if (childCode && caseCodes.has(childCode)) return false;
+    if (eventflowIsCaseOrPackagingItem(child)) return false;
+    const key = childId || childCode || eventflowCaseText(child?.nazwa, child?.nazwa_modelu);
+    if (key && seen.has(key)) return false;
+    if (key) seen.add(key);
+    return true;
+  });
+}
 function docTypeLabel(t: string) { return t === 'przyjecie' ? 'Przyjęcie' : t === 'plan' ? 'Plan sprzętu' : 'Wydanie'; }
 
 export default function ReceivingPage() {
@@ -59,19 +86,19 @@ export default function ReceivingPage() {
   }
 
   function addItem(item: any) {
-    if (item?.model?.typ_sprzetu === 'opakowanie' && item?.rowType !== 'case') {
+    if (eventflowIsCaseOrPackagingItem(item) && item?.rowType !== 'case' && !item?.isCase) {
       setError('Case/opakowanie nie może być pozycją dokumentu. Zeskanuj case, aby automatycznie dodać sprzęt ze środka.');
       return;
     }
 
     if (item?.isCase || item?.rowType === 'case') {
-      const contents = item.contents || item.zawartosc_case || [];
+      const contents = eventflowUniqueCaseContents(item.contents || item.zawartosc_case || [], item);
       if (!contents.length) {
         setError('Ten case jest pusty albo nie ma aktywnych egzemplarzy w środku.');
         return;
       }
       const meta = caseScanMeta(item);
-      setNotice(item.message || `Dodano ${contents.length} egzemplarzy z wnętrza case.`);
+      setNotice(`Zeskanowano case. Do dokumentu dodano ${contents.length} egzemplarzy z wnętrza.`);
       contents.forEach((child: any) => addItem({ ...child, system_case_scan: meta, id_zeskanowanego_case: meta?.id, nazwa_zeskanowanego_case: meta?.nazwa }));
       return;
     }

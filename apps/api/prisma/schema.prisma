@@ -1240,26 +1240,25 @@ model Nieobecnosc {
   @@map("nieobecnosci")
 }
 
-
 model Zapytanie {
-  id                Int       @id @default(autoincrement())
-  id_organizacji    Int
-  id_tworcy         Int?
-  id_kontrahenta    Int?
-  
-  tytul             String    @db.VarChar(255)
-  kontrahent_reczny String?   @db.VarChar(255) // Gdy zapytanie jest od klienta spoza bazy
-  opis              String?   @db.Text
-  status            String    @default("nowe") @db.VarChar(50) // nowe, w_wycenie, wyslana, zaakceptowane, odrzucone
-  
+  id             Int  @id @default(autoincrement())
+  id_organizacji Int
+  id_tworcy      Int?
+  id_kontrahenta Int?
+
+  tytul             String  @db.VarChar(255)
+  kontrahent_reczny String? @db.VarChar(255) // Gdy zapytanie jest od klienta spoza bazy
+  opis              String? @db.Text
+  status            String  @default("nowe") @db.VarChar(50) // nowe, w_wycenie, wyslana, zaakceptowane, odrzucone
+
   aktywny           Boolean   @default(true)
   data_utworzenia   DateTime  @default(now())
   data_aktualizacji DateTime  @updatedAt
   data_usuniecia    DateTime?
 
-  organizacja       Organizacja @relation(fields: [id_organizacji], references: [id])
-  tworca            Uzytkownik? @relation("TworcaZapytania", fields: [id_tworcy], references: [id])
-  kontrahent        Kontrahent? @relation(fields: [id_kontrahenta], references: [id])
+  organizacja Organizacja @relation(fields: [id_organizacji], references: [id])
+  tworca      Uzytkownik? @relation("TworcaZapytania", fields: [id_tworcy], references: [id])
+  kontrahent  Kontrahent? @relation(fields: [id_kontrahenta], references: [id])
 
   @@index([status])
   @@map("zapytania")

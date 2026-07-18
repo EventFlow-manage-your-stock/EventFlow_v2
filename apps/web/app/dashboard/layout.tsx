@@ -16,6 +16,7 @@ const menuConfig = [
     { label: 'Wypożyczenia', href: '/dashboard/rentals', icon: Truck },
     { label: 'Urlopy', href: '/dashboard/leaves', icon: Palmtree },
   ]},
+  { icon: Truck, label: 'Przeniesienia (BETA)', href: '/dashboard/warehouse/transfers' },
   { icon: Users, label: 'Kontrahenci', children: [
     { label: 'Lista kontrahentów', href: '/dashboard/crm', icon: Users },
     { label: 'Kontakty', href: '/dashboard/crm/contacts', icon: Phone },

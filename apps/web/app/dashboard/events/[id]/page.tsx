@@ -24,6 +24,7 @@ import {
   Truck,
   Users,
   Wrench,
+  Calendar
 } from 'lucide-react';
 import { api } from '../../../../lib/api';
 import { Button, Card, Field, inputClass } from '../../../../components/ProductUI';
@@ -31,10 +32,9 @@ import { DataTable } from '../../../../components/DataTable';
 import { OfferDuplicateTargetModal } from '../../../../components/OfferDuplicateTargetModal';
 import { googleMapsDirectionsUrl } from '../../../../lib/googleMaps';
 
-// EVENTFLOW_PRODUCT_POLISH_V8:
-// Ten ekran przywraca układ panelu wydarzenia z pierwotnej wersji z GitHuba,
-// ale zostawia poprawki produktowe z późniejszych patchy: brak miesiąca księgowania w formularzu,
-// statusy poboczne, Google Maps, oferty jako relacja 1:N oraz zakładki modułowe.
+// ============================================================================
+// GLOBALNE HELPERY (Optymalizacja pamięci - poza cyklem renderowania)
+// ============================================================================
 
 const TABS = [
   { id: 'chat', label: 'Chat', icon: MessageSquare },
@@ -56,19 +56,9 @@ function strOrNull(v: any) { return v === '' || v === null || v === undefined ? 
 function money(v: any) { return `${Number(v || 0).toLocaleString('pl-PL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} zł`; }
 function dateTime(v: any) { return v ? new Date(v).toLocaleString('pl-PL') : '-'; }
 function initials(u: any) { return u?.imie || u?.nazwisko ? `${u?.imie?.[0] || ''}${u?.nazwisko?.[0] || ''}`.toUpperCase() : '?'; }
-
-function numberOrZero(value: any) {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : 0;
-}
-
-function modelCategoryId(model: any) {
-  return String(model?.kategoria?.id || model?.id_kategorii || model?.kategoria_id || '');
-}
-
-function getCategoryParentId(category: any) {
-  return category?.id_rodzica || category?.id_kategorii_glownej || category?.id_kategorii_nadrzednej || category?.parent_id || category?.id_parent || null;
-}
+function numberOrZero(value: any) { const n = Number(value); return Number.isFinite(n) ? n : 0; }
+function modelCategoryId(model: any) { return String(model?.kategoria?.id || model?.id_kategorii || model?.kategoria_id || ''); }
+function getCategoryParentId(category: any) { return category?.id_rodzica || category?.id_kategorii_glownej || category?.id_kategorii_nadrzednej || category?.parent_id || category?.id_parent || null; }
 
 function flattenCategories(categories: any[]): any[] {
   const result: any[] = [];
@@ -88,27 +78,18 @@ function flattenCategories(categories: any[]): any[] {
 function buildCategoryTree(categories: any[]) {
   const flatInput = flattenCategories(categories || []);
   const byId = new Map<string, any>();
-
-  for (const cat of flatInput) {
-    byId.set(String(cat.id), { ...cat, dzieci: [], _parentId: getCategoryParentId(cat) ? String(getCategoryParentId(cat)) : null });
-  }
-
-  for (const cat of Array.from(byId.values())) {
-    if (!cat._parentId && cat.parent?.id) cat._parentId = String(cat.parent.id);
-  }
-
+  for (const cat of flatInput) byId.set(String(cat.id), { ...cat, dzieci: [], _parentId: getCategoryParentId(cat) ? String(getCategoryParentId(cat)) : null });
+  for (const cat of Array.from(byId.values())) if (!cat._parentId && cat.parent?.id) cat._parentId = String(cat.parent.id);
   const roots: any[] = [];
   for (const cat of Array.from(byId.values())) {
     if (cat._parentId && byId.has(cat._parentId)) byId.get(cat._parentId).dzieci.push(cat);
     else roots.push(cat);
   }
-
   const sortByOrder = (items: any[]) => {
     items.sort((a, b) => numberOrZero(a.kolejnosc) - numberOrZero(b.kolejnosc) || String(a.nazwa || '').localeCompare(String(b.nazwa || ''), 'pl'));
     items.forEach((item) => sortByOrder(item.dzieci || []));
   };
   sortByOrder(roots);
-
   return { roots, byId };
 }
 
@@ -135,6 +116,77 @@ function categoryPath(categoryId: string, byId: Map<string, any>) {
   }
   return parts.join(' / ');
 }
+
+// ============================================================================
+// WMS CORE HELPERS (Oczyszczone i Zunifikowane z łatek v10-v11)
+// ============================================================================
+
+function normalizeCode(v: any) {
+  return String(v || '').trim().replace(/\s+/g, '').toLowerCase();
+}
+
+function getEquipmentCodes(row: any): string[] {
+  const egz = row?.egzemplarz || row;
+  const model = row?.model || egz?.model || row;
+  return [
+    row?.kod, row?.kod_kreskowy, row?.barcode, row?.qr_kod, row?.sn, row?.numer_seryjny,
+    egz?.kod, egz?.kod_kreskowy, egz?.zewnetrzny_kod_kreskowy, egz?.zewnetrzny_qr_kod, egz?.qr_kod, egz?.sn, egz?.numer_seryjny,
+    model?.kod, model?.kod_kreskowy, model?.barcode,
+  ].map(normalizeCode).filter(Boolean);
+}
+
+function getEquipmentText(row: any): string {
+  const egz = row?.egzemplarz || row;
+  const model = row?.model || egz?.model || row;
+  return [
+    row?.nazwa, row?.nazwa_modelu, row?.typ, row?.rodzaj, row?.tryb_ewidencji, row?.kategoria, row?.kategoria_nazwa,
+    egz?.nazwa, egz?.numer_egzemplarza, egz?.numer_urzadzenia, egz?.sn, egz?.numer_seryjny,
+    model?.nazwa, model?.typ, model?.rodzaj, model?.typ_sprzetu, model?.tryb_ewidencji, model?.kategoria?.nazwa, model?.kategoria?.sciezka
+  ].filter(Boolean).map((v) => String(v).toLowerCase()).join(' ');
+}
+
+function isRack(row: any): boolean {
+  const txt = getEquipmentText(row);
+  return txt.includes('rack') || txt.includes('racki') || txt.includes('szafa rack');
+}
+
+function isQuantityModel(model: any): boolean {
+  const txt = getEquipmentText(model);
+  return Boolean(
+    model?.rowType === 'ilosciowy_model' || model?.quantityOnly === true ||
+    model?.sprzet_ilosciowy === true || model?.czy_ilosciowy === true ||
+    model?.tryb_ewidencji === 'ilosciowe' || model?.tryb_ewidencji === 'ilościowe' ||
+    model?.typ_ewidencji === 'ilosciowe' || model?.rodzaj_ewidencji === 'ilosciowe' ||
+    txt.includes('ilosciow') || txt.includes('ilościow') ||
+    model?.ilosc_magazynowa !== undefined || model?.ilość_magazynowa !== undefined
+  );
+}
+
+function isCase(row: any): boolean {
+  if (!row || isRack(row)) return false;
+  const txt = getEquipmentText(row);
+  const codes = getEquipmentCodes(row);
+  return (
+    row?.isCase === true || row?.rowType === 'case' || row?.czy_case === true ||
+    codes.some((c) => c.startsWith('01')) ||
+    txt.includes('case') || txt.includes('opakowan') || txt.includes('skrzyn')
+  );
+}
+
+function isEquipmentInstance(row: any): boolean {
+  const modelType = row?.model?.typ_sprzetu || row?.egzemplarz?.model?.typ_sprzetu || row?.typ_sprzetu;
+  const hasInstance = Boolean(row?.id_egzemplarza || row?.egzemplarz || row?.id);
+  return hasInstance && !isQuantityModel(row) && (isRack(row) || (modelType !== 'opakowanie' && !isCase(row)));
+}
+
+function modelIdOf(row: any) { return row?.id_modelu || row?.model?.id || row?.egzemplarz?.id_modelu || row?.egzemplarz?.model?.id || null; }
+function modelNameOf(row: any) { return row?.nazwa_modelu || row?.model?.nazwa || row?.egzemplarz?.model?.nazwa || row?.nazwa || row?.egzemplarz?.nazwa || 'Sprzęt'; }
+function modelCategoryIdOf(row: any) { return row?.id_kategorii || row?.model?.id_kategorii || row?.model?.kategoria?.id || row?.egzemplarz?.model?.id_kategorii || row?.egzemplarz?.model?.kategoria?.id || modelCategoryId(row?.model || row); }
+function numberOf(row: any) { const egz = row?.egzemplarz || row; return egz?.numer_egzemplarza || egz?.numer_urzadzenia || egz?.sn || egz?.kod_kreskowy || ''; }
+
+// ============================================================================
+// KOMPONENT GŁÓWNY (Szczegóły Wydarzenia)
+// ============================================================================
 
 export default function EventDetailsPage() {
   const params = useParams();
@@ -271,16 +323,34 @@ export default function EventDetailsPage() {
     <div className="mx-auto max-w-[1800px] space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2 text-sm font-bold text-slate-500">
-          <button onClick={() => router.back()} className="inline-flex items-center gap-1 rounded-xl border px-3 py-2 hover:bg-slate-50"><ArrowLeft size={16} /> Powrót</button>
+          <button 
+            onClick={() => router.back()} 
+            title="Wraca do poprzednio odwiedzonej strony (Historia przeglądarki)"
+            className="inline-flex items-center gap-1 rounded-xl border px-3 py-2 hover:bg-slate-50"
+          >
+            <ArrowLeft size={16} />Powrót
+          </button>
           <span>/</span>
           <Link href="/dashboard/calendar" className="hover:text-cyan-700">Kalendarz</Link>
           <span>/</span>
           <span className="font-black text-slate-900">{isNew ? 'Nowe wydarzenie' : eventData?.nazwa}</span>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="secondary" onClick={() => router.back()}><ArrowLeft size={16} className="inline" /> Powrót</Button>
-          {!isNew && <Button variant="danger" onClick={remove}><Trash2 size={16} className="inline" /> Usuń</Button>}
-          <Button onClick={submit} disabled={saving}><Save size={16} className="inline" /> {saving ? 'Zapisywanie...' : 'Zapisz'}</Button>
+          {!isNew && (form.data_start || eventData?.data_start) && (
+            <Button 
+              variant="secondary" 
+              onClick={() => {
+                const targetDate = form.data_start || eventData?.data_start;
+                router.push(`/dashboard/calendar?date=${targetDate.slice(0, 10)}`);
+              }}
+              title="Przenosi do kalendarza, ustawiając go od razu na dacie tego wydarzenia"
+            >
+              <Calendar size={16} className="inline mr-1 text-cyan-600" /> Cofnij do daty w kalendarzu
+            </Button>
+          )}
+
+          {!isNew && <Button variant="danger" onClick={remove}><Trash2 size={16} className="inline mr-1" /> Usuń</Button>}
+          <Button onClick={submit} disabled={saving}><Save size={16} className="inline mr-1" /> {saving ? 'Zapisywanie...' : 'Zapisz'}</Button>
         </div>
       </div>
 
@@ -385,9 +455,11 @@ export default function EventDetailsPage() {
 function Metric({ label, value }: { label: string; value: string }) {
   return <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><p className="text-[11px] font-black uppercase tracking-wider text-slate-400">{label}</p><p className="mt-1 truncate text-lg font-black text-slate-900">{value}</p></div>;
 }
+
 function Info({ label, value }: { label: string; value: string }) {
   return <div className="rounded-2xl bg-slate-50 p-3"><p className="text-[11px] font-black uppercase tracking-wider text-slate-400">{label}</p><p className="font-black text-slate-800">{value}</p></div>;
 }
+
 function OffersPanel({ offers, mainOfferId, setMainOfferId, offerName, setOfferName, createOffer, duplicateOffer }: any) {
   return <div className="space-y-4">
     <div className="grid gap-3 rounded-2xl border border-cyan-100 bg-cyan-50 p-4 lg:grid-cols-[1fr_1fr_auto] lg:items-end">
@@ -408,8 +480,12 @@ function OffersPanel({ offers, mainOfferId, setMainOfferId, offerName, setOfferN
   </div>;
 }
 
+// ============================================================================
+// PANEL SPRZĘTU (EquipmentPanel)
+// ============================================================================
 
 function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: string }) {
+  const router = useRouter();
   const [data, setData] = useState<any>({ planowane: [], pozycje_dokumentow: [], kategorie: [], dokumenty: [], podsumowanie: {} });
   const [items, setItems] = useState<any[]>([]);
   const [models, setModels] = useState<any[]>([]);
@@ -454,47 +530,15 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
 
   const { roots: equipmentCategoryRoots, byId: equipmentCategoryById } = useMemo(() => buildCategoryTree(equipmentCategories), [equipmentCategories]);
 
-  function isCase(row: any) {
-    const modelType = row?.model?.typ_sprzetu || row?.egzemplarz?.model?.typ_sprzetu || row?.typ_sprzetu;
-    return row?.isCase || row?.rowType === 'case' || modelType === 'opakowanie' || row?.czy_case === true;
-  }
-
-  function isEquipmentInstance(row: any) {
-    const modelType = row?.model?.typ_sprzetu || row?.egzemplarz?.model?.typ_sprzetu;
-    const hasInstance = Boolean(row?.id_egzemplarza || row?.egzemplarz || row?.id);
-    return hasInstance && modelType !== 'opakowanie' && !isCase(row) && !isQuantityOnly(row);
-  }
-
-  function isQuantityOnly(row: any) {
-    return row?.rowType === 'ilosciowy_model' || row?.quantityOnly === true || row?.tryb_ewidencji === 'ilosciowe' || row?.model?.tryb_ewidencji === 'ilosciowe';
-  }
-
-  function modelIdOf(row: any) {
-    return row?.id_modelu || row?.model?.id || row?.egzemplarz?.id_modelu || row?.egzemplarz?.model?.id || null;
-  }
-
-  function modelNameOf(row: any) {
-    return row?.nazwa_modelu || row?.model?.nazwa || row?.egzemplarz?.model?.nazwa || row?.nazwa || row?.egzemplarz?.nazwa || 'Sprzęt';
-  }
-
-  function modelCategoryIdOf(row: any) {
-    return row?.id_kategorii || row?.model?.id_kategorii || row?.model?.kategoria?.id || row?.egzemplarz?.model?.id_kategorii || row?.egzemplarz?.model?.kategoria?.id || modelCategoryId(row?.model || row);
-  }
-
   function categoryOf(row: any) {
     const id = modelCategoryIdOf(row);
     if (id && equipmentCategoryById.has(String(id))) return categoryPath(String(id), equipmentCategoryById);
     return row?.kategoria || row?.kategoria_nazwa || row?.model?.kategoria?.nazwa || row?.egzemplarz?.model?.kategoria?.nazwa || 'Bez kategorii';
   }
 
-  function numberOf(row: any) {
-    const egz = row?.egzemplarz || row;
-    return egz?.numer_egzemplarza || egz?.numer_urzadzenia || egz?.sn || egz?.kod_kreskowy || '';
-  }
-
   const modelCountByCategory = useMemo(() => {
     const map = new Map<string, number>();
-    models.filter((m: any) => m.typ_sprzetu !== 'opakowanie').forEach((m: any) => {
+    models.filter((m: any) => m.typ_sprzetu !== 'opakowanie' && !isCase(m)).forEach((m: any) => {
       const id = modelCategoryId(m);
       if (!id) return;
       map.set(id, (map.get(id) || 0) + 1);
@@ -516,17 +560,6 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
     });
     return map;
   }, [models]);
-
-  function isQuantityOnlyModel(model: any) {
-    return Boolean(
-      model?.sprzet_ilosciowy === true ||
-      model?.czy_ilosciowy === true ||
-      model?.quantityOnly === true ||
-      model?.tryb_ewidencji === 'ilosciowe' ||
-      model?.typ_ewidencji === 'ilosciowe' ||
-      model?.rodzaj_ewidencji === 'ilosciowe'
-    );
-  }
 
   const plannedRows = useMemo(() => {
     const map = new Map<string, any>();
@@ -555,7 +588,7 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
       const row = map.get(key);
       row.plan += Number(p.ilosc || p.planowana_ilosc || 0);
       const sourceModel = p.model || modelById.get(String(id)) || p;
-      if (isQuantityOnly(p) || isQuantityOnlyModel(sourceModel)) {
+      if (isQuantityModel(p) || isQuantityModel(sourceModel)) {
         row.quantityOnly = true;
         row.kod = p.kod || p.kod_kreskowy || sourceModel?.kod_kreskowy || sourceModel?.kod || row.kod || '';
         row.jednostka = p.jednostka || sourceModel?.jednostka || row.jednostka || 'szt.';
@@ -621,7 +654,7 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
 
     return Array.from(map.values()).map((row: any) => {
       const model = modelById.get(String(row.id_modelu));
-      const quantityOnly = row.quantityOnly || isQuantityOnlyModel(model);
+      const quantityOnly = row.quantityOnly || isQuantityModel(model);
       return {
         ...row,
         quantityOnly,
@@ -656,7 +689,7 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
   const visibleModels = useMemo(() => {
     const q = query.trim().toLowerCase();
     return models
-      .filter((m: any) => m.typ_sprzetu !== 'opakowanie')
+      .filter((m: any) => m.typ_sprzetu !== 'opakowanie' && !isCase(m))
       .map((m: any) => {
         const catId = modelCategoryId(m);
         const path = catId ? categoryPath(catId, equipmentCategoryById) : '';
@@ -667,10 +700,24 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
       .sort((a: any, b: any) => String(a.kategoria_nazwa || '').localeCompare(String(b.kategoria_nazwa || ''), 'pl') || String(a.nazwa || '').localeCompare(String(b.nazwa || ''), 'pl'));
   }, [models, activeRoot, activeCategoryIds, query, equipmentCategoryById]);
 
+  function findQuantityModelByCode(code: string) {
+    const normalized = normalizeCode(code);
+    return (models || []).find((m: any) =>
+      isQuantityModel(m) && getEquipmentCodes(m).includes(normalized)
+    );
+  }
+
+  function findInstanceByCode(code: string) {
+    const normalized = normalizeCode(code);
+    return (items || []).find((x: any) =>
+      getEquipmentCodes(x).includes(normalized)
+    );
+  }
+
   const visibleInstances = useMemo(() => {
     const q = query.trim().toLowerCase();
     return items
-      .filter((x: any) => x.model?.typ_sprzetu !== 'opakowanie')
+      .filter((x: any) => isEquipmentInstance(x) && !isCase(x))
       .map((x: any) => ({
         ...x,
         rowType: 'egzemplarz',
@@ -701,25 +748,20 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
         .filter((p) => p.id_modelu && p.ilosc > 0);
       await api.post(`/api/magazyn/wydarzenia/${eventId}/sprzet`, { replace: true, pozycje });
       setShowEditor(false);
-      setNotice('Zapisano plan sprzętu wydarzenia. Wydanie robisz później przez skanowanie konkretnych egzemplarzy.');
+      setNotice('Zapisano plan sprzętu wydarzenia. Wydanie robisz później przez skanowanie egzemplarzy/case albo kodu sprzętu ilościowego.');
       await load();
     } catch (e: any) {
       setError(e?.response?.data?.message || e?.message || 'Nie udało się zapisać planu sprzętu.');
     }
   }
 
-
   function caseScanMeta(row: any) {
     if (!row) return null;
-    return {
-      id: row.id || row.id_egzemplarza,
-      nazwa: row.nazwa || row.nazwa_modelu || 'Case',
-      kod: row.kod || row.kod_kreskowy || '',
-    };
+    return { id: row.id || row.id_egzemplarza, nazwa: row.nazwa || row.nazwa_modelu || 'Case', kod: getEquipmentCodes(row)[0] || '' };
   }
 
   function normalizeDocumentItem(row: any, source: 'scan' | 'manual' = 'manual') {
-    if (isQuantityOnly(row)) {
+    if (isQuantityModel(row)) {
       return {
         source,
         rowType: 'ilosciowy_model',
@@ -730,39 +772,41 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
         nazwa_modelu: row.nazwa_modelu || row.nazwa || row.model?.nazwa || 'Sprzęt ilościowy',
         numer_egzemplarza: '',
         kategoria: categoryOf(row),
-        kod: row.kod || row.kod_kreskowy || row.model?.kod_kreskowy || '',
+        kod: row.kod || row.kod_kreskowy || row.model?.kod_kreskowy || row.model?.kod || '',
         ilosc: Number(row.ilosc || 1),
         jednostka: row.jednostka || row.model?.jednostka || 'szt.',
         uwagi: row.uwagi || 'Sprzęt ilościowy bez egzemplarzy',
       };
     }
-
     const egz = row.egzemplarz || row;
     const model = row.model || row.egzemplarz?.model;
+    const instanceNo = numberOf(row);
+    const baseName = model?.nazwa || row.nazwa_modelu || egz.model?.nazwa || row.nazwa || 'Sprzęt';
     return {
       source,
-      rowType: 'egzemplarz',
+      rowType: isRack(row) ? 'rack' : 'egzemplarz',
+      rack: isRack(row),
       id_modelu: row.id_modelu || model?.id || egz.id_modelu,
       id_egzemplarza: row.id_egzemplarza || egz.id,
-      nazwa: [model?.nazwa || row.nazwa_modelu || egz.model?.nazwa || row.nazwa, egz.nazwa && egz.nazwa !== model?.nazwa ? egz.nazwa : null, numberOf(row) ? `nr ${numberOf(row)}` : null].filter(Boolean).join(' · '),
-      nazwa_modelu: model?.nazwa || row.nazwa_modelu || egz.model?.nazwa || row.nazwa,
-      numer_egzemplarza: numberOf(row),
+      nazwa: [isRack(row) ? `[RACK] ${baseName}` : baseName, egz.nazwa && egz.nazwa !== model?.nazwa ? egz.nazwa : null, instanceNo ? `nr ${instanceNo}` : null].filter(Boolean).join(' · '),
+      nazwa_modelu: baseName,
+      numer_egzemplarza: instanceNo,
       kategoria: categoryOf(row),
       kod: row.kod || egz.kod_kreskowy || egz.zewnetrzny_kod_kreskowy || egz.zewnetrzny_qr_kod || egz.qr_kod || egz.sn || '',
       ilosc: 1,
-      uwagi: row.uwagi || '',
+      uwagi: row.uwagi || (isRack(row) ? 'Rack wydany jako jedna pozycja bez rozwijania zawartości.' : ''),
     };
   }
 
   function addDocumentItemsBulk(rows: any[], source: 'scan' | 'manual' = 'manual', sourceLabel = '', scannedCase: any = null) {
     const normalized = rows
-      .filter((row: any) => isEquipmentInstance(row) && !isCase(row))
+      .filter((row: any) => isEquipmentInstance(row) && !isCase(row) && !isQuantityModel(row))
       .map((row: any) => {
         const item = normalizeDocumentItem(row, source);
         const meta = scannedCase || row.system_case_scan || row.case_scan || null;
         return meta ? { ...item, system_case_scan: meta, id_zeskanowanego_case: meta.id, nazwa_zeskanowanego_case: meta.nazwa } : item;
       })
-      .filter((item: any) => item.id_egzemplarza);
+      .filter((item: any) => item.id_egzemplarza && item.id_modelu);
 
     if (!normalized.length) {
       setError('Nie znaleziono aktywnych egzemplarzy sprzętu do dodania na dokument.');
@@ -772,25 +816,19 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
     setDocItems((prev) => {
       const existingIds = new Set(prev.map((p: any) => Number(p.id_egzemplarza)).filter(Boolean));
       const toAdd: any[] = [];
-
       for (const item of normalized) {
         const id = Number(item.id_egzemplarza);
         if (!id || existingIds.has(id)) continue;
         existingIds.add(id);
         toAdd.push(item);
       }
-
       const skipped = normalized.length - toAdd.length;
       if (!toAdd.length) {
-        setNotice(sourceLabel ? `${sourceLabel}: wszystkie egzemplarze z tego skanu są już na aktualnym dokumencie.` : 'Ten sprzęt jest już zeskanowany na aktualnym dokumencie.');
+        setNotice(sourceLabel ? `${sourceLabel}: wszystkie pozycje z tego skanu są już na aktualnym dokumencie.` : 'Ten sprzęt jest już zeskanowany na aktualnym dokumencie.');
         return prev;
       }
-
-      setNotice(sourceLabel
-        ? `${sourceLabel}: dodano ${toAdd.length} egz. z case${skipped ? `, pominięto duplikaty: ${skipped}` : ''}. Case nie trafia na dokument.`
-        : `Dodano ${toAdd.length} egz.${skipped ? `, pominięto duplikaty: ${skipped}` : ''}.`
-      );
-
+      const rackCount = toAdd.filter((x: any) => x.rack || x.rowType === 'rack').length;
+      setNotice(sourceLabel ? `${sourceLabel}: dodano ${toAdd.length} poz.${rackCount ? ' Rack jako jedna pozycja.' : ' Case nie trafia na dokument.'}` : `Dodano ${toAdd.length} poz.${skipped ? `, pominięto duplikaty: ${skipped}` : ''}.`);
       return [...prev, ...toAdd];
     });
   }
@@ -801,9 +839,8 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
       setError('Nie udało się rozpoznać modelu ilościowego.');
       return;
     }
-
     const name = row.nazwa_modelu || row.nazwa || row.model?.nazwa || 'Sprzęt ilościowy';
-    const available = Number(row.ilosc_dostepna || row.model?.ilosc_magazynowa || 0);
+    const available = Number(row.ilosc_dostepna || row.ilosc_magazynowa || row.model?.ilosc_magazynowa || 0);
     const unit = row.jednostka || row.model?.jednostka || 'szt.';
     const answer = window.prompt(`Ile sztuk wydać/przyjąć?\n${name}${available ? `\nDostępnie w magazynie: ${available} ${unit}` : ''}`, '1');
     if (answer === null) {
@@ -812,16 +849,13 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
     }
     const requested = Number(String(answer).replace(',', '.'));
     const suggested = Math.max(0, available ? Math.min(available, requested) : requested);
-
     if (!Number.isFinite(suggested) || suggested <= 0) {
       setError('Podaj ilość większą od 0.');
       return;
     }
-
-    const item = normalizeDocumentItem({ ...row, id_modelu: modelId, ilosc: suggested, jednostka: unit }, source);
-
+    const item = normalizeDocumentItem({ ...row, rowType: 'ilosciowy_model', quantityOnly: true, id_modelu: modelId, id: modelId, ilosc: suggested, jednostka: unit }, source);
     setDocItems((prev) => {
-      const idx = prev.findIndex((p: any) => isQuantityOnly(p) && Number(p.id_modelu) === modelId);
+      const idx = prev.findIndex((p: any) => isQuantityModel(p) && Number(p.id_modelu) === modelId);
       if (idx >= 0) {
         const next = [...prev];
         next[idx] = { ...next[idx], ilosc: Number(next[idx].ilosc || 0) + suggested };
@@ -832,52 +866,29 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
     setNotice(`Dodano ${suggested} ${unit} · ${name}.`);
   }
 
-  function quantityRowSelected(row: any) {
-    const modelId = Number(row?.id_modelu);
-    if (!modelId) return false;
-    return docItems.some((p: any) => isQuantityOnly(p) && Number(p.id_modelu) === modelId);
+  function quantityRowSelected(row: any) { 
+    const modelId = Number(row?.id_modelu); 
+    if (!modelId) return false; 
+    return docItems.some((p: any) => isQuantityModel(p) && Number(p.id_modelu) === modelId); 
   }
 
   function toggleQuantityRowWithoutScan(row: any, checked: boolean) {
     setError('');
     setNotice('');
     const modelId = Number(row?.id_modelu);
-    if (!modelId) {
-      setError('Nie udało się rozpoznać modelu ilościowego.');
-      return;
-    }
-
+    if (!modelId) { setError('Nie udało się rozpoznać modelu ilościowego.'); return; }
     if (!checked) {
-      setDocItems((prev) => prev.filter((p: any) => !(isQuantityOnly(p) && Number(p.id_modelu) === modelId)));
+      setDocItems((prev) => prev.filter((p: any) => !(isQuantityModel(p) && Number(p.id_modelu) === modelId)));
       setNotice(`Usunięto ${row.nazwa || 'sprzęt ilościowy'} z aktualnego dokumentu.`);
       return;
     }
-
     const amount = missingAfterScan(row);
-    if (!Number.isFinite(amount) || amount <= 0) {
-      setNotice(`${row.nazwa || 'Ten model'} nie ma już brakujących sztuk do ${mode === 'wydanie' ? 'wydania' : 'przyjęcia'}.`);
-      return;
-    }
-
+    if (!Number.isFinite(amount) || amount <= 0) { setNotice(`${row.nazwa || 'Ten model'} nie ma już brakujących sztuk do ${mode === 'wydanie' ? 'wydania' : 'przyjęcia'}.`); return; }
     const model = modelById.get(String(modelId)) || {};
     const unit = row.jednostka || model.jednostka || 'szt.';
-    const item = normalizeDocumentItem({
-      ...model,
-      rowType: 'ilosciowy_model',
-      quantityOnly: true,
-      id: modelId,
-      id_modelu: modelId,
-      nazwa: row.nazwa || model.nazwa,
-      nazwa_modelu: row.nazwa || model.nazwa,
-      kategoria: row.kategoria,
-      kod: row.kod || model.kod_kreskowy || model.kod || '',
-      ilosc: amount,
-      jednostka: unit,
-      uwagi: `${mode === 'wydanie' ? 'Wydanie' : 'Przyjęcie'} sprzętu ilościowego bez skanowania`,
-    }, 'manual');
-
+    const item = normalizeDocumentItem({ ...model, rowType: 'ilosciowy_model', quantityOnly: true, id: modelId, id_modelu: modelId, nazwa: row.nazwa || model.nazwa, nazwa_modelu: row.nazwa || model.nazwa, kategoria: row.kategoria, kod: row.kod || model.kod_kreskowy || model.kod || '', ilosc: amount, jednostka: unit, uwagi: `${mode === 'wydanie' ? 'Wydanie' : 'Przyjęcie'} sprzętu ilościowego bez skanowania`, }, 'manual');
     setDocItems((prev) => {
-      const withoutThisModel = prev.filter((p: any) => !(isQuantityOnly(p) && Number(p.id_modelu) === modelId));
+      const withoutThisModel = prev.filter((p: any) => !(isQuantityModel(p) && Number(p.id_modelu) === modelId));
       return [...withoutThisModel, { ...item, source: 'checkbox' }];
     });
     setNotice(`${mode === 'wydanie' ? 'Dodano do wydania' : 'Dodano do przyjęcia'} ${amount} ${unit} · ${row.nazwa || model.nazwa || 'sprzęt ilościowy'}.`);
@@ -886,29 +897,17 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
   function addDocumentItem(row: any, source: 'scan' | 'manual' = 'manual') {
     setError('');
     setNotice('');
-
+    if (isQuantityModel(row)) { addQuantityDocumentItem(row, source); return; }
+    if (isRack(row)) { addDocumentItemsBulk([row], source, 'Zeskanowano rack'); return; }
     if (isCase(row)) {
       const contents = (row.contents || row.zawartosc_case || [])
-        .filter((child: any) => !isCase(child) && isEquipmentInstance(child));
-      if (!contents.length) {
-        setError('Ten case jest pusty albo nie ma aktywnych egzemplarzy sprzętu w środku. Case nie trafia na dokument.');
-        return;
-      }
-      const label = row.nazwa || row.nazwa_modelu || row.kod || `case #${row.id || row.id_egzemplarza || ''}`;
+        .filter((child: any) => !isCase(child) && !isQuantityModel(child) && isEquipmentInstance(child));
+      if (!contents.length) { setError('Ten case jest pusty albo nie ma aktywnych egzemplarzy sprzętu w środku. Case nie trafia na dokument.'); return; }
+      const label = row.nazwa || row.nazwa_modelu || row.kod || getEquipmentCodes(row)[0] || `case #${row.id || row.id_egzemplarza || ''}`;
       addDocumentItemsBulk(contents, 'scan', `Zeskanowano case ${label}`, caseScanMeta(row));
       return;
     }
-
-    if (isQuantityOnly(row)) {
-      addQuantityDocumentItem(row, source);
-      return;
-    }
-
-    if (!isEquipmentInstance(row)) {
-      setError('Wydanie/przyjęcie działa na egzemplarzach, case rozwija się na zawartość, a sprzęt ilościowy zapisujemy jako model + ilość.');
-      return;
-    }
-
+    if (!isEquipmentInstance(row)) { setError('Wydanie/przyjęcie działa na egzemplarzach, rack jest jedną pozycją, case rozwija zawartość, a sprzęt ilościowy zapisujemy jako model + ilość.'); return; }
     addDocumentItemsBulk([row], source);
   }
 
@@ -919,14 +918,77 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
 
   async function scan() {
     const code = scanCode.trim();
+
     if (!code) {
       focusScanInput();
       setNotice('Wpisz albo zeskanuj kod w polu tekstowym i naciśnij Enter.');
       return;
     }
+
+    setError('');
+    setNotice('');
+
+    const quantityModel = findQuantityModelByCode(code);
+    if (quantityModel) {
+      addQuantityDocumentItem({
+        ...quantityModel,
+        rowType: 'ilosciowy_model',
+        quantityOnly: true,
+        id_modelu: quantityModel.id,
+        nazwa_modelu: quantityModel.nazwa,
+        kod: quantityModel.kod_kreskowy || quantityModel.kod || code,
+        jednostka: quantityModel.jednostka || 'szt.',
+        ilosc_dostepna: quantityModel.ilosc_magazynowa || quantityModel.ilość_magazynowa || quantityModel.ilosc || 0,
+      }, 'scan');
+
+      setScanCode('');
+      setTimeout(focusScanInput, 0);
+      return;
+    }
+
+    const localInstance = findInstanceByCode(code);
+    if (localInstance && isRack(localInstance)) {
+      addDocumentItemsBulk([{
+        ...localInstance,
+        rowType: 'egzemplarz',
+        isRack: true,
+        isCase: false,
+        contents: [],
+        zawartosc_case: [],
+      }], 'scan', 'Zeskanowano rack jako jedną pozycję');
+
+      setScanCode('');
+      setTimeout(focusScanInput, 0);
+      return;
+    }
+
     try {
       const response = await api.get(`/api/magazyn/skan?kod=${encodeURIComponent(code)}`);
-      addDocumentItem(response.data, 'scan');
+      const row = response.data;
+
+      if (isQuantityModel(row)) {
+        addQuantityDocumentItem({
+          ...row,
+          rowType: 'ilosciowy_model',
+          quantityOnly: true,
+          id_modelu: row.id_modelu || row.id || row.model?.id,
+          nazwa_modelu: row.nazwa_modelu || row.nazwa || row.model?.nazwa,
+          kod: row.kod || row.kod_kreskowy || code,
+          jednostka: row.jednostka || row.model?.jednostka || 'szt.',
+        }, 'scan');
+      } else if (isRack(row)) {
+        addDocumentItemsBulk([{
+          ...row,
+          rowType: 'egzemplarz',
+          isRack: true,
+          isCase: false,
+          contents: [],
+          zawartosc_case: [],
+        }], 'scan', 'Zeskanowano rack jako jedną pozycję');
+      } else {
+        addDocumentItem(row, 'scan');
+      }
+
       setScanCode('');
       setTimeout(focusScanInput, 0);
     } catch (e: any) {
@@ -936,7 +998,18 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
   }
 
   async function createDocument(type: 'wydanie' | 'przyjecie') {
-    if (!docItems.length) return alert('Najpierw zeskanuj albo wybierz egzemplarze sprzętu.');
+    // EVENTFLOW_PRODUCT_POLISH_FIX: Prawidłowe odrzucenie Case'ów z dokumentów
+    const validDocItems = docItems.filter((p: any) => {
+      if (!p) return false;
+      if (isCase(p)) return false; 
+      if (isQuantityModel(p)) return !!(p.id_modelu || p.id); 
+      return !!p.id_egzemplarza; 
+    });
+
+    if (!validDocItems.length) {
+      return alert('WZ/PZ może zawierać konkretne egzemplarze albo sprzęt ilościowy. Dla zwykłego sprzętu zeskanuj egzemplarz albo case.');
+    }
+
     setError('');
     try {
       const response = await api.post('/api/magazyn/dokumenty', {
@@ -945,8 +1018,13 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
         osoba_odbierajaca: docForm.osoba_odbierajaca,
         podpis_odbierajacego: docForm.podpis_odbierajacego,
         uwagi: docForm.uwagi || `Dokument ${type === 'wydanie' ? 'wydania' : 'przyjęcia'} dla wydarzenia: ${eventName}`,
-        pozycje: docItems.map((p) => ({ ...p, ilosc: Number(p.ilosc || 1), status: type === 'wydanie' ? 'wydany' : 'przyjety' })),
+        pozycje: validDocItems.map((p) => ({ 
+          ...p, 
+          ilosc: Number(p.ilosc || 1), 
+          status: type === 'wydanie' ? 'wydany' : 'przyjety' 
+        })),
       });
+
       setDocItems([]);
       await load();
       router.push(`/dashboard/warehouse/documents/${response.data.id}`);
@@ -978,7 +1056,7 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
         <div>
           <p className="text-[11px] font-black uppercase tracking-[0.25em] text-cyan-600">Sprzęt wydarzenia</p>
           <h3 className="mt-1 text-2xl font-black text-slate-900">Plan sprzętu, wydanie i przyjęcie</h3>
-          <p className="mt-1 max-w-3xl text-sm font-bold text-slate-500">Plan edytujesz po modelach i ilościach. Wydanie oraz przyjęcie działają na konkretnych egzemplarzach po skanie.</p>
+          <p className="mt-1 max-w-3xl text-sm font-bold text-slate-500">Plan edytujesz po modelach i ilościach. Case/opakowania są ukryte. Wydanie/przyjęcie pokazuje konkretne egzemplarze, a sprzęt ilościowy dodajesz skanem kodu modelu.</p>
         </div>
         <div className="grid grid-cols-3 gap-2 sm:min-w-[420px]">
           <Metric label="Plan" value={`${plannedTotal} szt.`} />
@@ -1134,7 +1212,7 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
             <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
               <div className="mb-3 flex items-center justify-between"><h4 className="text-lg font-black text-slate-900">Zeskanowane teraz</h4><span className="rounded-full bg-cyan-100 px-3 py-1 text-xs font-black text-cyan-700">{docItems.reduce((s: number, p: any) => s + Number(p.ilosc || 1), 0)} szt.</span></div>
               <div className="max-h-[280px] space-y-2 overflow-y-auto pr-1">
-                {docItems.map((p, idx) => <div key={`${p.id_egzemplarza || p.id_modelu}-${idx}`} className="rounded-xl border border-slate-100 bg-slate-50 p-3"><div className="flex justify-between gap-2"><b className="text-sm text-slate-900">{p.nazwa}</b><button onClick={() => setDocItems((s) => s.filter((_, i) => i !== idx))} className="font-black text-red-600">×</button></div><p className="text-xs font-bold text-slate-400">{p.kategoria} · {isQuantityOnly(p) ? `${p.ilosc || 1} ${p.jednostka || 'szt.'}${p.kod ? ` · kod ${p.kod}` : ''}` : (p.kod || '-')}</p></div>)}
+                {docItems.map((p, idx) => <div key={`${p.id_egzemplarza || p.id_modelu}-${idx}`} className="rounded-xl border border-slate-100 bg-slate-50 p-3"><div className="flex justify-between gap-2"><b className="text-sm text-slate-900">{p.nazwa}</b><button onClick={() => setDocItems((s) => s.filter((_, i) => i !== idx))} className="font-black text-red-600">×</button></div><p className="text-xs font-bold text-slate-400">{p.kategoria} · {isQuantityModel(p) ? `${p.ilosc || 1} ${p.jednostka || 'szt.'}${p.kod ? ` · kod ${p.kod}` : ''}` : `${isRack(p) ? 'rack · ' : ''}${p.kod || '-'}` }</p></div>)}
                 {!docItems.length && <p className="rounded-2xl border border-dashed border-slate-200 p-6 text-center text-sm font-bold text-slate-400">Skanuj sprzęt albo zaznacz checkbox przy sprzęcie ilościowym — lista i liczniki zaktualizują się od razu.</p>}
               </div>
             </div>
@@ -1166,15 +1244,22 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
   </div>;
 }
 
+// ============================================================================
+// INNE PANELE ZAKŁADEK
+// ============================================================================
+
 function RentalsPanel({ rentals }: { rentals: any[] }) {
   return <div className="space-y-2">{rentals.map((r: any) => <Link key={r.id} href={`/dashboard/rentals/${r.id}`} className="block rounded-2xl border border-slate-200 p-4 hover:bg-cyan-50"><p className="font-black text-slate-900">{r.numer || `Wynajem #${r.id}`}</p><p className="text-sm font-bold text-slate-400">{dateTime(r.data_wydania)} → {dateTime(r.data_zwrotu_planowana)}</p></Link>)}{rentals.length === 0 && <p className="rounded-2xl border border-dashed border-slate-200 p-8 text-center text-sm font-bold text-slate-400">Brak wypożyczeń przypisanych do wydarzenia.</p>}</div>;
 }
+
 function PeoplePanel({ people }: { people: any[] }) {
   return <div className="space-y-2">{people.map((p: any) => <div key={p.id} className="rounded-2xl border border-slate-200 p-4"><p className="font-black text-slate-900">{p.uzytkownik?.imie} {p.uzytkownik?.nazwisko}</p><p className="text-sm font-bold text-slate-400">{p.rola_w_wydarzeniu || 'Obsługa'}</p></div>)}{people.length === 0 && <p className="rounded-2xl border border-dashed border-slate-200 p-8 text-center text-sm font-bold text-slate-400">Brak przypisanej ekipy.</p>}</div>;
 }
+
 function FleetPanel({ vehicles }: { vehicles: any[] }) {
   return <div className="space-y-2">{vehicles.map((v: any) => <div key={v.id} className="rounded-2xl border border-slate-200 p-4"><p className="font-black text-slate-900">{v.pojazd?.nazwa || 'Pojazd'}</p><p className="text-sm font-bold text-slate-400">{v.pojazd?.nr_rejestracyjny || '-'} · {v.rola_pojazdu || 'Rezerwacja'}</p></div>)}{vehicles.length === 0 && <p className="rounded-2xl border border-dashed border-slate-200 p-8 text-center text-sm font-bold text-slate-400">Brak przypisanych pojazdów.</p>}</div>;
 }
+
 function HistoryPanel({ history }: { history: any[] }) {
   return <div className="space-y-2">{history.map((h: any) => <div key={h.id} className="rounded-2xl border border-slate-200 p-4"><p className="font-black text-slate-900">{h.akcja}</p><p className="text-sm font-bold text-slate-400">{dateTime(h.data_utworzenia)} · {h.uzytkownik ? `${h.uzytkownik.imie} ${h.uzytkownik.nazwisko}` : 'System'}</p></div>)}{history.length === 0 && <p className="rounded-2xl border border-dashed border-slate-200 p-8 text-center text-sm font-bold text-slate-400">Brak historii zmian.</p>}</div>;
 }
