@@ -26,7 +26,9 @@ export class CrmService {
       where: { id, id_organizacji, aktywny: true },
       include: {
         kontakty: { where: { aktywny: true }, orderBy: [{ glowny: 'desc' }, { nazwisko: 'asc' }] },
-        wydarzenia: { where: { aktywny: true }, orderBy: { data_start: 'desc' }, include: { manager: true, typ: true, status: true } }
+        wydarzenia: { where: { aktywny: true }, orderBy: { data_start: 'desc' }, include: { manager: true, typ: true, status: true } },
+        // DODANO: Pobieranie ofert powiązanych z klientem
+        oferty: { where: { aktywny: true }, orderBy: { data_utworzenia: 'desc' }, include: { status: true } }
       }
     });
     if (!client) throw new NotFoundException('Nie znaleziono kontrahenta');

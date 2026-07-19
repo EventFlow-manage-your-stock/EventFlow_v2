@@ -116,6 +116,7 @@ model Uzytkownik {
   data_utworzenia           DateTime  @default(now())
   data_aktualizacji         DateTime  @updatedAt
   data_usuniecia            DateTime?
+  preferencje_kokpitu       Json?
 
   organizacja                  Organizacja            @relation(fields: [id_organizacji], references: [id])
   role                         UzytkownikRola[]

@@ -5,54 +5,114 @@ import { PrismaService } from '../prisma/prisma.service';
 export class DashboardService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async getSummary(id_organizacji: number) {
+  async getSummary(id_organizacji: number, id_uzytkownika: number) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
-
+    
     const startOfWeek = new Date(today);
     startOfWeek.setDate(today.getDate() - today.getDay() + 1);
     const endOfWeek = new Date(startOfWeek);
     endOfWeek.setDate(startOfWeek.getDate() + 7);
 
-    // EVENTFLOW_PRODUCT_POLISH_V3:
-    // Zgodnie z listą poprawek zostawiamy KPI "wydarzenia w tym tygodniu"
-    // i dodajemy KPI aktywnego serwisu. Stare KPI ofert/przychodu/sprzętu
-    // nie są usuwane z bazy, tylko nie są już zwracane jako główne kafelki kokpitu.
-    const [wydarzeniaTygodnia, aktywneSerwisy, dzisiejszeWydarzeniaRaw, serwisy] = await Promise.all([
-      this.prisma.extendedClient.wydarzenie.count({
-        where: {
-          id_organizacji,
-          aktywny: true,
-          data_start: { gte: startOfWeek, lt: endOfWeek },
-        },
-      }),
-      this.prisma.extendedClient.serwisSprzetu.count({
-        where: { id_organizacji, aktywny: true, data_rozwiazania: null },
-      }),
+    const in30Days = new Date(today);
+    in30Days.setDate(today.getDate() + 30);
+
+    const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+
+    const [
+      wydarzeniaTygodnia, 
+      aktywneSerwisy,
+      aktywneWynajmy,
+      dzisiejszeWydarzeniaRaw, 
+      mojeZadania,
+      alertyFloty,
+      oczekujaceOferty,
+      niezwroconySprzet,
+      uzytkownik,
+      statystykiMagazynu,
+      nowiKlienci,
+      ostatniaAktywnosc,
+      urlopyDzisiaj,
+      ofertyMiesiaca,
+      egzemplarzeWszystkie,
+      egzemplarzeSerwis,
+      wydarzeniaDoFaktury
+    ] = await Promise.all([
+      this.prisma.extendedClient.wydarzenie.count({ where: { id_organizacji, aktywny: true, data_start: { gte: startOfWeek, lt: endOfWeek } } }),
+      this.prisma.extendedClient.serwisSprzetu.count({ where: { id_organizacji, aktywny: true, data_rozwiazania: null } }),
+      this.prisma.extendedClient.wynajem.count({ where: { id_organizacji, aktywny: true, data_wydania: { lte: new Date() }, data_zwrotu_rzeczywista: null } }),
       this.prisma.extendedClient.wydarzenie.findMany({
-        where: {
-          id_organizacji,
-          aktywny: true,
-          data_start: { lt: tomorrow },
-          data_koniec: { gte: today },
-        },
-        include: {
-          miejsce: true,
-          kontrahent: true,
-          status: true,
-          typ: true,
-          manager: true,
-        },
+        where: { id_organizacji, aktywny: true, data_start: { lt: tomorrow }, data_koniec: { gte: today } },
+        include: { miejsce: true, kontrahent: true, status: true, typ: true, manager: true },
         orderBy: { data_start: 'asc' },
       }),
-      this.prisma.extendedClient.serwisSprzetu.findMany({
-        where: { id_organizacji, aktywny: true, data_rozwiazania: null },
-        include: { egzemplarz: { include: { model: true } }, status: true },
-        take: 5,
-        orderBy: { data_zgloszenia: 'desc' },
+      this.prisma.extendedClient.zadanie.findMany({
+        where: { id_organizacji, aktywny: true, status: { notIn: ['zakończone', 'anulowane'] }, przypisani_uzytkownicy: { some: { id_uzytkownika } } },
+        take: 6, orderBy: { data_utworzenia: 'desc' }
       }),
+      this.prisma.extendedClient.pojazd.findMany({
+        where: { id_organizacji, aktywny: true, OR: [ { data_oc: { lte: in30Days } }, { data_przegladu: { lte: in30Days } } ] }
+      }),
+      this.prisma.extendedClient.oferta.findMany({
+        where: { id_organizacji, aktywny: true, status: { nazwa: { in: ['Nowa', 'Wysłana', 'Do akceptacji'] } } },
+        include: { kontrahent: true, status: true },
+        take: 5, orderBy: { data_utworzenia: 'desc' }
+      }),
+      this.prisma.extendedClient.wynajem.findMany({
+        where: { id_organizacji, aktywny: true, data_zwrotu_planowana: { lt: today }, data_zwrotu_rzeczywista: null },
+        include: { kontrahent: true },
+        take: 5, orderBy: { data_zwrotu_planowana: 'asc' }
+      }),
+      this.prisma.extendedClient.uzytkownik.findUnique({
+        where: { id: id_uzytkownika }, select: { imie: true, preferencje_kokpitu: true }
+      }),
+      this.prisma.extendedClient.modelSprzetu.count({ where: { id_organizacji, aktywny: true } }),
+      this.prisma.extendedClient.kontrahent.findMany({ where: { id_organizacji, aktywny: true }, take: 4, orderBy: { data_utworzenia: 'desc' } }),
+      this.prisma.extendedClient.logZmian.findMany({ 
+        where: { id_organizacji }, take: 8, orderBy: { data_utworzenia: 'desc' }, include: { uzytkownik: { select: { imie: true, nazwisko: true } } } 
+      }),
+      this.prisma.extendedClient.nieobecnosc.findMany({
+        where: { id_organizacji, aktywny: true, data_od: { lte: today }, data_do: { gte: today } },
+        include: { uzytkownik: { select: { imie: true, nazwisko: true, avatar: true } } }
+      }),
+      this.prisma.extendedClient.oferta.findMany({
+        where: { id_organizacji, aktywny: true, data_utworzenia: { gte: startOfMonth } },
+        select: { suma_netto: true, status: { select: { nazwa: true } } }
+      }),
+      
+      // Zliczanie stanu wszystkich modeli
+      this.prisma.extendedClient.egzemplarz.count({ where: { id_organizacji, aktywny: true } }),
+      
+      // ROZWIĄZANIE PROBLEMU 1: 
+      // Zliczamy jako "w serwisie" tylko te egzemplarze, które mają aktualnie otwarte zgłoszenie.
+      this.prisma.extendedClient.egzemplarz.count({ 
+        where: { 
+          id_organizacji, 
+          aktywny: true, 
+          serwisy: {
+            some: { aktywny: true, data_rozwiazania: null }
+          }
+        } 
+      }),
+      
+      // ROZWIĄZANIE PROBLEMU 2: 
+      // Rozszerzona, ostra bariera dla statusów księgowych oznaczających rozliczenie.
+      this.prisma.extendedClient.wydarzenie.findMany({
+        where: { 
+          id_organizacji, 
+          aktywny: true, 
+          data_koniec: { lt: today },
+          OR: [
+            { id_statusu_ksiegowego: null },
+            { status_ksiegowy: { nazwa: { notIn: ['Opłacone', 'Opłacono', 'Faktura wysłana', 'Wystawiono fakturę', 'Zafakturowane', 'Zafakturowano', 'Rozliczone', 'Zakończone'] } } }
+          ]
+        },
+        include: { kontrahent: true, status_ksiegowy: true },
+        orderBy: { data_koniec: 'desc' },
+        take: 5
+      })
     ]);
 
     const todaysEvents = dzisiejszeWydarzeniaRaw.map((event) => {
@@ -67,7 +127,7 @@ export class DashboardService {
         title: event.nazwa,
         type: event.typ?.nazwa ?? 'Wydarzenie',
         typeColor: event.typ?.kolor ?? '#06B6D4',
-        statusIcon: (event.status as any)?.ikona ?? '●',
+        statusIcon: (event.status as any)?.ikona ?? '🔵',
         location: event.miejsce ? event.miejsce.nazwa : event.kontrahent?.nazwa || 'Lokalizacja nieznana',
         status: event.status?.nazwa || 'W trakcie',
         time: event.data_start && event.data_koniec
@@ -78,23 +138,44 @@ export class DashboardService {
       };
     });
 
-    const alerts: Array<{ id: string; type: string; message: string; actionText?: string }> = [];
-    for (const s of serwisy) {
-      alerts.push({
-        id: `serwis-${s.id}`,
-        type: 'warning',
-        message: `${s.egzemplarz?.model?.nazwa || s.egzemplarz?.nazwa || 'Sprzęt'}: ${s.tytul} (${s.status?.nazwa || 'serwis'})`,
-        actionText: 'Otwórz serwis',
-      });
-    }
+    const finanse = ofertyMiesiaca.reduce((acc, o) => {
+      const val = Number(o.suma_netto || 0);
+      acc.total += val;
+      if (o.status?.nazwa?.toLowerCase().includes('zaakcept')) acc.accepted += val;
+      else if (o.status?.nazwa?.toLowerCase().includes('odrzuc')) acc.rejected += val;
+      else acc.pending += val;
+      return acc;
+    }, { total: 0, accepted: 0, pending: 0, rejected: 0 });
 
     return {
-      kpis: {
-        eventsThisWeek: wydarzeniaTygodnia,
-        activeService: aktywneSerwisy,
+      user: { imie: uzytkownik?.imie || 'Użytkowniku' },
+      kpis: { 
+        eventsThisWeek: wydarzeniaTygodnia, 
+        activeService: aktywneSerwisy, 
+        activeRentals: aktywneWynajmy,
+        totalModels: statystykiMagazynu
       },
       todaysEvents,
-      alerts,
+      tasks: mojeZadania,
+      fleetAlerts: alertyFloty,
+      offers: oczekujaceOferty,
+      unreturned: niezwroconySprzet,
+      newClients: nowiKlienci,
+      recentActivity: ostatniaAktywnosc,
+      teamLeaves: urlopyDzisiaj,
+      eventsToInvoice: wydarzeniaDoFaktury,
+      smartFlow: { 
+        finanse,
+        inventory: { total: egzemplarzeWszystkie, inService: egzemplarzeSerwis }
+      },
+      preferences: uzytkownik?.preferencje_kokpitu || null
     };
+  }
+
+  async savePreferences(id_uzytkownika: number, layout: string[]) {
+    return this.prisma.extendedClient.uzytkownik.update({
+      where: { id: id_uzytkownika },
+      data: { preferencje_kokpitu: { layout } }
+    });
   }
 }

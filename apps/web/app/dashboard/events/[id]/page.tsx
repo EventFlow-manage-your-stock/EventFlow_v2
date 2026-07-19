@@ -33,7 +33,7 @@ import { OfferDuplicateTargetModal } from '../../../../components/OfferDuplicate
 import { googleMapsDirectionsUrl } from '../../../../lib/googleMaps';
 
 // ============================================================================
-// GLOBALNE HELPERY (Optymalizacja pamięci - poza cyklem renderowania)
+// GLOBALNE HELPERY
 // ============================================================================
 
 const TABS = [
@@ -118,7 +118,7 @@ function categoryPath(categoryId: string, byId: Map<string, any>) {
 }
 
 // ============================================================================
-// WMS CORE HELPERS (Oczyszczone i Zunifikowane z łatek v10-v11)
+// WMS CORE HELPERS
 // ============================================================================
 
 function normalizeCode(v: any) {
@@ -194,7 +194,7 @@ export default function EventDetailsPage() {
   const isNew = params.id === 'new';
   const [activeTab, setActiveTab] = useState('szczegoly');
   const [eventData, setEventData] = useState<any>(null);
-  const [form, setForm] = useState<any>({ data_start: '', data_koniec: '' });
+  const [form, setForm] = useState<any>({ data_start: '', data_koniec: '', budzet_netto: '' });
   const [dict, setDict] = useState<any>({ typy: [], statusy: [], statusyMagazynowe: [], statusyKsiegowe: [], kontrahenci: [], miejsca: [], uzytkownicy: [] });
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
@@ -244,6 +244,7 @@ export default function EventDetailsPage() {
         id_miejsca: toSelect(e.id_miejsca),
         data_start: toDateInput(e.data_start),
         data_koniec: toDateInput(e.data_koniec),
+        budzet_netto: e.budzet_netto || '',
         miejsce_reczne: e.miejsce_reczne || '',
         adres_reczny: e.adres_reczny || '',
         opis: e.opis || e.uwagi || '',
@@ -262,6 +263,7 @@ export default function EventDetailsPage() {
     opis: strOrNull(form.opis),
     data_start: strOrNull(form.data_start),
     data_koniec: strOrNull(form.data_koniec),
+    budzet_netto: numOrNull(form.budzet_netto),
     id_typu_wydarzenia: numOrNull(form.id_typu_wydarzenia),
     id_statusu_wydarzenia: numOrNull(form.id_statusu_wydarzenia),
     id_statusu_magazynowego: numOrNull(form.id_statusu_magazynowego),
@@ -361,6 +363,7 @@ export default function EventDetailsPage() {
           <Metric label="Numer" value={eventData?.numer || `#${eventData?.id}`} />
           <Metric label="Oferty" value={`${offers.length}`} />
           <Metric label="Zakres" value={`${dateTime(eventData?.data_start)} → ${dateTime(eventData?.data_koniec)}`} />
+          <Metric label="Założony budżet" value={eventData?.budzet_netto ? money(eventData.budzet_netto) : 'Brak danych'} />
         </div>
       )}
 
@@ -378,15 +381,33 @@ export default function EventDetailsPage() {
 
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="Nazwa"><input className={inputClass} value={form.nazwa || ''} onChange={(e) => setForm({ ...form, nazwa: e.target.value })} required /></Field>
+            <Field label="Założony budżet netto (PLN)">
+              <div className="relative">
+                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                  <DollarSign size={15} className="text-slate-400" />
+                </div>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  className={`${inputClass} pl-9`}
+                  value={form.budzet_netto || ''}
+                  onChange={(e) => setForm({ ...form, budzet_netto: e.target.value })}
+                  placeholder="np. 15000.00"
+                />
+              </div>
+            </Field>
             <Field label="Typ wydarzenia"><select className={inputClass} value={form.id_typu_wydarzenia || ''} onChange={(e) => setForm({ ...form, id_typu_wydarzenia: e.target.value })}><option value="">Wybierz</option>{dict.typy.map((t: any) => <option key={t.id} value={t.id}>{t.nazwa}</option>)}</select></Field>
+            <Field label="Klient"><select className={inputClass} value={form.id_kontrahenta || ''} onChange={(e) => setForm({ ...form, id_kontrahenta: e.target.value })}><option value="">Brak</option>{dict.kontrahenci.map((k: any) => <option key={k.id} value={k.id}>{k.nazwa}</option>)}</select></Field>
             <Field label="Start"><input type="datetime-local" className={inputClass} value={form.data_start || ''} onChange={(e) => setForm({ ...form, data_start: e.target.value })} /></Field>
             <Field label="Koniec"><input type="datetime-local" className={inputClass} value={form.data_koniec || ''} onChange={(e) => setForm({ ...form, data_koniec: e.target.value })} /></Field>
-            <Field label="Klient"><select className={inputClass} value={form.id_kontrahenta || ''} onChange={(e) => setForm({ ...form, id_kontrahenta: e.target.value })}><option value="">Brak</option>{dict.kontrahenci.map((k: any) => <option key={k.id} value={k.id}>{k.nazwa}</option>)}</select></Field>
             <Field label="Status główny"><select className={inputClass} value={form.id_statusu_wydarzenia || ''} onChange={(e) => setForm({ ...form, id_statusu_wydarzenia: e.target.value })}><option value="">Wybierz</option>{dict.statusy.map((s: any) => <option key={s.id} value={s.id}>{s.ikona || '●'} {s.nazwa}</option>)}</select></Field>
             <Field label="Miejsce z bazy"><select className={inputClass} value={form.id_miejsca || ''} onChange={(e) => setForm({ ...form, id_miejsca: e.target.value })}><option value="">Wpiszę ręcznie</option>{dict.miejsca.map((m: any) => <option key={m.id} value={m.id}>{m.nazwa}</option>)}</select></Field>
-            <Field label="Miejsce ręcznie"><input className={inputClass} value={form.miejsce_reczne || ''} onChange={(e) => setForm({ ...form, miejsce_reczne: e.target.value })} /></Field>
           </div>
-          <Field label="Adres / Google Maps"><input className={inputClass} value={form.adres_reczny || ''} onChange={(e) => setForm({ ...form, adres_reczny: e.target.value })} />{maps && <a className="mt-2 inline-flex items-center gap-1 text-xs font-black text-cyan-700" href={maps} target="_blank"><MapPin size={14} /> Otwórz trasę w Google Maps</a>}</Field>
+          <div className="grid gap-4 md:grid-cols-2">
+             <Field label="Miejsce ręcznie"><input className={inputClass} value={form.miejsce_reczne || ''} onChange={(e) => setForm({ ...form, miejsce_reczne: e.target.value })} /></Field>
+             <Field label="Adres / Google Maps"><input className={inputClass} value={form.adres_reczny || ''} onChange={(e) => setForm({ ...form, adres_reczny: e.target.value })} />{maps && <a className="mt-2 inline-flex items-center gap-1 text-xs font-black text-cyan-700" href={maps} target="_blank"><MapPin size={14} /> Otwórz trasę w Google Maps</a>}</Field>
+          </div>
           <Field label="Opis"><textarea className={`${inputClass} min-h-24`} value={form.opis || ''} onChange={(e) => setForm({ ...form, opis: e.target.value })} /></Field>
         </Card>
 

@@ -456,13 +456,32 @@ export class MagazynService {
     return this.prisma.extendedClient.egzemplarz.findFirst({
       where: { id, id_organizacji, aktywny: true },
       include: {
-        model: true,
+        model: { include: { kategoria: true } },
         magazyn: true,
         case: { select: { id: true, nazwa: true, numer_urzadzenia: true } },
         zawartosc_case: {
           where: { aktywny: true },
           include: { model: true, magazyn: true },
           orderBy: { nazwa: 'asc' }
+        },
+        // NOWE RELACJE: Historia Serwisowa
+        serwisy: {
+          include: { status: true, zglosil: true, rozwiazal: true },
+          orderBy: { data_zgloszenia: 'desc' }
+        },
+        // NOWE RELACJE: Historia Wydarzeń (poprzez dokumenty WZ/PZ)
+        pozycje_wydan: {
+          where: { aktywny: true, wydanie: { aktywny: true, id_wydarzenia: { not: null } } },
+          include: { 
+            wydanie: { 
+              include: { 
+                wydarzenie: { 
+                  include: { status: true, typ: true, kontrahent: true } 
+                } 
+              } 
+            } 
+          },
+          orderBy: { data_utworzenia: 'desc' }
         }
       }
     });

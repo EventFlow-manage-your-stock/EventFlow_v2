@@ -33,10 +33,11 @@ export type EntityEditorConfig = {
   listHref: string;
   getEndpoint: (id: string) => string;
   updateEndpoint: (id: string) => string;
-  createEndpoint?: string; // Dodano obsługę tworzenia
+  createEndpoint?: string; 
   deleteEndpoint?: (id: string) => string;
   fields: EntityField[];
   tabs?: { id: string; label: string; icon?: any; render?: (record: any) => any }[];
+  defaultTab?: string; // <-- NOWE POLE
   dictionaries?: Record<string, string>;
   afterSave?: (record: any) => void;
   normalizePayload?: (form: any) => any;
@@ -97,7 +98,7 @@ export function EntityEditorPage({ config }: { config: EntityEditorConfig }) {
   const params = useParams();
   const router = useRouter();
   const id = String(params.id);
-  const isNew = id === 'new'; // Zabezpieczenie przed pobieraniem "new"
+  const isNew = id === 'new';
 
   const [record, setRecord] = useState<any>(null);
   const [form, setForm] = useState<any>({});
@@ -105,7 +106,7 @@ export function EntityEditorPage({ config }: { config: EntityEditorConfig }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [activeTab, setActiveTab] = useState('szczegoly');
+  const [activeTab, setActiveTab] = useState(config.defaultTab || 'szczegoly');
 
   async function load() {
     setLoading(true);
@@ -196,7 +197,6 @@ export function EntityEditorPage({ config }: { config: EntityEditorConfig }) {
           <span className="font-black text-slate-900">{title}</span>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="secondary" onClick={() => router.push(config.listHref)}><ArrowLeft size={16} className="inline" /> Powrót</Button>
           {!isNew && config.deleteEndpoint && <Button variant="danger" onClick={remove}><Trash2 size={16} className="inline" /> Usuń</Button>}
           <Button onClick={submit} disabled={saving}><Save size={16} className="inline" /> {saving ? 'Zapisywanie...' : 'Zapisz'}</Button>
         </div>

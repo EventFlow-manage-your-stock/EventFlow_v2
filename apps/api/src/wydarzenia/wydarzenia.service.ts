@@ -134,6 +134,7 @@ export class WydarzeniaService {
           id_oferty_glownej: this.n(dto.id_oferty_glownej),
           id_kontrahenta: this.n(dto.id_kontrahenta),
           id_miejsca: this.n(dto.id_miejsca),
+          budzet_netto: this.n(dto.budzet_netto),
         },
       });
 
@@ -175,6 +176,7 @@ export class WydarzeniaService {
           id_oferty_glownej: this.n(dto.id_oferty_glownej),
           id_kontrahenta: this.n(dto.id_kontrahenta),
           id_miejsca: this.n(dto.id_miejsca),
+          budzet_netto: this.n(dto.budzet_netto),
         },
       });
 

@@ -1,5 +1,4 @@
-// EVENTFLOW_PRODUCT_POLISH_V5: trasa bez prefiksu api, bo main.ts ustawia app.setGlobalPrefix('api').
-import { Controller, Get, Req, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Req, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import type { Request } from 'express';
 import { DashboardService } from './dashboard.service';
@@ -11,7 +10,13 @@ export class DashboardController {
 
   @Get('summary')
   async getSummary(@Req() req: Request) {
-    const id_organizacji = Number((req.user as any).id_organizacji);
-    return this.dashboardService.getSummary(id_organizacji);
+    const user = req.user as any;
+    return this.dashboardService.getSummary(Number(user.id_organizacji), Number(user.id));
+  }
+
+  @Post('preferences')
+  async savePreferences(@Req() req: Request, @Body() body: { layout: string[] }) {
+    const user = req.user as any;
+    return this.dashboardService.savePreferences(Number(user.id), body.layout);
   }
 }

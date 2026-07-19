@@ -255,7 +255,7 @@ export default function InternalWarehousePage() {
         </div>
 
         <div className="flex flex-wrap gap-2">
-          <CategoryButton active={!activeCategory} onClick={clearCategory} count={models.length}>Wszystkie</CategoryButton>
+          <CategoryButton active={!activeCategory} onClick={clearCategory}>Wszystkie</CategoryButton>
           {roots.map((root: any) => {
             const rootId = String(root.id);
             const isActiveRoot = activeRoot === rootId;
@@ -268,7 +268,11 @@ export default function InternalWarehousePage() {
               >
                 {isExpanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
                 {root.nazwa}
-                <span className={`rounded-full px-2 py-0.5 text-[11px] ${isActiveRoot ? 'bg-white/20 text-white' : 'bg-white text-slate-500'}`}>{totalForCategory(rootId)}</span>
+                {/* <span className={`rounded-full px-2 py-0.5 text-[11px] ${isActiveRoot ? 'bg-white/20 text-white' : 'bg-white text-slate-500'}`}>
+                {
+                  //totalForCategory(rootId)
+                }
+                </span> */}
               </button>
             );
           })}
@@ -288,7 +292,7 @@ export default function InternalWarehousePage() {
               {(byId.get(activeRoot)?.dzieci || []).map((child: any) => {
                 const childId = String(child.id);
                 return (
-                  <CategoryButton key={child.id} active={activeCategory === childId} onClick={() => setActiveCategory(childId)} count={totalForCategory(childId)}>
+                  <CategoryButton key={child.id} active={activeCategory === childId} onClick={() => setActiveCategory(childId)}>
                     {child.nazwa}
                   </CategoryButton>
                 );
