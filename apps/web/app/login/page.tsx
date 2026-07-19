@@ -315,6 +315,11 @@ export default function LoginPage() {
                     <div className="absolute inset-0 rounded-2xl opacity-0 group-hover:opacity-20 bg-white mix-blend-overlay transition-opacity"></div>
                   </button>
                 </div>
+                <div className="mt-6 text-center">
+                  <Link href="/forgot-password" className="text-sm font-bold text-slate-500 hover:text-blue-600 transition-colors">
+                    Zapomniałeś hasła?
+                  </Link>
+                </div>
               </motion.form>
             </AnimatePresence>
 

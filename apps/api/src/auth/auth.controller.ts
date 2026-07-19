@@ -23,4 +23,16 @@ export class AuthController {
     // Przekazujemy odebrane parametry prosto do serwisu
     return this.authService.login(body.email, body.passwordRaw);
   }
+
+  @Public()
+  @Post('forgot-password')
+  async forgotPassword(@Body() body: { email: string }) {
+    return this.authService.forgotPassword(body.email);
+  }
+
+  @Public()
+  @Post('reset-password')
+  async resetPassword(@Body() body: { token: string; passwordRaw: string }) {
+    return this.authService.resetPassword(body.token, body.passwordRaw);
+  }
 }

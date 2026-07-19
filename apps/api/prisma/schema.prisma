@@ -111,6 +111,10 @@ model Uzytkownik {
   telefon                   String?   @db.VarChar(30)
   haslo                     String    @db.VarChar(255)
   avatar                    String?   @db.VarChar(500)
+  stanowisko                String?   @db.VarChar(150)
+  umiejetnosci              String?   @db.Text
+  token_resetu_hasla        String?   @db.VarChar(255)
+  data_waznosci_tokenu      DateTime?
   aktywny                   Boolean   @default(true)
   data_ostatniego_logowania DateTime?
   data_utworzenia           DateTime  @default(now())
