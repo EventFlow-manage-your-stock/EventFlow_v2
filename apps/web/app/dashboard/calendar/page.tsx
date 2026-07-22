@@ -535,15 +535,52 @@ function buildBars(items: CalendarItem[], weekStart: Date, weekEnd: Date, column
     if (clippedEnd < weekStart || clippedStart > weekEnd) return [];
 
     const baseColor = item.kolor || typeFallbackColor[item.typ] || '#0891B2';
-    const containsToday = start <= today && end >= today;
     const parts: any[] = [];
 
-    if (containsToday && clippedStart < today) {
+    // Wydarzenie zakończone przed dzisiaj — cały widoczny fragment wyszarzony.
+    if (end < today) {
+      parts.push({
+        item,
+        start: clippedStart,
+        end: clippedEnd,
+        color: pastelColor(baseColor),
+        past: true,
+      });
+    }
+    // Wydarzenie rozpoczęło się wcześniej i nadal trwa — część miniona
+    // jest wyszarzona, a dzisiejsza i przyszła zachowuje właściwy kolor.
+    else if (start < today && end >= today) {
       const pastEnd = addDays(today, -1);
-      if (pastEnd >= clippedStart) parts.push({ item, start: clippedStart, end: pastEnd, color: pastelColor(baseColor), past: true });
-      if (clippedEnd >= today) parts.push({ item, start: today > clippedStart ? today : clippedStart, end: clippedEnd, color: baseColor, past: false });
-    } else {
-      parts.push({ item, start: clippedStart, end: clippedEnd, color: baseColor, past: false });
+
+      if (pastEnd >= clippedStart) {
+        parts.push({
+          item,
+          start: clippedStart,
+          end: pastEnd < clippedEnd ? pastEnd : clippedEnd,
+          color: pastelColor(baseColor),
+          past: true,
+        });
+      }
+
+      if (clippedEnd >= today) {
+        parts.push({
+          item,
+          start: today > clippedStart ? today : clippedStart,
+          end: clippedEnd,
+          color: baseColor,
+          past: false,
+        });
+      }
+    }
+    // Wydarzenie dzisiejsze lub przyszłe — normalny kolor.
+    else {
+      parts.push({
+        item,
+        start: clippedStart,
+        end: clippedEnd,
+        color: baseColor,
+        past: false,
+      });
     }
     return parts;
   }).sort((a, b) => {
