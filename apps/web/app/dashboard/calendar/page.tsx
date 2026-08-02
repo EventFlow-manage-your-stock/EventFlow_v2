@@ -277,8 +277,8 @@ function CalendarContent() {
     <div className="mx-auto max-w-[1800px] space-y-4 relative">
       <PageTitle
         eyebrow="Kalendarz"
-        title="Kalendarz operacyjny"
-        description="Wydarzenia wielodniowe łączą się w paski tygodniowe. Kliknij wybrany dzień, aby szybko dodać w nim operację. Kliknij w nazwę miesiąca by otworzyć szybki wybór daty."
+        title=""
+        description=""
         action={
           <Button onClick={() => { setSelectedDate(undefined); setShowAdd(true); }}>
             <CalendarPlus size={16} className="inline mr-1" /> Dodaj
@@ -321,10 +321,10 @@ function CalendarContent() {
             </div>
 
             <button onClick={() => move(1)} className="rounded-xl border p-2 hover:bg-slate-50 transition-colors"><ChevronRight size={18} /></button>
+            <Button variant="secondary" onClick={() => setCursor(new Date())}>Dzisiaj</Button>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {views.map((v) => <button key={v} onClick={() => setView(v)} className={`rounded-xl px-4 py-2 text-sm font-semibold capitalize transition-all ${view === v ? 'bg-cyan-600 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>{v}</button>)}
-            <Button variant="secondary" onClick={() => setCursor(new Date())}>Dzisiaj</Button>
           </div>
         </div>
         <div className="mt-4 flex flex-wrap items-center gap-2">

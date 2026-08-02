@@ -31,6 +31,7 @@ import { Button, Card, Field, inputClass } from '../../../../components/ProductU
 import { DataTable } from '../../../../components/DataTable';
 import { OfferDuplicateTargetModal } from '../../../../components/OfferDuplicateTargetModal';
 import { googleMapsDirectionsUrl } from '../../../../lib/googleMaps';
+import { QuickAddCrmModal } from '../../../../components/QuickAddCrmModal';
 
 // ============================================================================
 // GLOBALNE HELPERY
@@ -192,15 +193,19 @@ export default function EventDetailsPage() {
   const params = useParams();
   const router = useRouter();
   const isNew = params.id === 'new';
+  
   const [activeTab, setActiveTab] = useState('szczegoly');
   const [eventData, setEventData] = useState<any>(null);
   const [form, setForm] = useState<any>({ data_start: '', data_koniec: '', budzet_netto: '' });
-  const [dict, setDict] = useState<any>({ typy: [], statusy: [], statusyMagazynowe: [], statusyKsiegowe: [], kontrahenci: [], miejsca: [], uzytkownicy: [] });
+  const [dict, setDict] = useState<any>({ typy: [], statusy: [], statusyMagazynowe: [], statusyKsiegowe: [], kontrahenci: [], kontakty: [], miejsca: [], uzytkownicy: [] });
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [offerName, setOfferName] = useState('');
   const [duplicateTarget, setDuplicateTarget] = useState<any>(null);
+  
+  // Stan obsługujący modale CRM (Szybkie dodawanie)
+  const [crmModalMode, setCrmModalMode] = useState<'kontrahent' | 'kontakt' | null>(null);
 
   async function loadDictionaries() {
     const [typy, statusy, statusyMagazynowe, statusyKsiegowe, kontrahenci, miejsca, uzytkownicy] = await Promise.all([
@@ -212,7 +217,9 @@ export default function EventDetailsPage() {
       api.get('/api/slowniki/miejsca').catch(() => ({ data: [] })),
       api.get('/api/slowniki/uzytkownicy').catch(() => ({ data: [] })),
     ]);
-    setDict({
+    
+    setDict((prev: any) => ({
+      ...prev,
       typy: typy.data || [],
       statusy: statusy.data || [],
       statusyMagazynowe: statusyMagazynowe.data || [],
@@ -220,7 +227,7 @@ export default function EventDetailsPage() {
       kontrahenci: kontrahenci.data || [],
       miejsca: miejsca.data || [],
       uzytkownicy: uzytkownicy.data || [],
-    });
+    }));
   }
 
   async function loadEvent() {
@@ -241,6 +248,7 @@ export default function EventDetailsPage() {
         id_oferty_glownej: toSelect(e.id_oferty_glownej),
         id_managera: toSelect(e.id_managera),
         id_kontrahenta: toSelect(e.id_kontrahenta),
+        id_kontaktu: toSelect(e.id_kontaktu),
         id_miejsca: toSelect(e.id_miejsca),
         data_start: toDateInput(e.data_start),
         data_koniec: toDateInput(e.data_koniec),
@@ -256,6 +264,16 @@ export default function EventDetailsPage() {
     }
   }
 
+  useEffect(() => {
+    if (form.id_kontrahenta) {
+      api.get(`/api/crm/kontakty?kontrahentId=${form.id_kontrahenta}`)
+         .then(res => setDict((prev: any) => ({ ...prev, kontakty: res.data })))
+         .catch(() => setDict((prev: any) => ({ ...prev, kontakty: [] })));
+    } else {
+      setDict((prev: any) => ({ ...prev, kontakty: [] }));
+    }
+  }, [form.id_kontrahenta]);
+
   useEffect(() => { loadDictionaries(); loadEvent(); }, [params.id]);
 
   const payload = useMemo(() => ({
@@ -270,6 +288,7 @@ export default function EventDetailsPage() {
     id_statusu_ksiegowego: numOrNull(form.id_statusu_ksiegowego),
     id_oferty_glownej: numOrNull(form.id_oferty_glownej),
     id_kontrahenta: numOrNull(form.id_kontrahenta),
+    id_kontaktu: numOrNull(form.id_kontaktu), 
     id_miejsca: numOrNull(form.id_miejsca),
     id_managera: numOrNull(form.id_managera),
     miejsce_reczne: strOrNull(form.miejsce_reczne),
@@ -315,6 +334,18 @@ export default function EventDetailsPage() {
     setDuplicateTarget(offer);
   }
 
+  // Automatyczne podpięcie dodanego klienta lub kontaktu wprost z modala
+  function handleCrmSuccess(type: 'kontrahent' | 'kontakt', newData: any) {
+    if (type === 'kontrahent') {
+      setDict((prev: any) => ({ ...prev, kontrahenci: [...prev.kontrahenci, newData] }));
+      setForm((prev: any) => ({ ...prev, id_kontrahenta: String(newData.id), id_kontaktu: '' }));
+    } else if (type === 'kontakt') {
+      setDict((prev: any) => ({ ...prev, kontakty: [...(prev.kontakty || []), newData] }));
+      setForm((prev: any) => ({ ...prev, id_kontaktu: String(newData.id) }));
+    }
+    setCrmModalMode(null);
+  }
+
   if (loading) return <div className="flex h-96 items-center justify-center"><Loader2 className="animate-spin text-cyan-600" /> <span className="ml-3 font-bold text-slate-500">Ładowanie danych wydarzenia...</span></div>;
 
   const offers = eventData?.oferty || [];
@@ -327,7 +358,7 @@ export default function EventDetailsPage() {
         <div className="flex items-center gap-2 text-sm font-bold text-slate-500">
           <button 
             onClick={() => router.back()} 
-            title="Wraca do poprzednio odwiedzonej strony (Historia przeglądarki)"
+            title="Wraca do poprzednio odwiedzonej strony"
             className="inline-flex items-center gap-1 rounded-xl border px-3 py-2 hover:bg-slate-50"
           >
             <ArrowLeft size={16} />Powrót
@@ -381,6 +412,7 @@ export default function EventDetailsPage() {
 
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="Nazwa"><input className={inputClass} value={form.nazwa || ''} onChange={(e) => setForm({ ...form, nazwa: e.target.value })} required /></Field>
+            
             <Field label="Założony budżet netto (PLN)">
               <div className="relative">
                 <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
@@ -397,17 +429,65 @@ export default function EventDetailsPage() {
                 />
               </div>
             </Field>
-            <Field label="Typ wydarzenia"><select className={inputClass} value={form.id_typu_wydarzenia || ''} onChange={(e) => setForm({ ...form, id_typu_wydarzenia: e.target.value })}><option value="">Wybierz</option>{dict.typy.map((t: any) => <option key={t.id} value={t.id}>{t.nazwa}</option>)}</select></Field>
-            <Field label="Klient"><select className={inputClass} value={form.id_kontrahenta || ''} onChange={(e) => setForm({ ...form, id_kontrahenta: e.target.value })}><option value="">Brak</option>{dict.kontrahenci.map((k: any) => <option key={k.id} value={k.id}>{k.nazwa}</option>)}</select></Field>
+
+            <Field label="Typ wydarzenia">
+              <select className={inputClass} value={form.id_typu_wydarzenia || ''} onChange={(e) => setForm({ ...form, id_typu_wydarzenia: e.target.value })}>
+                <option value="">Wybierz</option>
+                {dict.typy.map((t: any) => <option key={t.id} value={t.id}>{t.nazwa}</option>)}
+              </select>
+            </Field>
+
             <Field label="Start"><input type="datetime-local" className={inputClass} value={form.data_start || ''} onChange={(e) => setForm({ ...form, data_start: e.target.value })} /></Field>
+            
+            <Field label="Status główny">
+              <select className={inputClass} value={form.id_statusu_wydarzenia || ''} onChange={(e) => setForm({ ...form, id_statusu_wydarzenia: e.target.value })}>
+                <option value="">Wybierz</option>
+                {dict.statusy.map((s: any) => <option key={s.id} value={s.id}>{s.ikona || '●'} {s.nazwa}</option>)}
+              </select>
+            </Field>
+
             <Field label="Koniec"><input type="datetime-local" className={inputClass} value={form.data_koniec || ''} onChange={(e) => setForm({ ...form, data_koniec: e.target.value })} /></Field>
-            <Field label="Status główny"><select className={inputClass} value={form.id_statusu_wydarzenia || ''} onChange={(e) => setForm({ ...form, id_statusu_wydarzenia: e.target.value })}><option value="">Wybierz</option>{dict.statusy.map((s: any) => <option key={s.id} value={s.id}>{s.ikona || '●'} {s.nazwa}</option>)}</select></Field>
-            <Field label="Miejsce z bazy"><select className={inputClass} value={form.id_miejsca || ''} onChange={(e) => setForm({ ...form, id_miejsca: e.target.value })}><option value="">Wpiszę ręcznie</option>{dict.miejsca.map((m: any) => <option key={m.id} value={m.id}>{m.nazwa}</option>)}</select></Field>
-          </div>
-          <div className="grid gap-4 md:grid-cols-2">
+            
+            <Field label="Klient">
+              <div className="flex gap-2">
+                <select className={`${inputClass} flex-1`} value={form.id_kontrahenta || ''} onChange={(e) => setForm({ ...form, id_kontrahenta: e.target.value, id_kontaktu: '' })}>
+                  <option value="">Brak</option>
+                  {dict.kontrahenci.map((k: any) => <option key={k.id} value={k.id}>{k.nazwa}</option>)}
+                </select>
+                <button type="button" onClick={() => setCrmModalMode('kontrahent')} className="flex items-center justify-center rounded-xl border border-slate-200 bg-slate-50 px-3 text-slate-600 hover:bg-slate-100 transition" title="Dodaj nowego klienta">
+                  <Plus size={18} />
+                </button>
+              </div>
+            </Field>
+            
+            <Field label="Osoba kontaktowa">
+              <div className="flex gap-2">
+                <select className={`${inputClass} flex-1 disabled:opacity-50`} disabled={!form.id_kontrahenta} value={form.id_kontaktu || ''} onChange={(e) => setForm({ ...form, id_kontaktu: e.target.value })}>
+                  <option value="">{form.id_kontrahenta ? 'Wybierz osobę...' : 'Najpierw wybierz klienta'}</option>
+                  {dict.kontakty?.map((k: any) => (
+                    <option key={k.id} value={k.id}>{k.imie} {k.nazwisko} {k.stanowisko ? `(${k.stanowisko})` : ''}</option>
+                  ))}
+                </select>
+                <button type="button" disabled={!form.id_kontrahenta} onClick={() => setCrmModalMode('kontakt')} className="flex items-center justify-center rounded-xl border border-slate-200 bg-slate-50 px-3 text-slate-600 hover:bg-slate-100 transition disabled:opacity-50 disabled:pointer-events-none" title="Dodaj nową osobę kontaktową dla tego klienta">
+                  <Plus size={18} />
+                </button>
+              </div>
+            </Field>
+
+            <Field label="Miejsce z bazy">
+              <select className={inputClass} value={form.id_miejsca || ''} onChange={(e) => setForm({ ...form, id_miejsca: e.target.value })}>
+                <option value="">Wpiszę ręcznie</option>
+                {dict.miejsca.map((m: any) => <option key={m.id} value={m.id}>{m.nazwa}</option>)}
+              </select>
+            </Field>
+            
              <Field label="Miejsce ręcznie"><input className={inputClass} value={form.miejsce_reczne || ''} onChange={(e) => setForm({ ...form, miejsce_reczne: e.target.value })} /></Field>
-             <Field label="Adres / Google Maps"><input className={inputClass} value={form.adres_reczny || ''} onChange={(e) => setForm({ ...form, adres_reczny: e.target.value })} />{maps && <a className="mt-2 inline-flex items-center gap-1 text-xs font-black text-cyan-700" href={maps} target="_blank"><MapPin size={14} /> Otwórz trasę w Google Maps</a>}</Field>
           </div>
+          
+          <div className="grid gap-4 md:grid-cols-1">
+             <Field label="Adres / Google Maps"><input className={inputClass} value={form.adres_reczny || ''} onChange={(e) => setForm({ ...form, adres_reczny: e.target.value })} />{maps && <a className="mt-2 inline-flex items-center gap-1 text-xs font-black text-cyan-700" href={maps} target="_blank" rel="noreferrer"><MapPin size={14} /> Otwórz trasę w Google Maps</a>}</Field>
+          </div>
+
           <Field label="Opis"><textarea className={`${inputClass} min-h-24`} value={form.opis || ''} onChange={(e) => setForm({ ...form, opis: e.target.value })} /></Field>
         </Card>
 
@@ -420,12 +500,14 @@ export default function EventDetailsPage() {
             </div>
           </div>
           <Field label="Manager"><select className={inputClass} value={form.id_managera || ''} onChange={(e) => setForm({ ...form, id_managera: e.target.value })}><option value="">Brak</option>{dict.uzytkownicy.map((u: any) => <option key={u.id} value={u.id}>{u.imie} {u.nazwisko}</option>)}</select></Field>
+          
           <div className="grid gap-3 md:grid-cols-2">
             <Info label="Waga sprzętu" value="0 kg" />
             <Info label="Objętość" value="0.0 m³" />
             <Info label="Pobór prądu" value="0 W" />
             <Info label="Status" value="OK" />
           </div>
+
           <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
             <p className="mb-3 text-sm font-black text-slate-700">Statusy poboczne</p>
             <div className="grid gap-3">
@@ -469,6 +551,16 @@ export default function EventDetailsPage() {
           {!['szczegoly','sprzet','oferty','ekipa','flota','historia'].includes(activeTab) && <p className="rounded-2xl border border-dashed border-slate-200 p-8 text-center text-sm font-bold text-slate-400">Zakładka „{TABS.find((t) => t.id === activeTab)?.label}” jest przygotowana w układzie panelu. Logikę podłączymy etapami, bez usuwania istniejącego kodu.</p>}
         </div>
       </Card>
+
+      {/* MODAL SZYBKIEGO DODAWANIA KLIENTA / KONTAKTU */}
+      {crmModalMode && (
+        <QuickAddCrmModal 
+          mode={crmModalMode} 
+          parentId={form.id_kontrahenta}
+          onClose={() => setCrmModalMode(null)} 
+          onSuccess={handleCrmSuccess} 
+        />
+      )}
     </div>
   );
 }

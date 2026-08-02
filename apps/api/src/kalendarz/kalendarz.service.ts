@@ -248,6 +248,7 @@ export class KalendarzService {
         id_typu_wydarzenia: dto.id_typu_wydarzenia ? Number(dto.id_typu_wydarzenia) : null,
         id_statusu_wydarzenia: dto.id_statusu_wydarzenia ? Number(dto.id_statusu_wydarzenia) : null,
         id_kontrahenta: dto.id_kontrahenta ? Number(dto.id_kontrahenta) : null,
+        id_kontaktu: dto.id_kontaktu ? Number(dto.id_kontaktu) : null,
         id_miejsca: dto.id_miejsca ? Number(dto.id_miejsca) : null,
         miejsce_reczne: dto.miejsce_reczne || null,
         adres_reczny: dto.adres_reczny || null,
