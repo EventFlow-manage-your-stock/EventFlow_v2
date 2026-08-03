@@ -50,8 +50,8 @@ export default function PackagesPage() {
   const modelRows = useMemo(() => models.map((m: any) => ({ ...m, egzemplarzy: items.filter((i: any) => String(i.id_modelu) === String(m.id)).length })), [models, items]);
 
   return <div className="mx-auto max-w-[1650px] space-y-6">
-    <PageTitle eyebrow="Magazyn" title="Opakowania i Racki" description="Case'y rozpakowują swoją zawartość na dokumencie WZ. Racki lądują na dokumencie jako pojedynczy wiersz z ukrytą w uwagach zawartością." action={<Button onClick={() => setShow(true)}><Plus size={16} className="inline mr-1" /> Dodaj</Button>} />
-    <Card className="!p-4"><div className="flex flex-wrap gap-2"><button onClick={() => setView('egzemplarze')} className={`rounded-xl px-4 py-2 text-sm font-black ${view === 'egzemplarze' ? 'bg-cyan-600 text-white shadow' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>Fizyczne skrzynie / Racki</button><button onClick={() => setView('typy')} className={`rounded-xl px-4 py-2 text-sm font-black ${view === 'typy' ? 'bg-cyan-600 text-white shadow' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>Typy i parametry modeli</button></div></Card>
+    <PageTitle eyebrow="Magazyn" title="Opakowania i Zestawy" description="Case'y rozpakowują swoją zawartość na dokumencie WZ. Zestawy lądują na dokumencie jako pojedynczy wiersz z ukrytą w uwagach zawartością." action={<Button onClick={() => setShow(true)}><Plus size={16} className="inline mr-1" /> Dodaj</Button>} />
+    <Card className="!p-4"><div className="flex flex-wrap gap-2"><button onClick={() => setView('egzemplarze')} className={`rounded-xl px-4 py-2 text-sm font-black ${view === 'egzemplarze' ? 'bg-cyan-600 text-white shadow' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>Fizyczne skrzynie / Zestawy</button><button onClick={() => setView('typy')} className={`rounded-xl px-4 py-2 text-sm font-black ${view === 'typy' ? 'bg-cyan-600 text-white shadow' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>Typy i parametry modeli</button></div></Card>
     <Card>
       {loading ? <p className="p-8 text-center font-bold text-slate-400">Ładowanie...</p> : view === 'egzemplarze' ? (
       <DataTable 
@@ -66,7 +66,7 @@ export default function PackagesPage() {
               <div className="flex flex-col gap-1">
                 <span className="font-bold text-slate-600">{r.model?.nazwa || '-'}</span>
                 {r.model?.typ_sprzetu === 'rack' 
-                  ? <span className="w-max rounded bg-indigo-100 px-2 py-0.5 text-[10px] font-black uppercase text-indigo-700">RACK</span> 
+                  ? <span className="w-max rounded bg-indigo-100 px-2 py-0.5 text-[10px] font-black uppercase text-indigo-700">ZESTAW</span> 
                   : <span className="w-max rounded bg-amber-100 px-2 py-0.5 text-[10px] font-black uppercase text-amber-700">CASE</span>}
               </div>
             )
@@ -87,7 +87,7 @@ export default function PackagesPage() {
             key: 'typ', 
             label: 'Logika', 
             value: (r:any) => r.typ_sprzetu === 'rack' 
-              ? <span className="rounded bg-indigo-100 px-2 py-1 text-[10px] font-black uppercase text-indigo-700">RACK</span> 
+              ? <span className="rounded bg-indigo-100 px-2 py-1 text-[10px] font-black uppercase text-indigo-700">ZESTAW</span> 
               : <span className="rounded bg-amber-100 px-2 py-1 text-[10px] font-black uppercase text-amber-700">CASE</span> 
           }, 
           { key: 'kategoria', label: 'Kategoria', value: (r:any)=>r.kategoria?.nazwa || '-' }, 
@@ -96,7 +96,7 @@ export default function PackagesPage() {
       />
       )}
     </Card>
-    {show && <SimpleModal title="Dodaj kontener / skrzynię / rack" onClose={() => setShow(false)}>{error && <div className="mb-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-bold text-red-700">{error}</div>}<form onSubmit={save} className="space-y-4"><div className="grid gap-4 md:grid-cols-2">
+    {show && <SimpleModal title="Dodaj kontener / skrzynię / Zestaw" onClose={() => setShow(false)}>{error && <div className="mb-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-bold text-red-700">{error}</div>}<form onSubmit={save} className="space-y-4"><div className="grid gap-4 md:grid-cols-2">
       <Field label="Istniejący typ opakowania">
         <select className={inputClass} value={form.id_modelu || ''} onChange={(e) => setForm({ ...form, id_modelu: e.target.value })}>
           <option value="">Utwórz nowy typ</option>
@@ -107,12 +107,12 @@ export default function PackagesPage() {
         <Field label="Logika skanowania">
           <select className={inputClass} value={form.typ_sprzetu || 'opakowanie'} onChange={e => setForm({ ...form, typ_sprzetu: e.target.value })}>
             <option value="opakowanie">Standardowy Case (rozpakowuje zawartość na WZ)</option>
-            <option value="rack">Rack (stanowi jedną pozycję na dokumencie z listą sprzętu)</option>
+            <option value="rack">Zestaw (stanowi jedną pozycję na dokumencie z listą sprzętu)</option>
           </select>
         </Field>
       )}
       <Field label="Nazwa typu, jeśli nowy"><input className={inputClass} value={form.nazwa_modelu || ''} onChange={(e) => setForm({ ...form, nazwa_modelu: e.target.value })}/></Field>
-      <Field label="Nazwa skrzyni / Racka"><input className={inputClass} value={form.nazwa || ''} onChange={(e) => setForm({ ...form, nazwa: e.target.value })}/></Field>
+      <Field label="Nazwa skrzyni / Zestawu"><input className={inputClass} value={form.nazwa || ''} onChange={(e) => setForm({ ...form, nazwa: e.target.value })}/></Field>
       <Field label="Numer egzemplarza"><input className={inputClass} value={form.numer_egzemplarza || ''} onChange={(e) => setForm({ ...form, numer_egzemplarza: e.target.value, numer_urzadzenia: e.target.value })}/></Field>
       <Field label="Magazyn"><select className={inputClass} value={form.id_magazynu || ''} onChange={(e) => setForm({ ...form, id_magazynu: e.target.value })}><option value="">Brak</option>{magazyny.map((m: any) => <option key={m.id} value={m.id}>{m.nazwa}</option>)}</select></Field>
       <Field label="Kod kreskowy / QR"><input className={inputClass} value={form.kod_kreskowy || ''} onChange={(e) => updateBarcode(e.target.value)}/></Field>

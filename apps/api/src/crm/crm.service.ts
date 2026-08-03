@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -35,13 +35,34 @@ export class CrmService {
     return client;
   }
 
+  private async checkNipUnique(nip: string | undefined | null, id_organizacji: number, excludeId?: number) {
+    if (!nip) return;
+    
+    // Usuwamy ewentualne myślniki i spacje
+    const cleanNip = nip.replace(/[\s-]/g, '');
+    
+    const existing = await this.prisma.extendedClient.kontrahent.findFirst({
+      where: { 
+        id_organizacji, 
+        nip: cleanNip,
+        id: excludeId ? { not: excludeId } : undefined
+      }
+    });
+
+    if (existing) {
+      throw new BadRequestException(`Kontrahent z numerem NIP ${cleanNip} już istnieje w Twojej bazie (zobacz: ${existing.nazwa}).`);
+    }
+  }
+
   async create(dto: any, id_organizacji: number) {
+    await this.checkNipUnique(dto.nip, id_organizacji);
+
     return this.prisma.extendedClient.kontrahent.create({
       data: {
         id_organizacji,
         nazwa: dto.nazwa,
         nazwa_skrocona: dto.nazwa_skrocona,
-        nip: dto.nip,
+        nip: dto.nip ? dto.nip.replace(/[\s-]/g, '') : null,
         regon: dto.regon,
         krs: dto.krs,
         kraj: dto.kraj || 'Polska',
@@ -61,12 +82,14 @@ export class CrmService {
   }
 
   async update(id: number, dto: any, id_organizacji: number) {
+    await this.checkNipUnique(dto.nip, id_organizacji, id);
+
     return this.prisma.extendedClient.kontrahent.update({
       where: { id },
       data: {
         nazwa: dto.nazwa,
         nazwa_skrocona: dto.nazwa_skrocona,
-        nip: dto.nip,
+        nip: dto.nip ? dto.nip.replace(/[\s-]/g, '') : null,
         regon: dto.regon,
         krs: dto.krs,
         kraj: dto.kraj,

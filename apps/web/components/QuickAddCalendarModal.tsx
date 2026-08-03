@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { MapPin, Plus } from 'lucide-react';
 import { api } from '../lib/api';
 import { googleMapsDirectionsUrl } from '../lib/googleMaps';
-import { Button, Field, inputClass } from './ProductUI';
+import { Button, Field, inputClass, SearchableSelect } from './ProductUI';
 import { SimpleModal } from './SimpleModal';
 import { QuickAddCrmModal } from './QuickAddCrmModal'; // Dodany import
 
@@ -163,23 +163,20 @@ export function QuickAddCalendarModal({
                   </select>
                 </Field>
                 <Field label="Status">
-                  <select className={inputClass} value={form.id_statusu_wydarzenia || ''} onChange={(e) => setForm({ ...form, id_statusu_wydarzenia: e.target.value })}>
-                    <option value="">Wybierz</option>
-                    {(dict.statusy || []).map((s: any) => <option key={s.id} value={s.id}>{s.ikona || ' '} {s.nazwa}</option>)}
-                  </select>
-                </Field>
-                
-                <Field label="Klient">
-                  <div className="flex gap-2">
-                    <select className={`${inputClass} flex-1`} value={form.id_kontrahenta || ''} onChange={(e) => setForm({ ...form, id_kontrahenta: e.target.value, id_kontaktu: '' })}>
-                      <option value="">Brak</option>
-                      {localKontrahenci.map((k: any) => <option key={k.id} value={k.id}>{k.nazwa}</option>)}
-                    </select>
-                    <button type="button" onClick={() => setCrmModalMode('kontrahent')} className="flex items-center justify-center rounded-xl border border-slate-200 bg-slate-50 px-3 text-slate-600 hover:bg-slate-100 transition" title="Dodaj nowego klienta">
-                      <Plus size={18} />
-                    </button>
-                  </div>
-                </Field>
+                <select className={inputClass} value={form.id_statusu_wydarzenia || ''} onChange={(e) => setForm({ ...form, id_statusu_wydarzenia: e.target.value })}>
+                  <option value="">Wybierz</option>
+                  {(dict.statusy || []).map((s: any) => <option key={s.id} value={s.id}>{s.ikona || '●'} {s.nazwa}</option>)}
+                </select>
+              </Field>
+
+              <Field label="Klient">
+                <SearchableSelect
+                  value={form.id_kontrahenta || ''}
+                  onChange={(val) => setForm({ ...form, id_kontrahenta: val })}
+                  options={(dict.kontrahenci || []).map((k: any) => ({ id: k.id, label: k.nazwa }))}
+                  placeholder="Brak / wpiszę później"
+                />
+              </Field>
 
                 <Field label="Osoba kontaktowa">
                   <div className="flex gap-2">

@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Copy, Plus } from 'lucide-react';
 import { api } from '../../../lib/api';
-import { Button, Card, Field, inputClass, PageTitle } from '../../../components/ProductUI';
+import { Button, Card, Field, inputClass, PageTitle, SearchableSelect } from '../../../components/ProductUI';
 import { DataTable } from '../../../components/DataTable';
 import { SimpleModal } from '../../../components/SimpleModal';
 import { OfferDuplicateTargetModal } from '../../../components/OfferDuplicateTargetModal';
@@ -94,7 +94,16 @@ export default function OffersPage() {
             </Field>
             <div className="grid gap-4 md:grid-cols-2">
               <Field label="Nazwa oferty"><input className={inputClass} required value={form.nazwa || ''} onChange={(e) => setForm({ ...form, nazwa: e.target.value })} /></Field>
-              <Field label="Kontrahent"><select className={inputClass} value={form.id_kontrahenta || ''} onChange={(e) => setForm({ ...form, id_kontrahenta: e.target.value })}><option value="">Brak</option>{kontrahenci.map((k: any) => <option key={k.id} value={k.id}>{k.nazwa}</option>)}</select></Field>
+              
+              <Field label="Kontrahent">
+                <SearchableSelect
+                  value={form.id_kontrahenta || ''}
+                  onChange={(val) => setForm({ ...form, id_kontrahenta: val })}
+                  options={(kontrahenci || []).map((k: any) => ({ id: k.id, label: k.nazwa }))}
+                  placeholder="Brak / przypisz później"
+                />
+              </Field>
+
               <Field label="Budżet netto"><input type="number" step="0.01" className={inputClass} value={form.budzet_netto || ''} onChange={(e) => setForm({ ...form, budzet_netto: e.target.value })} /></Field>
               <Field label="Termin płatności dni"><input type="number" className={inputClass} value={form.termin_platnosci_dni || 14} onChange={(e) => setForm({ ...form, termin_platnosci_dni: e.target.value })} /></Field>
             </div>

@@ -243,5 +243,14 @@ export class MagazynController {
       rawUserId ? Number(rawUserId) : null
     );
   }
+  @Get('wynajmy/:id/sprzet')
+  async getSprzetWynajmu(@Param('id', ParseIntPipe) id: number, @Req() req: Request) {
+    return this.magazynService.getSprzetWynajmu(id, Number((req.user as any).id_organizacji));
+  }
+
+  @Post('wynajmy/:id/sprzet')
+  async dodajSprzetDoWynajmu(@Param('id', ParseIntPipe) id: number, @Body() dto: any, @Req() req: Request) {
+    return this.magazynService.dodajSprzetDoWynajmu(id, dto, Number((req.user as any).id_organizacji));
+  }
 
 }

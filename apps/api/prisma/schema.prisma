@@ -138,6 +138,7 @@ model Uzytkownik {
   zlecone_zadania              Zadanie[]              @relation("ZlecajacyZadanie")
   wydania_magazynowe_utworzone WydanieMagazynowe[]    @relation("UtworzylWydanieMagazynowe")
   utworzone_zapytania          Zapytanie[]            @relation("TworcaZapytania")
+  zarzadzane_wynajmy Wynajem[] @relation("ManagerWynajmu")
 
   @@unique([id_organizacji, email])
   @@map("uzytkownicy")
@@ -201,6 +202,7 @@ model Kontrahent {
   zadania     Zadanie[]
   zapytania   Zapytanie[]
 
+  @@unique([id_organizacji, nip])
   @@index([nip])
   @@index([nazwa])
   @@map("kontrahenci")
@@ -227,6 +229,7 @@ model KontaktKontrahenta {
   kontrahent  Kontrahent   @relation(fields: [id_kontrahenta], references: [id])
   wydarzenia  Wydarzenie[]
   oferty      Oferta[]
+  wynajmy     Wynajem[]
 
   @@index([id_kontrahenta])
   @@map("kontakty_kontrahentow")
@@ -249,6 +252,7 @@ model Miejsce {
 
   organizacja Organizacja  @relation(fields: [id_organizacji], references: [id])
   wydarzenia  Wydarzenie[]
+  wynajmy     Wynajem[]
 
   @@map("miejsca")
 }
@@ -567,6 +571,7 @@ model StatusMagazynowy {
 
   organizacja Organizacja  @relation(fields: [id_organizacji], references: [id])
   wydarzenia  Wydarzenie[]
+  wynajmy Wynajem[]
 
   @@map("statusy_magazynowe")
 }
@@ -585,6 +590,7 @@ model StatusKsiegowy {
 
   organizacja Organizacja  @relation(fields: [id_organizacji], references: [id])
   wydarzenia  Wydarzenie[]
+  wynajmy Wynajem[]
 
   @@map("statusy_ksiegowe")
 }
@@ -856,6 +862,13 @@ model Wynajem {
   id_oferty               Int?
   id_kontrahenta          Int?
   id_statusu_wynajmu      Int?
+  id_kontaktu             Int?
+  id_miejsca              Int?
+  id_managera             Int?
+  id_statusu_magazynowego Int?
+  id_statusu_ksiegowego   Int?
+  miejsce_reczne          String?   @db.VarChar(255)
+  adres_reczny            String?   @db.VarChar(255)
   numer                   String?   @db.VarChar(100)
   data_wydania            DateTime?
   data_zwrotu_planowana   DateTime?
@@ -871,6 +884,11 @@ model Wynajem {
   oferty             Oferta[]            @relation("OfertyWynajmu")
   kontrahent         Kontrahent?         @relation(fields: [id_kontrahenta], references: [id])
   status             StatusWynajmu?      @relation(fields: [id_statusu_wynajmu], references: [id])
+  kontakt           KontaktKontrahenta? @relation(fields: [id_kontaktu], references: [id])
+  miejsce           Miejsce?            @relation(fields: [id_miejsca], references: [id])
+  manager           Uzytkownik?         @relation("ManagerWynajmu", fields: [id_managera], references: [id])
+  status_magazynowy StatusMagazynowy?   @relation(fields: [id_statusu_magazynowego], references: [id])
+  status_ksiegowy   StatusKsiegowy?     @relation(fields: [id_statusu_ksiegowego], references: [id])
   pozycje            PozycjaWynajmu[]
   wydania_magazynowe WydanieMagazynowe[]
   // EVENTFLOW_PRODUCT_POLISH_V38: plan sprzętu wydarzenia należy do modelu Wydarzenie, nie Wynajem.

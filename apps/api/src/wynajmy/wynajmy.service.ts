@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 @Injectable()
 export class WynajmyService {
   constructor(private readonly prisma: PrismaService) {}
+
   private n(v: any) { return v === '' || v == null ? null : Number(v); }
   private d(v: any) { return v ? new Date(v) : null; }
 
@@ -13,8 +14,9 @@ export class WynajmyService {
       include: {
         kontrahent: true,
         status: true,
+        status_magazynowy: true,
+        status_ksiegowy: true,
         oferta: true,
-        // EVENTFLOW_PRODUCT_POLISH_V8: wiele ofert bezpośrednio przypisanych do jednego wynajmu.
         oferty: { where: { aktywny: true }, include: { status: true, wersje: { take: 1, orderBy: { numer_wersji: 'desc' } } }, orderBy: { data_utworzenia: 'desc' } },
         pozycje: { include: { model: true, egzemplarz: true } },
       },
@@ -27,7 +29,12 @@ export class WynajmyService {
       where: { id, id_organizacji, aktywny: true },
       include: {
         kontrahent: true,
+        kontakt: true,
         status: true,
+        status_magazynowy: true,
+        status_ksiegowy: true,
+        manager: true,
+        miejsce: true,
         oferta: true,
         oferty: { where: { aktywny: true }, include: { status: true, wersje: { take: 1, orderBy: { numer_wersji: 'desc' } } }, orderBy: { data_utworzenia: 'desc' } },
         pozycje: { include: { model: true, egzemplarz: true } },
@@ -42,10 +49,16 @@ export class WynajmyService {
       data: {
         id_organizacji,
         numer: dto.numer || `W/${new Date().getFullYear()}/${Date.now().toString().slice(-5)}`,
-        // EVENTFLOW_PRODUCT_POLISH_V28: wynajem nie jest już przypinany do wydarzenia; to osobny byt.
         id_oferty: this.n(dto.id_oferty),
         id_kontrahenta: this.n(dto.id_kontrahenta),
+        id_kontaktu: this.n(dto.id_kontaktu),
+        id_managera: this.n(dto.id_managera),
+        id_miejsca: this.n(dto.id_miejsca),
         id_statusu_wynajmu: this.n(dto.id_statusu_wynajmu),
+        id_statusu_magazynowego: this.n(dto.id_statusu_magazynowego),
+        id_statusu_ksiegowego: this.n(dto.id_statusu_ksiegowego),
+        miejsce_reczne: dto.miejsce_reczne || null,
+        adres_reczny: dto.adres_reczny || null,
         data_wydania: this.d(dto.data_wydania),
         data_zwrotu_planowana: this.d(dto.data_zwrotu_planowana),
         data_zwrotu_rzeczywista: this.d(dto.data_zwrotu_rzeczywista),
@@ -60,10 +73,16 @@ export class WynajmyService {
       where: { id },
       data: {
         numer: dto.numer || undefined,
-        // EVENTFLOW_PRODUCT_POLISH_V28: wynajem nie jest już przypinany do wydarzenia; to osobny byt.
         id_oferty: this.n(dto.id_oferty),
         id_kontrahenta: this.n(dto.id_kontrahenta),
+        id_kontaktu: this.n(dto.id_kontaktu),
+        id_managera: this.n(dto.id_managera),
+        id_miejsca: this.n(dto.id_miejsca),
         id_statusu_wynajmu: this.n(dto.id_statusu_wynajmu),
+        id_statusu_magazynowego: this.n(dto.id_statusu_magazynowego),
+        id_statusu_ksiegowego: this.n(dto.id_statusu_ksiegowego),
+        miejsce_reczne: dto.miejsce_reczne || null,
+        adres_reczny: dto.adres_reczny || null,
         data_wydania: this.d(dto.data_wydania),
         data_zwrotu_planowana: this.d(dto.data_zwrotu_planowana),
         data_zwrotu_rzeczywista: this.d(dto.data_zwrotu_rzeczywista),

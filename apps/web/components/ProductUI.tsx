@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
+import { ChevronDown, Search } from 'lucide-react';
 
 export function PageTitle({ eyebrow, title, description, action }: { eyebrow?: string; title: string; description?: string; action?: React.ReactNode }) {
   return (
@@ -34,4 +35,107 @@ export const inputClass = 'w-full rounded-xl border border-slate-200 bg-white px
 
 export function EmptyState({ title, description }: { title: string; description?: string }) {
   return <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-10 text-center dark:border-white/10 dark:bg-slate-950"><p className="font-black text-slate-700 dark:text-slate-200">{title}</p>{description && <p className="mt-2 text-sm text-slate-500">{description}</p>}</div>;
+}
+
+export function SearchableSelect({
+  value,
+  onChange,
+  options,
+  placeholder = 'Wybierz...',
+  disabled = false
+}: {
+  value: string;
+  onChange: (val: string) => void;
+  options: { value: string; label: string }[];
+  placeholder?: string;
+  disabled?: boolean;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const filtered = options.filter(o =>
+    o.label.toLowerCase().includes(query.toLowerCase())
+  );
+
+  const selectedOption = options.find(o => o.value === value);
+
+  return (
+    <div ref={wrapperRef} className="relative w-full min-w-0">
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => setIsOpen(!isOpen)}
+        className={`${inputClass} flex w-full min-w-0 items-center justify-between text-left ${disabled ? 'opacity-50 pointer-events-none' : ''}`}
+      >
+        {/* KLUCZOWA ZMIANA: flex-1, min-w-0 i truncate wymuszają obcięcie tekstu (...) */}
+        <span className="block flex-1 min-w-0 truncate pr-2 text-slate-700 dark:text-slate-200">
+          {selectedOption ? selectedOption.label : placeholder}
+        </span>
+        <ChevronDown size={16} className="shrink-0 text-slate-400" />
+      </button>
+
+      {isOpen && (
+        <div className="absolute z-50 mt-1 max-h-60 w-full min-w-0 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 shadow-xl dark:border-white/10 dark:bg-slate-900 custom-scrollbar">
+          <div className="sticky top-0 mb-1 bg-white pb-1 dark:bg-slate-900">
+            <div className="relative">
+              <Search size={14} className="absolute left-3 top-3 text-slate-400" />
+              <input
+                autoFocus
+                className="w-full min-w-0 rounded-lg border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-3 text-sm outline-none focus:border-cyan-500 dark:border-white/10 dark:bg-slate-950 dark:text-white"
+                placeholder="Szukaj..."
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+            </div>
+          </div>
+          
+          <button
+            type="button"
+            onClick={() => {
+              onChange('');
+              setIsOpen(false);
+              setQuery('');
+            }}
+            className={`flex w-full min-w-0 items-center rounded-lg px-3 py-2.5 text-left text-sm font-bold transition hover:bg-slate-50 dark:hover:bg-white/5 ${!value ? 'bg-cyan-50 text-cyan-700 dark:bg-cyan-900/30' : 'text-slate-600 dark:text-slate-300'}`}
+          >
+            Brak / Wyczyść
+          </button>
+          
+          {filtered.map(o => (
+            <button
+              key={o.value}
+              type="button"
+              onClick={() => {
+                onChange(o.value);
+                setIsOpen(false);
+                setQuery('');
+              }}
+              className={`flex w-full min-w-0 items-center rounded-lg px-3 py-2.5 text-left text-sm font-bold transition hover:bg-slate-50 dark:hover:bg-white/5 ${value === o.value ? 'bg-cyan-50 text-cyan-700 dark:bg-cyan-900/30' : 'text-slate-700 dark:text-slate-200'}`}
+              title={o.label}
+            >
+              {/* Opcjonalnie: Truncate na liście opcji, by długi tekst w dropdownie nie wymuszał scrolla poziomego */}
+              <span className="block flex-1 min-w-0 truncate">{o.label}</span>
+            </button>
+          ))}
+          
+          {filtered.length === 0 && (
+            <div className="p-3 text-center text-sm font-bold text-slate-400">
+              Brak wyników
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }

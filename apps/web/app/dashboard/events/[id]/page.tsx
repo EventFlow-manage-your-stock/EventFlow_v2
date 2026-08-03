@@ -27,7 +27,7 @@ import {
   Calendar
 } from 'lucide-react';
 import { api } from '../../../../lib/api';
-import { Button, Card, Field, inputClass } from '../../../../components/ProductUI';
+import { Button, Card, Field, inputClass, SearchableSelect} from '../../../../components/ProductUI';
 import { DataTable } from '../../../../components/DataTable';
 import { OfferDuplicateTargetModal } from '../../../../components/OfferDuplicateTargetModal';
 import { googleMapsDirectionsUrl } from '../../../../lib/googleMaps';
@@ -119,7 +119,7 @@ function categoryPath(categoryId: string, byId: Map<string, any>) {
 }
 
 // ============================================================================
-// WMS CORE HELPERS
+// WMS CORE HELPERS - GLOBAL RENAME RACK -> ZESTAW
 // ============================================================================
 
 function normalizeCode(v: any) {
@@ -146,9 +146,9 @@ function getEquipmentText(row: any): string {
   ].filter(Boolean).map((v) => String(v).toLowerCase()).join(' ');
 }
 
-function isRack(row: any): boolean {
+function isZestaw(row: any): boolean {
   const txt = getEquipmentText(row);
-  return txt.includes('rack') || txt.includes('racki') || txt.includes('szafa rack');
+  return txt.includes('zestaw') || txt.includes('rack') || txt.includes('racki') || txt.includes('szafa rack') || row?.rowType === 'zestaw' || row?.czy_zestaw === true;
 }
 
 function isQuantityModel(model: any): boolean {
@@ -164,7 +164,7 @@ function isQuantityModel(model: any): boolean {
 }
 
 function isCase(row: any): boolean {
-  if (!row || isRack(row)) return false;
+  if (!row || isZestaw(row)) return false;
   const txt = getEquipmentText(row);
   const codes = getEquipmentCodes(row);
   return (
@@ -177,7 +177,7 @@ function isCase(row: any): boolean {
 function isEquipmentInstance(row: any): boolean {
   const modelType = row?.model?.typ_sprzetu || row?.egzemplarz?.model?.typ_sprzetu || row?.typ_sprzetu;
   const hasInstance = Boolean(row?.id_egzemplarza || row?.egzemplarz || row?.id);
-  return hasInstance && !isQuantityModel(row) && (isRack(row) || (modelType !== 'opakowanie' && !isCase(row)));
+  return hasInstance && !isQuantityModel(row) && (isZestaw(row) || (modelType !== 'opakowanie' && !isCase(row)));
 }
 
 function modelIdOf(row: any) { return row?.id_modelu || row?.model?.id || row?.egzemplarz?.id_modelu || row?.egzemplarz?.model?.id || null; }
@@ -195,6 +195,8 @@ export default function EventDetailsPage() {
   const isNew = params.id === 'new';
   
   const [activeTab, setActiveTab] = useState('szczegoly');
+  const [tabSearchQuery, setTabSearchQuery] = useState('');
+  
   const [eventData, setEventData] = useState<any>(null);
   const [form, setForm] = useState<any>({ data_start: '', data_koniec: '', budzet_netto: '' });
   const [dict, setDict] = useState<any>({ typy: [], statusy: [], statusyMagazynowe: [], statusyKsiegowe: [], kontrahenci: [], kontakty: [], miejsca: [], uzytkownicy: [] });
@@ -204,8 +206,11 @@ export default function EventDetailsPage() {
   const [offerName, setOfferName] = useState('');
   const [duplicateTarget, setDuplicateTarget] = useState<any>(null);
   
-  // Stan obsługujący modale CRM (Szybkie dodawanie)
   const [crmModalMode, setCrmModalMode] = useState<'kontrahent' | 'kontakt' | null>(null);
+
+  useEffect(() => {
+    setTabSearchQuery('');
+  }, [activeTab]);
 
   async function loadDictionaries() {
     const [typy, statusy, statusyMagazynowe, statusyKsiegowe, kontrahenci, miejsca, uzytkownicy] = await Promise.all([
@@ -334,7 +339,6 @@ export default function EventDetailsPage() {
     setDuplicateTarget(offer);
   }
 
-  // Automatyczne podpięcie dodanego klienta lub kontaktu wprost z modala
   function handleCrmSuccess(type: 'kontrahent' | 'kontakt', newData: any) {
     if (type === 'kontrahent') {
       setDict((prev: any) => ({ ...prev, kontrahenci: [...prev.kontrahenci, newData] }));
@@ -356,13 +360,7 @@ export default function EventDetailsPage() {
     <div className="mx-auto max-w-[1800px] space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2 text-sm font-bold text-slate-500">
-          <button 
-            onClick={() => router.back()} 
-            title="Wraca do poprzednio odwiedzonej strony"
-            className="inline-flex items-center gap-1 rounded-xl border px-3 py-2 hover:bg-slate-50"
-          >
-            <ArrowLeft size={16} />Powrót
-          </button>
+          <button onClick={() => router.back()} title="Wraca do poprzednio odwiedzonej strony" className="inline-flex items-center gap-1 rounded-xl border px-3 py-2 hover:bg-slate-50"><ArrowLeft size={16} />Powrót</button>
           <span>/</span>
           <Link href="/dashboard/calendar" className="hover:text-cyan-700">Kalendarz</Link>
           <span>/</span>
@@ -370,18 +368,10 @@ export default function EventDetailsPage() {
         </div>
         <div className="flex flex-wrap gap-2">
           {!isNew && (form.data_start || eventData?.data_start) && (
-            <Button 
-              variant="secondary" 
-              onClick={() => {
-                const targetDate = form.data_start || eventData?.data_start;
-                router.push(`/dashboard/calendar?date=${targetDate.slice(0, 10)}`);
-              }}
-              title="Przenosi do kalendarza, ustawiając go od razu na dacie tego wydarzenia"
-            >
+            <Button variant="secondary" onClick={() => { router.push(`/dashboard/calendar?date=${(form.data_start || eventData?.data_start).slice(0, 10)}`); }} title="Przenosi do kalendarza, ustawiając go od razu na dacie tego wydarzenia">
               <Calendar size={16} className="inline mr-1 text-cyan-600" /> Cofnij do daty w kalendarzu
             </Button>
           )}
-
           {!isNew && <Button variant="danger" onClick={remove}><Trash2 size={16} className="inline mr-1" /> Usuń</Button>}
           <Button onClick={submit} disabled={saving}><Save size={16} className="inline mr-1" /> {saving ? 'Zapisywanie...' : 'Zapisz'}</Button>
         </div>
@@ -415,70 +405,43 @@ export default function EventDetailsPage() {
             
             <Field label="Założony budżet netto (PLN)">
               <div className="relative">
-                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-                  <DollarSign size={15} className="text-slate-400" />
-                </div>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  className={`${inputClass} pl-9`}
-                  value={form.budzet_netto || ''}
-                  onChange={(e) => setForm({ ...form, budzet_netto: e.target.value })}
-                  placeholder="np. 15000.00"
-                />
+                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3"><DollarSign size={15} className="text-slate-400" /></div>
+                <input type="number" step="0.01" min="0" className={`${inputClass} pl-9`} value={form.budzet_netto || ''} onChange={(e) => setForm({ ...form, budzet_netto: e.target.value })} placeholder="np. 15000.00" />
               </div>
             </Field>
 
             <Field label="Typ wydarzenia">
-              <select className={inputClass} value={form.id_typu_wydarzenia || ''} onChange={(e) => setForm({ ...form, id_typu_wydarzenia: e.target.value })}>
-                <option value="">Wybierz</option>
-                {dict.typy.map((t: any) => <option key={t.id} value={t.id}>{t.nazwa}</option>)}
-              </select>
+              <SearchableSelect value={form.id_typu_wydarzenia || ''} onChange={(v) => setForm({ ...form, id_typu_wydarzenia: v })} options={dict.typy.map((t: any) => ({ value: String(t.id), label: t.nazwa }))} placeholder="Wybierz..." />
             </Field>
 
             <Field label="Start"><input type="datetime-local" className={inputClass} value={form.data_start || ''} onChange={(e) => setForm({ ...form, data_start: e.target.value })} /></Field>
             
             <Field label="Status główny">
-              <select className={inputClass} value={form.id_statusu_wydarzenia || ''} onChange={(e) => setForm({ ...form, id_statusu_wydarzenia: e.target.value })}>
-                <option value="">Wybierz</option>
-                {dict.statusy.map((s: any) => <option key={s.id} value={s.id}>{s.ikona || '●'} {s.nazwa}</option>)}
-              </select>
+              <SearchableSelect value={form.id_statusu_wydarzenia || ''} onChange={(v) => setForm({ ...form, id_statusu_wydarzenia: v })} options={dict.statusy.map((s: any) => ({ value: String(s.id), label: `${s.ikona || '●'} ${s.nazwa}` }))} placeholder="Wybierz..." />
             </Field>
 
             <Field label="Koniec"><input type="datetime-local" className={inputClass} value={form.data_koniec || ''} onChange={(e) => setForm({ ...form, data_koniec: e.target.value })} /></Field>
             
             <Field label="Klient">
               <div className="flex gap-2">
-                <select className={`${inputClass} flex-1`} value={form.id_kontrahenta || ''} onChange={(e) => setForm({ ...form, id_kontrahenta: e.target.value, id_kontaktu: '' })}>
-                  <option value="">Brak</option>
-                  {dict.kontrahenci.map((k: any) => <option key={k.id} value={k.id}>{k.nazwa}</option>)}
-                </select>
-                <button type="button" onClick={() => setCrmModalMode('kontrahent')} className="flex items-center justify-center rounded-xl border border-slate-200 bg-slate-50 px-3 text-slate-600 hover:bg-slate-100 transition" title="Dodaj nowego klienta">
-                  <Plus size={18} />
-                </button>
+                <div className="flex-1 min-w-0">
+                  <SearchableSelect value={form.id_kontrahenta || ''} onChange={(v) => setForm({ ...form, id_kontrahenta: v, id_kontaktu: '' })} options={dict.kontrahenci.map((k: any) => ({ value: String(k.id), label: k.nazwa }))} placeholder="Brak" />
+                </div>
+                <button type="button" onClick={() => setCrmModalMode('kontrahent')} className="flex shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 px-3 text-slate-600 hover:bg-slate-100 transition"><Plus size={18} /></button>
               </div>
             </Field>
             
             <Field label="Osoba kontaktowa">
               <div className="flex gap-2">
-                <select className={`${inputClass} flex-1 disabled:opacity-50`} disabled={!form.id_kontrahenta} value={form.id_kontaktu || ''} onChange={(e) => setForm({ ...form, id_kontaktu: e.target.value })}>
-                  <option value="">{form.id_kontrahenta ? 'Wybierz osobę...' : 'Najpierw wybierz klienta'}</option>
-                  {dict.kontakty?.map((k: any) => (
-                    <option key={k.id} value={k.id}>{k.imie} {k.nazwisko} {k.stanowisko ? `(${k.stanowisko})` : ''}</option>
-                  ))}
-                </select>
-                <button type="button" disabled={!form.id_kontrahenta} onClick={() => setCrmModalMode('kontakt')} className="flex items-center justify-center rounded-xl border border-slate-200 bg-slate-50 px-3 text-slate-600 hover:bg-slate-100 transition disabled:opacity-50 disabled:pointer-events-none" title="Dodaj nową osobę kontaktową dla tego klienta">
-                  <Plus size={18} />
-                </button>
+                <div className="flex-1 min-w-0">
+                  <SearchableSelect value={form.id_kontaktu || ''} onChange={(v) => setForm({ ...form, id_kontaktu: v })} options={dict.kontakty?.map((k: any) => ({ value: String(k.id), label: `${k.imie} ${k.nazwisko} ${k.stanowisko ? `(${k.stanowisko})` : ''}` })) || []} placeholder={form.id_kontrahenta ? "Wybierz osobę..." : "Najpierw wybierz klienta"} disabled={!form.id_kontrahenta} />
+                </div>
+                <button type="button" disabled={!form.id_kontrahenta} onClick={() => setCrmModalMode('kontakt')} className="flex shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 px-3 text-slate-600 hover:bg-slate-100 transition disabled:opacity-50 disabled:pointer-events-none"><Plus size={18} /></button>
               </div>
             </Field>
 
             <Field label="Miejsce z bazy">
-              <select className={inputClass} value={form.id_miejsca || ''} onChange={(e) => setForm({ ...form, id_miejsca: e.target.value })}>
-                <option value="">Wpiszę ręcznie</option>
-                {dict.miejsca.map((m: any) => <option key={m.id} value={m.id}>{m.nazwa}</option>)}
-              </select>
+              <SearchableSelect value={form.id_miejsca || ''} onChange={(v) => setForm({ ...form, id_miejsca: v })} options={dict.miejsca.map((m: any) => ({ value: String(m.id), label: m.nazwa }))} placeholder="Wpiszę ręcznie (lub wybierz)" />
             </Field>
             
              <Field label="Miejsce ręcznie"><input className={inputClass} value={form.miejsce_reczne || ''} onChange={(e) => setForm({ ...form, miejsce_reczne: e.target.value })} /></Field>
@@ -499,7 +462,9 @@ export default function EventDetailsPage() {
               <p className="text-sm font-bold text-slate-400">EventManager</p>
             </div>
           </div>
-          <Field label="Manager"><select className={inputClass} value={form.id_managera || ''} onChange={(e) => setForm({ ...form, id_managera: e.target.value })}><option value="">Brak</option>{dict.uzytkownicy.map((u: any) => <option key={u.id} value={u.id}>{u.imie} {u.nazwisko}</option>)}</select></Field>
+          <Field label="Manager">
+            <SearchableSelect value={form.id_managera || ''} onChange={(v) => setForm({ ...form, id_managera: v })} options={dict.uzytkownicy.map((u: any) => ({ value: String(u.id), label: `${u.imie} ${u.nazwisko}` }))} placeholder="Brak" />
+          </Field>
           
           <div className="grid gap-3 md:grid-cols-2">
             <Info label="Waga sprzętu" value="0 kg" />
@@ -511,8 +476,12 @@ export default function EventDetailsPage() {
           <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
             <p className="mb-3 text-sm font-black text-slate-700">Statusy poboczne</p>
             <div className="grid gap-3">
-              <Field label="Magazyn"><select className={inputClass} value={form.id_statusu_magazynowego || ''} onChange={(e) => setForm({ ...form, id_statusu_magazynowego: e.target.value })}><option value="">Brak</option>{dict.statusyMagazynowe.map((s: any) => <option key={s.id} value={s.id}>{s.ikona || '📦'} {s.nazwa}</option>)}</select></Field>
-              <Field label="Księgowość"><select className={inputClass} value={form.id_statusu_ksiegowego || ''} onChange={(e) => setForm({ ...form, id_statusu_ksiegowego: e.target.value })}><option value="">Brak</option>{dict.statusyKsiegowe.map((s: any) => <option key={s.id} value={s.id}>{s.ikona || '💰'} {s.nazwa}</option>)}</select></Field>
+              <Field label="Magazyn">
+                <SearchableSelect value={form.id_statusu_magazynowego || ''} onChange={(v) => setForm({ ...form, id_statusu_magazynowego: v })} options={dict.statusyMagazynowe.map((s: any) => ({ value: String(s.id), label: `${s.ikona || '📦'} ${s.nazwa}` }))} placeholder="Brak" />
+              </Field>
+              <Field label="Księgowość">
+                <SearchableSelect value={form.id_statusu_ksiegowego || ''} onChange={(v) => setForm({ ...form, id_statusu_ksiegowego: v })} options={dict.statusyKsiegowe.map((s: any) => ({ value: String(s.id), label: `${s.ikona || '💰'} ${s.nazwa}` }))} placeholder="Brak" />
+              </Field>
             </div>
           </div>
         </Card>
@@ -533,33 +502,39 @@ export default function EventDetailsPage() {
       </form>
 
       <Card className="!p-0">
-        <div className="flex overflow-x-auto border-b border-slate-100">
-          {TABS.map((tab) => {
-            const Icon = tab.icon;
-            const active = activeTab === tab.id;
-            return <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex min-w-[110px] flex-col items-center justify-center gap-1.5 border-b-2 px-4 py-3 text-xs font-black transition ${active ? 'border-cyan-600 bg-cyan-50/70 text-cyan-700' : 'border-transparent text-slate-500 hover:bg-slate-50 hover:text-slate-900'}`}><Icon size={18} />{tab.label}</button>;
-          })}
+        <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-slate-100">
+          <div className="flex overflow-x-auto no-scrollbar">
+            {TABS.map((tab) => {
+              const Icon = tab.icon;
+              const active = activeTab === tab.id;
+              return <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex min-w-[110px] flex-col items-center justify-center gap-1.5 border-b-2 px-4 py-3 text-xs font-black transition ${active ? 'border-cyan-600 bg-cyan-50/70 text-cyan-700' : 'border-transparent text-slate-500 hover:bg-slate-50 hover:text-slate-900'}`}><Icon size={18} />{tab.label}</button>;
+            })}
+          </div>
+
+          {['oferty', 'ekipa', 'flota', 'historia'].includes(activeTab) && (
+            <div className="p-3 border-t md:border-t-0 border-slate-100 w-full md:w-auto">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                <input className={`${inputClass} pl-9 py-2 text-sm rounded-xl min-w-[250px] w-full border-slate-200 bg-slate-50 focus:bg-white`} placeholder={`Szukaj w: ${TABS.find(t => t.id === activeTab)?.label.toLowerCase()}...`} value={tabSearchQuery} onChange={(e) => setTabSearchQuery(e.target.value)} />
+              </div>
+            </div>
+          )}
         </div>
+        
         <div className="p-5">
           {activeTab === 'szczegoly' && <p className="rounded-2xl bg-slate-50 p-6 text-sm font-bold text-slate-500">Szczegóły podstawowe edytujesz w górnym panelu. Zapis zostaje na tej stronie i odświeża dane wydarzenia.</p>}
-          {activeTab === 'oferty' && <OffersPanel offers={offers} mainOfferId={form.id_oferty_glownej} setMainOfferId={(id: any) => setForm({ ...form, id_oferty_glownej: id })} offerName={offerName} setOfferName={setOfferName} createOffer={createOffer} duplicateOffer={duplicateOffer} />}
+          {activeTab === 'oferty' && <OffersPanel offers={offers} mainOfferId={form.id_oferty_glownej} setMainOfferId={(id: any) => setForm({ ...form, id_oferty_glownej: id })} offerName={offerName} setOfferName={setOfferName} createOffer={createOffer} duplicateOffer={duplicateOffer} tabQuery={tabSearchQuery} />}
           {duplicateTarget && <OfferDuplicateTargetModal offer={duplicateTarget} defaultEventId={params.id as any} onClose={() => setDuplicateTarget(null)} onDone={(o) => router.push(`/dashboard/offers/${o.id}`)} />}
           {activeTab === 'sprzet' && !isNew && <EquipmentPanel eventId={Number(params.id)} eventName={form.nazwa || eventData?.nazwa} />}
-          {activeTab === 'ekipa' && <PeoplePanel people={eventData?.ekipa || []} />}
-          {activeTab === 'flota' && <FleetPanel vehicles={eventData?.pojazdy || []} />}
-          {activeTab === 'historia' && <HistoryPanel history={eventData?.historia || []} />}
+          {activeTab === 'ekipa' && <PeoplePanel people={eventData?.ekipa || []} tabQuery={tabSearchQuery} />}
+          {activeTab === 'flota' && <FleetPanel vehicles={eventData?.pojazdy || []} tabQuery={tabSearchQuery} />}
+          {activeTab === 'historia' && <HistoryPanel history={eventData?.historia || []} tabQuery={tabSearchQuery} />}
           {!['szczegoly','sprzet','oferty','ekipa','flota','historia'].includes(activeTab) && <p className="rounded-2xl border border-dashed border-slate-200 p-8 text-center text-sm font-bold text-slate-400">Zakładka „{TABS.find((t) => t.id === activeTab)?.label}” jest przygotowana w układzie panelu. Logikę podłączymy etapami, bez usuwania istniejącego kodu.</p>}
         </div>
       </Card>
 
-      {/* MODAL SZYBKIEGO DODAWANIA KLIENTA / KONTAKTU */}
       {crmModalMode && (
-        <QuickAddCrmModal 
-          mode={crmModalMode} 
-          parentId={form.id_kontrahenta}
-          onClose={() => setCrmModalMode(null)} 
-          onSuccess={handleCrmSuccess} 
-        />
+        <QuickAddCrmModal mode={crmModalMode} parentId={form.id_kontrahenta} onClose={() => setCrmModalMode(null)} onSuccess={handleCrmSuccess} />
       )}
     </div>
   );
@@ -573,28 +548,32 @@ function Info({ label, value }: { label: string; value: string }) {
   return <div className="rounded-2xl bg-slate-50 p-3"><p className="text-[11px] font-black uppercase tracking-wider text-slate-400">{label}</p><p className="font-black text-slate-800">{value}</p></div>;
 }
 
-function OffersPanel({ offers, mainOfferId, setMainOfferId, offerName, setOfferName, createOffer, duplicateOffer }: any) {
+function OffersPanel({ offers, mainOfferId, setMainOfferId, offerName, setOfferName, createOffer, duplicateOffer, tabQuery = '' }: any) {
+  const filteredOffers = useMemo(() => {
+    if (!tabQuery) return offers;
+    const q = tabQuery.toLowerCase();
+    return offers.filter((o: any) => `${o.nazwa || ''} ${o.numer || ''} ${o.status?.nazwa || ''}`.toLowerCase().includes(q));
+  }, [offers, tabQuery]);
+
   return <div className="space-y-4">
     <div className="grid gap-3 rounded-2xl border border-cyan-100 bg-cyan-50 p-4 lg:grid-cols-[1fr_1fr_auto] lg:items-end">
       <Field label="Oferta główna / zaakceptowana">
-        <select className={inputClass} value={mainOfferId || ''} onChange={(e) => setMainOfferId(e.target.value)}>
-          <option value="">Brak</option>
-          {offers.map((o: any) => <option key={o.id} value={o.id}>{o.numer || `#${o.id}`} · {o.nazwa}</option>)}
-        </select>
+        <SearchableSelect value={mainOfferId || ''} onChange={(v) => setMainOfferId(v)} options={offers.map((o: any) => ({ value: String(o.id), label: `${o.numer || `#${o.id}`} · ${o.nazwa}` }))} placeholder="Brak" />
         <p className="mt-1 text-xs font-bold text-slate-400">Lista pokazuje wyłącznie oferty przypisane do tego wydarzenia.</p>
       </Field>
       <Field label="Nazwa nowej oferty"><input className={inputClass} value={offerName} onChange={(e) => setOfferName(e.target.value)} /></Field>
       <Button onClick={createOffer}><Plus size={16} className="inline" /> Dodaj ofertę do wydarzenia</Button>
     </div>
     <div className="grid gap-3 lg:grid-cols-2">
-      {offers.map((o: any) => <div key={o.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-black uppercase tracking-wider text-slate-400">{o.numer || `Oferta #${o.id}`}</p><h3 className="mt-1 text-lg font-black text-slate-900">{o.nazwa}</h3><p className="text-sm font-bold text-slate-400">{o.status?.nazwa || 'Bez statusu'} · wersji: {o.wersje?.length || 0}</p></div><p className="text-right text-lg font-black text-cyan-700">{money(o.suma_netto)}</p></div><div className="mt-4 flex flex-wrap gap-2"><Link className="rounded-xl bg-cyan-600 px-4 py-2 text-sm font-black text-white" href={`/dashboard/offers/${o.id}`}>Otwórz</Link><Link className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-black text-slate-700" href={`/dashboard/offers/${o.id}/pdf`} target="_blank">PDF</Link><button onClick={() => duplicateOffer(o)} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-black text-slate-700"><Copy size={15} className="inline" /> Duplikuj</button></div></div>)}
+      {filteredOffers.map((o: any) => <div key={o.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-black uppercase tracking-wider text-slate-400">{o.numer || `Oferta #${o.id}`}</p><h3 className="mt-1 text-lg font-black text-slate-900">{o.nazwa}</h3><p className="text-sm font-bold text-slate-400">{o.status?.nazwa || 'Bez statusu'} · wersji: {o.wersje?.length || 0}</p></div><p className="text-right text-lg font-black text-cyan-700">{money(o.suma_netto)}</p></div><div className="mt-4 flex flex-wrap gap-2"><Link className="rounded-xl bg-cyan-600 px-4 py-2 text-sm font-black text-white" href={`/dashboard/offers/${o.id}`}>Otwórz</Link><Link className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-black text-slate-700" href={`/dashboard/offers/${o.id}/pdf`} target="_blank">PDF</Link><button onClick={() => duplicateOffer(o)} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-black text-slate-700"><Copy size={15} className="inline" /> Duplikuj</button></div></div>)}
+      {filteredOffers.length === 0 && offers.length > 0 && <p className="rounded-2xl border border-dashed border-slate-200 p-8 text-center text-sm font-bold text-slate-400">Brak ofert pasujących do wyszukiwania.</p>}
       {offers.length === 0 && <p className="rounded-2xl border border-dashed border-slate-200 p-8 text-center text-sm font-bold text-slate-400">Do tego wydarzenia nie ma jeszcze ofert. Możesz dodać jedną, dwie albo dziesięć ofert.</p>}
     </div>
   </div>;
 }
 
 // ============================================================================
-// PANEL SPRZĘTU (EquipmentPanel)
+// PANEL SPRZĘTU (EquipmentPanel) - ZAWIERA POPRAWKI ZESTAWÓW I SKANOWANIA
 // ============================================================================
 
 function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: string }) {
@@ -897,17 +876,17 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
     const baseName = model?.nazwa || row.nazwa_modelu || egz.model?.nazwa || row.nazwa || 'Sprzęt';
     return {
       source,
-      rowType: isRack(row) ? 'rack' : 'egzemplarz',
-      rack: isRack(row),
+      rowType: isZestaw(row) ? 'zestaw' : 'egzemplarz',
+      zestaw: isZestaw(row),
       id_modelu: row.id_modelu || model?.id || egz.id_modelu,
       id_egzemplarza: row.id_egzemplarza || egz.id,
-      nazwa: [isRack(row) ? `[RACK] ${baseName}` : baseName, egz.nazwa && egz.nazwa !== model?.nazwa ? egz.nazwa : null, instanceNo ? `nr ${instanceNo}` : null].filter(Boolean).join(' · '),
+      nazwa: [isZestaw(row) ? `[ZESTAW] ${baseName}` : baseName, egz.nazwa && egz.nazwa !== model?.nazwa ? egz.nazwa : null, instanceNo ? `nr ${instanceNo}` : null].filter(Boolean).join(' · '),
       nazwa_modelu: baseName,
       numer_egzemplarza: instanceNo,
       kategoria: categoryOf(row),
       kod: row.kod || egz.kod_kreskowy || egz.zewnetrzny_kod_kreskowy || egz.zewnetrzny_qr_kod || egz.qr_kod || egz.sn || '',
       ilosc: 1,
-      uwagi: row.uwagi || (isRack(row) ? 'Rack wydany jako jedna pozycja bez rozwijania zawartości.' : ''),
+      uwagi: row.uwagi || (isZestaw(row) ? 'Zestaw wydany jako jedna pozycja bez rozwijania zawartości.' : ''),
     };
   }
 
@@ -940,8 +919,8 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
         setNotice(sourceLabel ? `${sourceLabel}: wszystkie pozycje z tego skanu są już na aktualnym dokumencie.` : 'Ten sprzęt jest już zeskanowany na aktualnym dokumencie.');
         return prev;
       }
-      const rackCount = toAdd.filter((x: any) => x.rack || x.rowType === 'rack').length;
-      setNotice(sourceLabel ? `${sourceLabel}: dodano ${toAdd.length} poz.${rackCount ? ' Rack jako jedna pozycja.' : ' Case nie trafia na dokument.'}` : `Dodano ${toAdd.length} poz.${skipped ? `, pominięto duplikaty: ${skipped}` : ''}.`);
+      const zestawCount = toAdd.filter((x: any) => x.zestaw || x.rowType === 'zestaw').length;
+      setNotice(sourceLabel ? `${sourceLabel}: dodano ${toAdd.length} poz.${zestawCount ? ' Zestaw jako jedna pozycja.' : ' Case nie trafia na dokument.'}` : `Dodano ${toAdd.length} poz.${skipped ? `, pominięto duplikaty: ${skipped}` : ''}.`);
       return [...prev, ...toAdd];
     });
   }
@@ -1011,7 +990,7 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
     setError('');
     setNotice('');
     if (isQuantityModel(row)) { addQuantityDocumentItem(row, source); return; }
-    if (isRack(row)) { addDocumentItemsBulk([row], source, 'Zeskanowano rack'); return; }
+    if (isZestaw(row)) { addDocumentItemsBulk([row], source, 'Zeskanowano zestaw'); return; }
     if (isCase(row)) {
       const contents = (row.contents || row.zawartosc_case || [])
         .filter((child: any) => !isCase(child) && !isQuantityModel(child) && isEquipmentInstance(child));
@@ -1020,7 +999,7 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
       addDocumentItemsBulk(contents, 'scan', `Zeskanowano case ${label}`, caseScanMeta(row));
       return;
     }
-    if (!isEquipmentInstance(row)) { setError('Wydanie/przyjęcie działa na egzemplarzach, rack jest jedną pozycją, case rozwija zawartość, a sprzęt ilościowy zapisujemy jako model + ilość.'); return; }
+    if (!isEquipmentInstance(row)) { setError('Wydanie/przyjęcie działa na egzemplarzach, zestaw jest jedną pozycją, case rozwija zawartość, a sprzęt ilościowy zapisujemy jako model + ilość.'); return; }
     addDocumentItemsBulk([row], source);
   }
 
@@ -1060,15 +1039,15 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
     }
 
     const localInstance = findInstanceByCode(code);
-    if (localInstance && isRack(localInstance)) {
+    if (localInstance && isZestaw(localInstance)) {
       addDocumentItemsBulk([{
         ...localInstance,
         rowType: 'egzemplarz',
-        isRack: true,
+        isZestaw: true,
         isCase: false,
         contents: [],
         zawartosc_case: [],
-      }], 'scan', 'Zeskanowano rack jako jedną pozycję');
+      }], 'scan', 'Zeskanowano zestaw jako jedną pozycję');
 
       setScanCode('');
       setTimeout(focusScanInput, 0);
@@ -1089,15 +1068,15 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
           kod: row.kod || row.kod_kreskowy || code,
           jednostka: row.jednostka || row.model?.jednostka || 'szt.',
         }, 'scan');
-      } else if (isRack(row)) {
+      } else if (isZestaw(row)) {
         addDocumentItemsBulk([{
           ...row,
           rowType: 'egzemplarz',
-          isRack: true,
+          isZestaw: true,
           isCase: false,
           contents: [],
           zawartosc_case: [],
-        }], 'scan', 'Zeskanowano rack jako jedną pozycję');
+        }], 'scan', 'Zeskanowano zestaw jako jedną pozycję');
       } else {
         addDocumentItem(row, 'scan');
       }
@@ -1111,7 +1090,6 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
   }
 
   async function createDocument(type: 'wydanie' | 'przyjecie') {
-    // EVENTFLOW_PRODUCT_POLISH_FIX: Prawidłowe odrzucenie Case'ów z dokumentów
     const validDocItems = docItems.filter((p: any) => {
       if (!p) return false;
       if (isCase(p)) return false; 
@@ -1146,15 +1124,8 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
     }
   }
 
-  function countAfterScan(row: any) {
-    return mode === 'wydanie' ? row.wydane + row.scanned : row.przyjete + row.scanned;
-  }
-
-  function missingAfterScan(row: any) {
-    return mode === 'wydanie'
-      ? Math.max(0, row.plan - row.wydane - row.scanned)
-      : Math.max(0, row.wydane - row.przyjete - row.scanned);
-  }
+  function countAfterScan(row: any) { return mode === 'wydanie' ? row.wydane + row.scanned : row.przyjete + row.scanned; }
+  function missingAfterScan(row: any) { return mode === 'wydanie' ? Math.max(0, row.plan - row.wydane - row.scanned) : Math.max(0, row.wydane - row.przyjete - row.scanned); }
 
   const plannedTotal = plannedRows.reduce((s, r) => s + r.plan, 0);
   const issuedTotal = plannedRows.reduce((s, r) => s + r.wydane, 0);
@@ -1295,12 +1266,7 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
                         <p className="font-black text-slate-900">{row.nazwa}</p>
                         <p className="text-xs font-bold text-slate-400">{mode === 'wydanie' ? `Plan ${row.plan} · wydano wcześniej ${row.wydane} · skan teraz ${row.scanned}` : `Wydano ${row.wydane} · przyjęto wcześniej ${row.przyjete} · skan teraz ${row.scanned}`}</p>
                         {row.quantityOnly && <label className="mt-3 inline-flex cursor-pointer items-center gap-3 rounded-2xl border border-cyan-100 bg-cyan-50 px-3 py-2 text-xs font-black text-cyan-900 hover:bg-cyan-100">
-                          <input
-                            type="checkbox"
-                            className="h-5 w-5 rounded border-cyan-300 accent-cyan-600"
-                            checked={quantityRowSelected(row)}
-                            onChange={(e) => toggleQuantityRowWithoutScan(row, e.target.checked)}
-                          />
+                          <input type="checkbox" className="h-5 w-5 rounded border-cyan-300 accent-cyan-600" checked={quantityRowSelected(row)} onChange={(e) => toggleQuantityRowWithoutScan(row, e.target.checked)} />
                           <span>{mode === 'wydanie' ? 'Wydaj na sztuki bez skanu' : 'Przyjmij na sztuki bez skanu'}</span>
                           <span className="rounded-full bg-white px-2 py-1 text-cyan-700">{quantityRowSelected(row) ? `${row.scanned} ${row.jednostka || 'szt.'}` : `${missing} ${row.jednostka || 'szt.'}`}</span>
                         </label>}
@@ -1325,7 +1291,7 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
             <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
               <div className="mb-3 flex items-center justify-between"><h4 className="text-lg font-black text-slate-900">Zeskanowane teraz</h4><span className="rounded-full bg-cyan-100 px-3 py-1 text-xs font-black text-cyan-700">{docItems.reduce((s: number, p: any) => s + Number(p.ilosc || 1), 0)} szt.</span></div>
               <div className="max-h-[280px] space-y-2 overflow-y-auto pr-1">
-                {docItems.map((p, idx) => <div key={`${p.id_egzemplarza || p.id_modelu}-${idx}`} className="rounded-xl border border-slate-100 bg-slate-50 p-3"><div className="flex justify-between gap-2"><b className="text-sm text-slate-900">{p.nazwa}</b><button onClick={() => setDocItems((s) => s.filter((_, i) => i !== idx))} className="font-black text-red-600">×</button></div><p className="text-xs font-bold text-slate-400">{p.kategoria} · {isQuantityModel(p) ? `${p.ilosc || 1} ${p.jednostka || 'szt.'}${p.kod ? ` · kod ${p.kod}` : ''}` : `${isRack(p) ? 'rack · ' : ''}${p.kod || '-'}` }</p></div>)}
+                {docItems.map((p, idx) => <div key={`${p.id_egzemplarza || p.id_modelu}-${idx}`} className="rounded-xl border border-slate-100 bg-slate-50 p-3"><div className="flex justify-between gap-2"><b className="text-sm text-slate-900">{p.nazwa}</b><button onClick={() => setDocItems((s) => s.filter((_, i) => i !== idx))} className="font-black text-red-600">×</button></div><p className="text-xs font-bold text-slate-400">{p.kategoria} · {isQuantityModel(p) ? `${p.ilosc || 1} ${p.jednostka || 'szt.'}${p.kod ? ` · kod ${p.kod}` : ''}` : `${isZestaw(p) ? 'zestaw · ' : ''}${p.kod || '-'}` }</p></div>)}
                 {!docItems.length && <p className="rounded-2xl border border-dashed border-slate-200 p-6 text-center text-sm font-bold text-slate-400">Skanuj sprzęt albo zaznacz checkbox przy sprzęcie ilościowym — lista i liczniki zaktualizują się od razu.</p>}
               </div>
             </div>
@@ -1357,22 +1323,48 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
   </div>;
 }
 
-// ============================================================================
-// INNE PANELE ZAKŁADEK
-// ============================================================================
-
 function RentalsPanel({ rentals }: { rentals: any[] }) {
   return <div className="space-y-2">{rentals.map((r: any) => <Link key={r.id} href={`/dashboard/rentals/${r.id}`} className="block rounded-2xl border border-slate-200 p-4 hover:bg-cyan-50"><p className="font-black text-slate-900">{r.numer || `Wynajem #${r.id}`}</p><p className="text-sm font-bold text-slate-400">{dateTime(r.data_wydania)} → {dateTime(r.data_zwrotu_planowana)}</p></Link>)}{rentals.length === 0 && <p className="rounded-2xl border border-dashed border-slate-200 p-8 text-center text-sm font-bold text-slate-400">Brak wypożyczeń przypisanych do wydarzenia.</p>}</div>;
 }
 
-function PeoplePanel({ people }: { people: any[] }) {
-  return <div className="space-y-2">{people.map((p: any) => <div key={p.id} className="rounded-2xl border border-slate-200 p-4"><p className="font-black text-slate-900">{p.uzytkownik?.imie} {p.uzytkownik?.nazwisko}</p><p className="text-sm font-bold text-slate-400">{p.rola_w_wydarzeniu || 'Obsługa'}</p></div>)}{people.length === 0 && <p className="rounded-2xl border border-dashed border-slate-200 p-8 text-center text-sm font-bold text-slate-400">Brak przypisanej ekipy.</p>}</div>;
+function PeoplePanel({ people, tabQuery = '' }: { people: any[], tabQuery?: string }) {
+  const filtered = useMemo(() => {
+    if (!tabQuery) return people;
+    const q = tabQuery.toLowerCase();
+    return people.filter(p => `${p.uzytkownik?.imie || ''} ${p.uzytkownik?.nazwisko || ''} ${p.rola_w_wydarzeniu || ''}`.toLowerCase().includes(q));
+  }, [people, tabQuery]);
+
+  return <div className="space-y-2">
+    {filtered.map((p: any) => <div key={p.id} className="rounded-2xl border border-slate-200 p-4"><p className="font-black text-slate-900">{p.uzytkownik?.imie} {p.uzytkownik?.nazwisko}</p><p className="text-sm font-bold text-slate-400">{p.rola_w_wydarzeniu || 'Obsługa'}</p></div>)}
+    {filtered.length === 0 && people.length > 0 && <p className="rounded-2xl border border-dashed border-slate-200 p-8 text-center text-sm font-bold text-slate-400">Brak osób pasujących do wyszukiwania.</p>}
+    {people.length === 0 && <p className="rounded-2xl border border-dashed border-slate-200 p-8 text-center text-sm font-bold text-slate-400">Brak przypisanej ekipy.</p>}
+  </div>;
 }
 
-function FleetPanel({ vehicles }: { vehicles: any[] }) {
-  return <div className="space-y-2">{vehicles.map((v: any) => <div key={v.id} className="rounded-2xl border border-slate-200 p-4"><p className="font-black text-slate-900">{v.pojazd?.nazwa || 'Pojazd'}</p><p className="text-sm font-bold text-slate-400">{v.pojazd?.nr_rejestracyjny || '-'} · {v.rola_pojazdu || 'Rezerwacja'}</p></div>)}{vehicles.length === 0 && <p className="rounded-2xl border border-dashed border-slate-200 p-8 text-center text-sm font-bold text-slate-400">Brak przypisanych pojazdów.</p>}</div>;
+function FleetPanel({ vehicles, tabQuery = '' }: { vehicles: any[], tabQuery?: string }) {
+  const filtered = useMemo(() => {
+    if (!tabQuery) return vehicles;
+    const q = tabQuery.toLowerCase();
+    return vehicles.filter(v => `${v.pojazd?.nazwa || ''} ${v.pojazd?.nr_rejestracyjny || ''} ${v.rola_pojazdu || ''}`.toLowerCase().includes(q));
+  }, [vehicles, tabQuery]);
+
+  return <div className="space-y-2">
+    {filtered.map((v: any) => <div key={v.id} className="rounded-2xl border border-slate-200 p-4"><p className="font-black text-slate-900">{v.pojazd?.nazwa || 'Pojazd'}</p><p className="text-sm font-bold text-slate-400">{v.pojazd?.nr_rejestracyjny || '-'} · {v.rola_pojazdu || 'Rezerwacja'}</p></div>)}
+    {filtered.length === 0 && vehicles.length > 0 && <p className="rounded-2xl border border-dashed border-slate-200 p-8 text-center text-sm font-bold text-slate-400">Brak pojazdów pasujących do wyszukiwania.</p>}
+    {vehicles.length === 0 && <p className="rounded-2xl border border-dashed border-slate-200 p-8 text-center text-sm font-bold text-slate-400">Brak przypisanych pojazdów.</p>}
+  </div>;
 }
 
-function HistoryPanel({ history }: { history: any[] }) {
-  return <div className="space-y-2">{history.map((h: any) => <div key={h.id} className="rounded-2xl border border-slate-200 p-4"><p className="font-black text-slate-900">{h.akcja}</p><p className="text-sm font-bold text-slate-400">{dateTime(h.data_utworzenia)} · {h.uzytkownik ? `${h.uzytkownik.imie} ${h.uzytkownik.nazwisko}` : 'System'}</p></div>)}{history.length === 0 && <p className="rounded-2xl border border-dashed border-slate-200 p-8 text-center text-sm font-bold text-slate-400">Brak historii zmian.</p>}</div>;
+function HistoryPanel({ history, tabQuery = '' }: { history: any[], tabQuery?: string }) {
+  const filtered = useMemo(() => {
+    if (!tabQuery) return history;
+    const q = tabQuery.toLowerCase();
+    return history.filter(h => `${h.akcja || ''} ${h.uzytkownik?.imie || ''} ${h.uzytkownik?.nazwisko || ''}`.toLowerCase().includes(q));
+  }, [history, tabQuery]);
+
+  return <div className="space-y-2">
+    {filtered.map((h: any) => <div key={h.id} className="rounded-2xl border border-slate-200 p-4"><p className="font-black text-slate-900">{h.akcja}</p><p className="text-sm font-bold text-slate-400">{dateTime(h.data_utworzenia)} · {h.uzytkownik ? `${h.uzytkownik.imie} ${h.uzytkownik.nazwisko}` : 'System'}</p></div>)}
+    {filtered.length === 0 && history.length > 0 && <p className="rounded-2xl border border-dashed border-slate-200 p-8 text-center text-sm font-bold text-slate-400">Brak wpisów pasujących do wyszukiwania.</p>}
+    {history.length === 0 && <p className="rounded-2xl border border-dashed border-slate-200 p-8 text-center text-sm font-bold text-slate-400">Brak historii zmian.</p>}
+  </div>;
 }
