@@ -80,6 +80,7 @@ model Organizacja {
   pozycje_wydan_magazynowych PozycjaWydaniaMagazynowego[]
   pozycje_sprzetu_wydarzen   PozycjaSprzetuWydarzenia[]
   zapytania                  Zapytanie[]
+  pakiety                    Pakiet[]
 
   @@map("organizacje")
 }
@@ -342,6 +343,7 @@ model ModelSprzetu {
   kod_kreskowy             String?                      @db.VarChar(100) // Domyślny SKU modelu
   pobor_pradu              Decimal?                     @db.Decimal(10, 2)
   stawki                   CenaModelu[]                 @relation("ModelStawki")
+  pozycje_pakietow         PozycjaPakietu[]
 
   @@index([id_kategorii])
   @@index([nazwa])
@@ -393,6 +395,7 @@ model Egzemplarz {
   serwisy         SerwisSprzetu[]
   zadania         Zadanie[] // Dodano relację odwrotną
   pozycje_wydan   PozycjaWydaniaMagazynowego[]
+  pozycje_pakietow PozycjaPakietu[]
 
   @@index([id_modelu])
   @@index([sn])
@@ -1285,4 +1288,34 @@ model Zapytanie {
 
   @@index([status])
   @@map("zapytania")
+}
+
+
+model Pakiet {
+  id                Int       @id @default(autoincrement())
+  id_organizacji    Int
+  nazwa             String    @db.VarChar(255)
+  opis              String?   @db.Text
+  aktywny           Boolean   @default(true)
+  data_utworzenia   DateTime  @default(now())
+  data_aktualizacji DateTime  @updatedAt
+
+  organizacja       Organizacja      @relation(fields: [id_organizacji], references: [id])
+  pozycje           PozycjaPakietu[]
+
+  @@map("pakiety")
+}
+
+model PozycjaPakietu {
+  id                Int       @id @default(autoincrement())
+  id_pakietu        Int
+  id_modelu         Int?
+  id_egzemplarza    Int?
+  ilosc             Decimal   @default(1.00) @db.Decimal(10, 2)
+  
+  pakiet            Pakiet        @relation(fields: [id_pakietu], references: [id], onDelete: Cascade)
+  model             ModelSprzetu? @relation(fields: [id_modelu], references: [id])
+  egzemplarz        Egzemplarz?   @relation(fields: [id_egzemplarza], references: [id])
+
+  @@map("pozycje_pakietow")
 }

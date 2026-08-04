@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { ArrowLeft, Box, Calculator, CheckCircle2, Copy, FileText, Link as LinkIcon, Mail, PackagePlus, Pencil, Plus, Save, Search, SlidersHorizontal, Trash2 } from 'lucide-react';
+import { ArrowLeft, Box, Calculator, CheckCircle2, Copy, FileText, Layers, Link as LinkIcon, Mail, PackagePlus, Pencil, Plus, Save, Search, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { api } from '../../../../lib/api';
 import { Button, Card, Field, inputClass, PageTitle } from '../../../../components/ProductUI';
 import { SimpleModal } from '../../../../components/SimpleModal';
@@ -126,18 +126,41 @@ export default function OfferDetailsPage() {
   const [duplicateTarget, setDuplicateTarget] = useState<any>(null);
   const [dirtyItems, setDirtyItems] = useState<Record<number, any>>({});
   const [notice, setNotice] = useState('');
+  const [showBundle, setShowBundle] = useState<any>(null);
+  const [bundles, setBundles] = useState<any[]>([]);
 
   async function load() {
-    const [o, m, k] = await Promise.all([
-      api.get(`/api/oferty/${id}`),
-      api.get('/api/magazyn/modele').catch(() => ({ data: [] })),
-      api.get('/api/magazyn/kategorie').catch(() => ({ data: [] })),
-    ]);
-    setOffer(o.data);
-    setModels(m.data || []);
-    setEquipmentCategories(k.data || []);
-    setDirtyItems({});
+  const [o, m, k, b] = await Promise.all([
+    api.get(`/api/oferty/${id}`),
+    api.get('/api/magazyn/modele').catch(() => ({ data: [] })),
+    api.get('/api/magazyn/kategorie').catch(() => ({ data: [] })),
+    api.get('/api/pakiety').catch(() => ({ data: [] })), // <--- NOWE
+  ]);
+  setOffer(o.data);
+  setModels(m.data || []);
+  setEquipmentCategories(k.data || []);
+  setBundles(b.data || []); // <--- NOWE
+  setDirtyItems({});
+}
+
+async function addBundle(e: any) {
+  e.preventDefault();
+  if (!showBundle) return;
+  setError('');
+  try {
+    await api.post(`/api/oferty/${id}/sekcje/${showBundle.id}/pakiety`, {
+      id_pakietu: form.id_pakietu,
+      ilosc_pakietow: form.ilosc_pakietow || 1,
+      dni_pracy: form.dni_pracy || 1
+    });
+    setForm({});
+    setShowBundle(null);
+    setNotice('Rozbito pakiet na pozycje i dodano do oferty.');
+    await load();
+  } catch (err: any) {
+    setError(err?.response?.data?.message || 'Nie udało się dodać pakietu.');
   }
+}
 
   useEffect(() => { load(); }, [id]);
 
@@ -481,6 +504,9 @@ export default function OfferDetailsPage() {
               <button onClick={() => applySectionPatch(section, { dni_pracy: 1 })} className="rounded-lg bg-white/20 px-3 py-1 text-xs font-black">Dni = 1</button>
               <button onClick={() => dupSection(section)} className="rounded-lg bg-white/20 px-3 py-1 text-xs font-black">Duplikuj grupę</button>
               <button onClick={() => openAddEquipment(section)} className="rounded-lg bg-white/25 px-3 py-1 text-xs font-black"><PackagePlus size={14} className="inline" /> Dodaj sprzęt</button>
+              <button onClick={() => { setShowBundle(section); setForm({ ilosc_pakietow: 1, dni_pracy: 1 }); }} className="rounded-lg bg-white/20 px-3 py-1 text-xs font-black">
+                <Layers size={14} className="inline" /> Dodaj pakiet
+              </button>
               <button onClick={() => openAddItem(section)} className="rounded-lg bg-white/20 px-3 py-1 text-xs font-black">+ Pozycja ręczna</button>
               <button onClick={() => deleteSection(section)} className="rounded-lg bg-red-500/80 px-3 py-1 text-xs font-black">Usuń grupę</button>
             </div>
@@ -524,6 +550,30 @@ export default function OfferDetailsPage() {
     </SimpleModal>}
 
     {showSection && <SimpleModal title="Dodaj grupę / sekcję" onClose={() => setShowSection(false)}><form onSubmit={addSection} className="space-y-4"><div className="grid gap-4 md:grid-cols-2"><Field label="Nazwa"><input className={inputClass} value={form.nazwa || ''} onChange={e => setForm({ ...form, nazwa: e.target.value })} required /></Field><Field label="Kolor"><input type="color" className={inputClass} value={form.kolor || '#f59e0b'} onChange={e => setForm({ ...form, kolor: e.target.value })} /></Field></div><Field label="Opis"><textarea className={inputClass} value={form.opis || ''} onChange={e => setForm({ ...form, opis: e.target.value })} /></Field><div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setShowSection(false)}>Anuluj</Button><Button type="submit">Zapisz</Button></div></form></SimpleModal>}
+    
+    {showBundle && (
+      <SimpleModal title={`Dodaj pakiet do grupy: ${showBundle.nazwa}`} onClose={() => setShowBundle(null)}>
+        <form onSubmit={addBundle} className="space-y-4">
+          <div className="rounded-2xl border border-cyan-200 bg-cyan-50 p-4 text-sm font-bold text-cyan-800">
+            Pakiet zostanie rozbity na pojedyncze pozycje. Dzięki temu będziesz mógł dowolnie modyfikować ceny, rabaty i ilości poszczególnych elementów, a na WZ wygenerują się konkretne modele sprzętu.
+          </div>
+          <Field label="Wybierz pakiet z szablonów">
+            <select className={inputClass} required value={form.id_pakietu || ''} onChange={e => setForm({ ...form, id_pakietu: e.target.value })}>
+              <option value="">Wybierz pakiet...</option>
+              {bundles.map((b: any) => <option key={b.id} value={b.id}>{b.nazwa} ({b._count?.pozycje || 0} ele.)</option>)}
+            </select>
+          </Field>
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Mnożnik pakietu (Sztuk)"><input type="number" min="1" className={inputClass} value={form.ilosc_pakietow || 1} onChange={e => setForm({ ...form, ilosc_pakietow: e.target.value })} /></Field>
+            <Field label="Dni pracy"><input type="number" min="0" step="0.01" className={inputClass} value={form.dni_pracy || 1} onChange={e => setForm({ ...form, dni_pracy: e.target.value })} /></Field>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setShowBundle(null)}>Anuluj</Button>
+            <Button type="submit">Rozbij i dodaj do oferty</Button>
+          </div>
+        </form>
+      </SimpleModal>
+    )}
 
     {showSectionEdit && <SimpleModal title={`Edytuj grupę: ${showSectionEdit.nazwa}`} onClose={() => setShowSectionEdit(null)}><form onSubmit={saveSectionEdit} className="space-y-4"><div className="grid gap-4 md:grid-cols-2"><Field label="Nazwa grupy"><input className={inputClass} value={form.nazwa || ''} onChange={e => setForm({ ...form, nazwa: e.target.value })} required /></Field><Field label="Kolor grupy"><input type="color" className={inputClass} value={form.kolor || '#f59e0b'} onChange={e => setForm({ ...form, kolor: e.target.value })} /></Field><Field label="Kolejność"><input type="number" className={inputClass} value={form.kolejnosc || 0} onChange={e => setForm({ ...form, kolejnosc: e.target.value })} /></Field><Field label="Budżet grupy netto"><input type="number" step="0.01" className={inputClass} value={form.budzet_netto || ''} onChange={e => setForm({ ...form, budzet_netto: e.target.value })} /></Field></div><Field label="Opis"><textarea className={inputClass} value={form.opis || ''} onChange={e => setForm({ ...form, opis: e.target.value })} /></Field><p className="rounded-xl bg-slate-50 p-3 text-xs font-bold text-slate-500">Zmiana nazwy/koloru grupy aktualizuje widok oferty i PDF. Usuwanie grupy jest osobną akcją z potwierdzeniem.</p><div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setShowSectionEdit(null)}>Anuluj</Button><Button type="submit">Zapisz grupę</Button></div></form></SimpleModal>}
 

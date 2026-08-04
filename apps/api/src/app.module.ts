@@ -25,6 +25,7 @@ import { GusModule } from './gus/gus.module';
 import { UstawieniaModule } from './ustawienia/ustawienia.module';
 import { ZapytaniaModule } from './zapytania/zapytania.module';
 import { UzytkownicyModule } from './uzytkownicy/uzytkownicy.module';
+import { PakietyModule } from './pakiety/pakiety.module';
 
 @Module({
   imports: [
@@ -46,7 +47,8 @@ import { UzytkownicyModule } from './uzytkownicy/uzytkownicy.module';
     GusModule,
     UstawieniaModule,
     ZapytaniaModule,
-    UzytkownicyModule
+    UzytkownicyModule,
+    PakietyModule
   ],
   controllers: [AppController],
   providers: [AppService],

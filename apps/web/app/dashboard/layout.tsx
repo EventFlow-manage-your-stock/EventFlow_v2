@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
-import { Calendar, CheckSquare, Home, Users, Box, Wrench, Truck, Settings, FileText, ChevronDown, LogOut, Star, Phone, Tags, Shield, Car, Palmtree, Palette } from 'lucide-react';
+import { Calendar, CheckSquare, Home, Users, Box, Wrench, Truck, Settings, FileText, ChevronDown, LogOut, Star, Phone, Tags, Shield, Car, Palmtree, Palette, Layers } from 'lucide-react';
 import { useAuthStore } from '../../store/auth.store';
 
 const menuConfig = [
@@ -29,6 +29,7 @@ const menuConfig = [
     { label: 'Modele', href: '/dashboard/warehouse/models', icon: Box },
     { label: 'Egzemplarze', href: '/dashboard/warehouse/items', icon: Box },
     { label: 'Opakowania', href: '/dashboard/warehouse/packages', icon: Box },
+    { label: 'Pakiety Ofertowe', href: '/dashboard/warehouse/bundles', icon: Layers },
     { label: 'Kategorie', href: '/dashboard/warehouse/categories', icon: Tags },
   ]},
   { icon: Wrench, label: 'Serwis', children: [

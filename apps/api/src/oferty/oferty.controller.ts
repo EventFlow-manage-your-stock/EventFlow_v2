@@ -23,4 +23,8 @@ export class OfertyController {
   @Post(':id/synchronizuj') sync(@Param('id', ParseIntPipe) id: number, @Body() dto: any, @Req() req: Request) { return this.service.synchronizujZWydarzeniem(id, dto.direction, Number((req.user as any).id_organizacji)); }
   @Post(':id/przelicz') przelicz(@Param('id', ParseIntPipe) id: number, @Req() req: Request) { return this.service.przelicz(id, Number((req.user as any).id_organizacji)); }
   @Post(':id/budzet') budzet(@Param('id', ParseIntPipe) id: number, @Body() dto: any, @Req() req: Request) { return this.service.zastosujBudzet(id, dto, Number((req.user as any).id_organizacji)); }
+  @Post(':id/sekcje/:sekcjaId/pakiety')
+  addPakiet(@Param('id', ParseIntPipe) id: number, @Param('sekcjaId', ParseIntPipe) sekcjaId: number, @Body() dto: any, @Req() req: Request) {
+    return this.service.dodajPakietDoOferty(id, sekcjaId, dto, Number((req.user as any).id_organizacji));
+  }
 }

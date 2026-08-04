@@ -666,4 +666,55 @@ export class OfertyService {
     throw new BadRequestException('Nieznany kierunek synchronizacji.');
   }
 
+  async dodajPakietDoOferty(id_oferty: number, id_sekcji: number, dto: any, id_organizacji: number) {
+    const wersja = await this.aktualnaWersja(id_oferty, id_organizacji);
+    const pakiet = await this.prisma.extendedClient.pakiet.findFirst({
+      where: { id: Number(dto.id_pakietu), id_organizacji, aktywny: true },
+      include: { pozycje: { include: { model: { include: { stawki: true } }, egzemplarz: { include: { model: { include: { stawki: true } } } } } } },
+    });
+
+    if (!pakiet) throw new NotFoundException('Pakiet nie istnieje');
+
+    const mnoznik = Number(dto.ilosc_pakietow || 1);
+    const dni = Number(dto.dni_pracy || 1);
+
+    await this.prisma.extendedClient.$transaction(async (tx) => {
+      for (const poz of pakiet.pozycje) {
+        const sprzet = poz.egzemplarz ? poz.egzemplarz.model : poz.model;
+        if (!sprzet) continue;
+
+        // Pobieramy cenę podstawową modelu
+        const cenaNetto = Number(sprzet.stawki?.find(s => s.nazwa_stawki === 'Podstawowa (PLN)')?.cena_netto || sprzet.wartosc_domyslna_egzemplarza || 0);
+        const ilosc = Number(poz.ilosc) * mnoznik;
+        const razemNetto = cenaNetto * ilosc * dni;
+
+        await tx.pozycjaOferty.create({
+          data: {
+            id_organizacji,
+            id_wersji_oferty: wersja.id,
+            id_sekcji: Number(id_sekcji),
+            id_kategorii: sprzet.id_kategorii,
+            id_modelu: poz.id_modelu || poz.egzemplarz?.id_modelu,
+            typ_pozycji: 'sprzet',
+            nazwa: poz.egzemplarz ? `${sprzet.nazwa} (${poz.egzemplarz.nazwa})` : sprzet.nazwa,
+            opis: `Z pakietu: ${pakiet.nazwa}`,
+            cena_netto: cenaNetto,
+            ilosc: ilosc,
+            dni_pracy: dni,
+            rabat_proc: 0,
+            rabat_netto: 0,
+            cena_przed_budzetem_netto: razemNetto,
+            vat: 23,
+            razem_netto: razemNetto,
+            razem_vat: razemNetto * 0.23,
+            razem_brutto: razemNetto * 1.23,
+            widoczna_w_pdf: true,
+          }
+        });
+      }
+    });
+
+    await this.przelicz(id_oferty, id_organizacji);
+    return { success: true, count: pakiet.pozycje.length };
+  }
 }
