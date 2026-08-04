@@ -26,7 +26,7 @@ export class ZapytaniaService {
 
   async findOne(id: number, id_organizacji: number) {
     const z = await this.prisma.extendedClient.zapytanie.findFirst({
-      where: { id, id_organizacji, aktywny: true }
+      where: { id, id_organizacji}
     });
     if (!z) throw new NotFoundException('Nie znaleziono zapytania');
     return z;
@@ -70,6 +70,29 @@ export class ZapytaniaService {
     return this.prisma.extendedClient.zapytanie.update({
       where: { id, id_organizacji },
       data: { aktywny: false, data_usuniecia: new Date() }
+    });
+  }
+
+  async getArchiwum(id_organizacji: number) {
+    return this.prisma.extendedClient.zapytanie.findMany({
+      where: { id_organizacji, aktywny: false },
+      include: {
+        tworca: { select: { imie: true, nazwisko: true, avatar: true } },
+        kontrahent: { select: { nazwa: true } }
+      },
+      orderBy: { data_usuniecia: 'desc' }
+    });
+  }
+
+
+  // Metoda archiwizacji
+  async archiwizuj(id: number, id_organizacji: number) {
+    return this.prisma.extendedClient.zapytanie.update({
+      where: { id, id_organizacji },
+      data: {
+        aktywny: false,
+        data_usuniecia: new Date() // Ustawiamy datę archiwizacji
+      }
     });
   }
 }

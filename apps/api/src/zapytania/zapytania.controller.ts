@@ -17,6 +17,20 @@ export class ZapytaniaController {
   findAll(@Req() req: Request) {
     return this.service.findAll(Number((req.user as any).id_organizacji));
   }
+  @Get('archiwum')
+  async getArchiwum(@Req() req: Request) {
+    return this.service.getArchiwum(Number((req.user as any).id_organizacji));
+  }
+
+  @Patch(':id/status')
+  async updateStatus(@Param('id', ParseIntPipe) id: number, @Body('status') status: string, @Req() req: Request) {
+    return this.service.updateStatus(id, status, Number((req.user as any).id_organizacji));
+  }
+
+  @Put(':id/archiwizuj')
+  async archiwizuj(@Param('id', ParseIntPipe) id: number, @Req() req: Request) {
+    return this.service.archiwizuj(id, Number((req.user as any).id_organizacji));
+  }
 
   @Get(':id')
   findOne(@Param('id', ParseIntPipe) id: number, @Req() req: Request) {
@@ -33,11 +47,6 @@ export class ZapytaniaController {
   @Put(':id')
   update(@Param('id', ParseIntPipe) id: number, @Body() dto: any, @Req() req: Request) {
     return this.service.update(id, dto, Number((req.user as any).id_organizacji));
-  }
-
-  @Patch(':id/status')
-  updateStatus(@Param('id', ParseIntPipe) id: number, @Body('status') status: string, @Req() req: Request) {
-    return this.service.updateStatus(id, status, Number((req.user as any).id_organizacji));
   }
 
   @Delete(':id')

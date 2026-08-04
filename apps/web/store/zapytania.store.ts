@@ -3,13 +3,17 @@ import { api } from '../lib/api';
 
 interface ZapytaniaState {
   items: any[];
+  archivedItems: any[];
   isLoading: boolean;
   fetchItems: () => Promise<void>;
-  updateStatus: (id: number, newStatus: string) => Promise<void>;
+  fetchArchivedItems: () => Promise<void>;
+  updateStatus: (id: number, status: string) => Promise<void>;
+  archiveItem: (id: number) => Promise<void>;
 }
 
 export const useZapytaniaStore = create<ZapytaniaState>((set, get) => ({
   items: [],
+  archivedItems: [],
   isLoading: false,
 
   fetchItems: async () => {
@@ -18,22 +22,41 @@ export const useZapytaniaStore = create<ZapytaniaState>((set, get) => ({
       const res = await api.get('/api/zapytania');
       set({ items: res.data, isLoading: false });
     } catch (error) {
-      console.error('Failed to fetch zapytania', error);
+      console.error(error);
       set({ isLoading: false });
     }
   },
 
-  updateStatus: async (id: number, newStatus: string) => {
-    // Optimistic UI update (natychmiastowa reakcja dla Drag & Drop)
-    const prevItems = get().items;
-    set({ items: prevItems.map(item => item.id === id ? { ...item, status: newStatus } : item) });
-    
+  fetchArchivedItems: async () => {
     try {
-      await api.patch(`/api/zapytania/${id}/status`, { status: newStatus });
+      const res = await api.get('/api/zapytania/archiwum');
+      set({ archivedItems: res.data });
     } catch (error) {
-      console.error('Failed to update status', error);
-      // Revert in case of failure
-      set({ items: prevItems });
+      console.error(error);
+    }
+  },
+
+  updateStatus: async (id: number, status: string) => {
+    // Optymistyczna aktualizacja UI
+    const previousItems = get().items;
+    set({ items: previousItems.map(item => item.id === id ? { ...item, status } : item) });
+
+    try {
+      await api.patch(`/api/zapytania/${id}/status`, { status });
+    } catch (error) {
+      set({ items: previousItems }); // Rollback w przypadku błędu
+      console.error(error);
+    }
+  },
+
+  archiveItem: async (id: number) => {
+    try {
+      await api.put(`/api/zapytania/${id}/archiwizuj`, {});
+      // Odświeżamy obie listy, by ukryć z aktywnych i pokazać w archiwum
+      get().fetchItems();
+      get().fetchArchivedItems();
+    } catch (error) {
+      console.error(error);
     }
   }
 }));

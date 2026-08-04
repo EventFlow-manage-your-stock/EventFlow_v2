@@ -74,7 +74,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   // EVENTFLOW_PRODUCT_POLISH_V42:
   // Strony PDF/druku nie mogą dziedziczyć bocznego menu dashboardu,
   // bo przeglądarka drukowała razem z dokumentem również sidebar systemu.
-  const isPdfOrPrintPage = pathname?.includes('/pdf');
+  const isPdfOrPrintPage = pathname?.includes('/pdf') || pathname?.includes('/labels');
   if (isPdfOrPrintPage) {
     return <div className="min-h-screen bg-white text-slate-900 print:bg-white">{children}</div>;
   }

@@ -43,6 +43,7 @@ export type EntityEditorConfig = {
   normalizePayload?: (form: any) => any;
   titleFromRecord?: (record: any) => string;
   subtitleFromRecord?: (record: any) => string;
+  extraActions?: React.ReactNode;
 };
 
 function toInputValue(value: any, type?: EntityField['type']) {
@@ -197,6 +198,8 @@ export function EntityEditorPage({ config }: { config: EntityEditorConfig }) {
           <span className="font-black text-slate-900">{title}</span>
         </div>
         <div className="flex flex-wrap gap-2">
+          {config.extraActions} {/* <--- WSTRZYKNIĘCIE WŁASNYCH PRZYCISKÓW */}
+          <Button variant="secondary" onClick={() => { if (window.history.length > 1) router.back(); else router.push(config.listHref); }}><ArrowLeft size={16} className="inline" /> Powrót</Button>
           {!isNew && config.deleteEndpoint && <Button variant="danger" onClick={remove}><Trash2 size={16} className="inline" /> Usuń</Button>}
           <Button onClick={submit} disabled={saving}><Save size={16} className="inline" /> {saving ? 'Zapisywanie...' : 'Zapisz'}</Button>
         </div>

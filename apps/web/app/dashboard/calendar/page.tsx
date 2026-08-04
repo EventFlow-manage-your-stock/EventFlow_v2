@@ -32,7 +32,6 @@ const typeLabels: Record<string, string> = {
   wydarzenie: 'Wydarzenia',
   wypozyczenie: 'Wynajmy',
   urlop: 'Nieobecności',
-  serwis: 'Serwis',
   flota: 'Flota',
 };
 
@@ -40,7 +39,6 @@ const typeFallbackColor: Record<string, string> = {
   wydarzenie: '#0891B2',
   wypozyczenie: '#F97316',
   urlop: '#020617',
-  serwis: '#DC2626',
   flota: '#22C55E',
 };
 
@@ -71,7 +69,6 @@ function itemUrl(item: CalendarItem) {
   if (typ === 'wydarzenie') return `/dashboard/events/${item.sourceId}`;
   if (typ === 'wypozyczenie') return `/dashboard/rentals/${item.sourceId}`;
   if (typ === 'urlop') return `/dashboard/leaves/${item.sourceId}`;
-  if (typ === 'serwis') return `/dashboard/service`;
   if (typ === 'flota') return `/dashboard/fleet`;
   return '/dashboard/calendar';
 }

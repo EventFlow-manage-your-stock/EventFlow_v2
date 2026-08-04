@@ -26,7 +26,7 @@ export class SerwisService {
 
   async getZgloszenieById(id: number, id_organizacji: number) {
     const zgloszenie = await this.prisma.extendedClient.serwisSprzetu.findFirst({
-      where: { id, id_organizacji, aktywny: true },
+      where: { id, id_organizacji }, // USUNIĘTO: aktywny: true
       include: {
         egzemplarz: {
           include: { model: true }
@@ -214,4 +214,92 @@ export class SerwisService {
       data: { aktywny: false, data_usuniecia: new Date() }
     });
   }
+
+  async getArchiwum(id_organizacji: number) {
+    return this.prisma.extendedClient.serwisSprzetu.findMany({
+      where: { id_organizacji, aktywny: false, data_rozwiazania: { not: null } },
+      include: {
+        egzemplarz: {
+          include: { model: true }
+        },
+        zglosil: {
+          select: { imie: true, nazwisko: true }
+        },
+        rozwiazal: {
+          select: { imie: true, nazwisko: true }
+        },
+        status: true
+      },
+      orderBy: { data_rozwiazania: 'desc' }
+    });
+  }
+
+  async archiwizujZgloszenie(id: number, id_organizacji: number, id_uzytkownika: number) {
+    return this.prisma.extendedClient.$transaction(async (tx) => {
+      const zgloszenie = await tx.serwisSprzetu.findFirst({
+        where: { id, id_organizacji }
+      });
+      if (!zgloszenie) throw new NotFoundException('Zgłoszenie nie istnieje');
+
+      const dataRozwiazania = zgloszenie.data_rozwiazania || new Date();
+      const rozwiazal = zgloszenie.id_uzytkownika_rozwiazal || id_uzytkownika;
+
+      const updated = await tx.serwisSprzetu.update({
+        where: { id },
+        data: {
+          aktywny: false, // Archiwizacja (chowanie z głównego Kanbanu)
+          data_rozwiazania: dataRozwiazania,
+          id_uzytkownika_rozwiazal: rozwiazal
+          // USUNIĘTO: data_usuniecia: new Date() -> by zachować dane w widoku archiwum!
+        }
+      });
+
+      // Automatyczny powrót sprzętu do stanu dostępności
+      await tx.egzemplarz.update({
+        where: { id: zgloszenie.id_egzemplarza },
+        data: { status_serwisowy: 'Naprawiony' }
+      });
+
+      await tx.logZmian.create({
+        data: {
+          id_organizacji,
+          id_uzytkownika,
+          typ_obiektu: 'SerwisSprzetu',
+          id_obiektu: id,
+          akcja: 'ARCHIWIZACJA_ZGLOSZENIA',
+          nowa_wartosc: JSON.stringify({ zarchiwizowane: true, data_rozwiazania: dataRozwiazania })
+        }
+      });
+
+      return updated;
+    });
+  }
+
+  async updateStatusZgloszenia(id: number, id_statusu_serwisu: number, id_organizacji: number, id_uzytkownika: number) {
+    return this.prisma.extendedClient.$transaction(async (tx) => {
+      const zgloszenie = await tx.serwisSprzetu.findFirst({
+        where: { id, id_organizacji }
+      });
+      if (!zgloszenie) throw new NotFoundException('Zgłoszenie nie istnieje');
+
+      const updated = await tx.serwisSprzetu.update({
+        where: { id },
+        data: { id_statusu_serwisu }
+      });
+
+      await tx.logZmian.create({
+        data: {
+          id_organizacji,
+          id_uzytkownika,
+          typ_obiektu: 'SerwisSprzetu',
+          id_obiektu: id,
+          akcja: 'ZMIANA_STATUSU_KANBAN',
+          nowa_wartosc: JSON.stringify({ id_statusu_serwisu })
+        }
+      });
+
+      return updated;
+    });
+  }
 }
+

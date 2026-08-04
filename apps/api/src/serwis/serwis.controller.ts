@@ -1,4 +1,4 @@
-import { Controller, Get, Put, Post, Delete, Body, Param, Req, UseGuards, ParseIntPipe } from '@nestjs/common';
+import { Controller, Get, Put, Post, Delete, Patch, Body, Param, Req, UseGuards, ParseIntPipe } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import type { Request } from 'express';
 import { SerwisService } from './serwis.service';
@@ -16,6 +16,23 @@ export class SerwisController {
   @Post()
   async createZgloszenie(@Body() dto: any, @Req() req: Request) {
     return this.serwisService.createZgloszenie(dto, Number((req.user as any).id_organizacji), Number((req.user as any).id));
+  }
+
+  @Get('archiwum')
+  async getArchiwum(@Req() req: Request) {
+    return this.serwisService.getArchiwum(Number((req.user as any).id_organizacji));
+  }
+
+  @Put(':id/archiwizuj')
+  async archiwizujZgloszenie(@Param('id', ParseIntPipe) id: number, @Req() req: Request) {
+    const id_uzytkownika = Number((req.user as any).id || (req.user as any).sub || 0);
+    return this.serwisService.archiwizujZgloszenie(id, Number((req.user as any).id_organizacji), id_uzytkownika);
+  }
+  
+  @Patch(':id/status')
+  async updateStatusZgloszenia(@Param('id', ParseIntPipe) id: number, @Body() dto: any, @Req() req: Request) {
+    const id_uzytkownika = Number((req.user as any).id || (req.user as any).sub || 0);
+    return this.serwisService.updateStatusZgloszenia(id, dto.id_statusu_serwisu, Number((req.user as any).id_organizacji), id_uzytkownika);
   }
 
   @Get('statusy')

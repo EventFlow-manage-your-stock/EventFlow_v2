@@ -21,9 +21,11 @@ import {
   Trash2,
   User,
   Wrench,
+  QrCode // 1. DODANY IMPORT
 } from 'lucide-react';
 import { api } from '../../../../../lib/api';
 import { Button, Card, Field, inputClass, PageTitle } from '../../../../../components/ProductUI';
+import { PrintLabelsModal } from '../../../../../components/PrintLabelsModal'; // 2. DODANY IMPORT MODALA
 
 // ============================================================================
 // KOMPONENT: MINI KALENDARZ ZAJĘTOŚCI
@@ -251,6 +253,9 @@ export default function ItemEditorPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  
+  // 3. NOWY STAN DO OBSŁUGI WYŚWIETLANIA MODALA Z ETYKIETAMI
+  const [showPrintModal, setShowPrintModal] = useState(false);
 
   const [record, setRecord] = useState<any>(null);
   const [model, setModel] = useState<any>(null);
@@ -382,6 +387,11 @@ export default function ItemEditorPage() {
         description={`S/N: ${record?.sn || 'Brak'} | KOD: ${record?.kod_kreskowy || 'Brak'}`}
         action={
           <div className="flex gap-2">
+            {/* 4. DODANY PRZYCISK ETYKIETY */}
+            <Button variant="secondary" onClick={() => setShowPrintModal(true)}>
+              <QrCode size={16} className="inline mr-1" /> Etykieta
+            </Button>
+            
             <Button variant="secondary" onClick={() => router.back()}><ArrowLeft size={16} className="inline" /> Powrót</Button>
             <Button variant="danger" onClick={remove}><Trash2 size={16} className="inline" /> Usuń</Button>
             <Button onClick={save} disabled={saving}><Save size={16} className="inline" /> {saving ? 'Zapisywanie...' : 'Zapisz'}</Button>
@@ -502,6 +512,13 @@ export default function ItemEditorPage() {
           </Card>
         </div>
       </div>
+
+      {/* 5. DODANE RENDEROWANIE MODALA */}
+      <PrintLabelsModal 
+        isOpen={showPrintModal} 
+        onClose={() => setShowPrintModal(false)} 
+        ids={[Number(id)]} 
+      />
     </div>
   );
 }
