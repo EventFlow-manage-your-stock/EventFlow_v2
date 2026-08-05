@@ -1877,4 +1877,61 @@ export class MagazynService {
       });
     });
   }
+
+  async getNiezwrocone(id_organizacji: number) {
+    const dokumenty = await this.prisma.extendedClient.wydanieMagazynowe.findMany({
+      where: { 
+        id_organizacji, 
+        aktywny: true, 
+        typ: { in: ['wydanie', 'przyjecie'] } 
+      },
+      include: {
+        pozycje: { where: { aktywny: true } },
+        wydarzenie: { include: { kontrahent: true, status: true } },
+        wynajem: { include: { kontrahent: true, status: true } }
+      }
+    });
+
+    const map = new Map<string, any>();
+
+    for (const doc of dokumenty) {
+      const isWynajem = !!doc.id_wynajmu;
+      const isWydarzenie = !!doc.id_wydarzenia;
+      if (!isWynajem && !isWydarzenie) continue;
+
+      const key = isWynajem ? `W-${doc.id_wynajmu}` : `E-${doc.id_wydarzenia}`;
+
+      if (!map.has(key)) {
+        map.set(key, {
+          id: isWynajem ? doc.id_wynajmu : doc.id_wydarzenia,
+          typ_kontekstu: isWynajem ? 'wynajem' : 'wydarzenie',
+          numer: isWynajem ? (doc.wynajem?.numer || `#${doc.id_wynajmu}`) : (doc.wydarzenie?.numer || `#${doc.id_wydarzenia}`),
+          nazwa: isWynajem ? `Wynajem ${doc.wynajem?.numer || '#' + doc.id_wynajmu}` : doc.wydarzenie?.nazwa,
+          kontrahent: isWynajem ? doc.wynajem?.kontrahent : doc.wydarzenie?.kontrahent,
+          status_obj: isWynajem ? doc.wynajem?.status : doc.wydarzenie?.status,
+          data_start: isWynajem ? doc.wynajem?.data_wydania : doc.wydarzenie?.data_start,
+          data_koniec: isWynajem ? doc.wynajem?.data_zwrotu_planowana : doc.wydarzenie?.data_koniec,
+          wydano_szt: 0,
+          przyjeto_szt: 0,
+        });
+      }
+
+      const ctx = map.get(key);
+      for (const p of doc.pozycje) {
+        const qty = Number(p.ilosc || 0);
+        if (doc.typ === 'wydanie') ctx.wydano_szt += qty;
+        if (doc.typ === 'przyjecie') ctx.przyjeto_szt += qty;
+      }
+    }
+
+    // Obliczamy niezwrócone sztuki i filtrujemy te transakcje, w których wszystko wróciło do zera
+    return Array.from(map.values())
+      .map(x => ({ ...x, niezwrocone_szt: Math.max(0, x.wydano_szt - x.przyjeto_szt) }))
+      .filter(x => x.niezwrocone_szt > 0)
+      .sort((a, b) => {
+        const dateA = a.data_koniec ? new Date(a.data_koniec).getTime() : 0;
+        const dateB = b.data_koniec ? new Date(b.data_koniec).getTime() : 0;
+        return dateA - dateB;
+      });
+  }
 }

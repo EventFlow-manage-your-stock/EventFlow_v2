@@ -153,6 +153,12 @@ function isQuantityModel(model: any): boolean {
   );
 }
 
+// BRAKUJĄCY HELPER ZAPOBIEGAJĄCY REFERENCE ERROR:
+function isQuantityOnly(row: any): boolean {
+  if (!row) return false;
+  return Boolean(row.rowType === 'ilosciowy_model' || row.quantityOnly === true || isQuantityModel(row));
+}
+
 function isCase(row: any): boolean {
   if (!row || isRack(row)) return false;
   const txt = getEquipmentText(row);
@@ -405,7 +411,6 @@ export default function RentalDetailsPage() {
             <Field label="Wydanie sprzętu"><input type="datetime-local" className={inputClass} value={form.data_wydania || ''} onChange={(e) => setForm({ ...form, data_wydania: e.target.value })} /></Field>
             <Field label="Planowany zwrot"><input type="datetime-local" className={inputClass} value={form.data_zwrotu_planowana || ''} onChange={(e) => setForm({ ...form, data_zwrotu_planowana: e.target.value })} /></Field>
             
-            {/* --- ZMIANA NA SEARCHABLE SELECT --- */}
             <Field label="Klient">
               <div className="flex gap-2">
                 <div className="flex-1">
@@ -420,7 +425,6 @@ export default function RentalDetailsPage() {
               </div>
             </Field>
             
-            {/* --- ZMIANA NA SEARCHABLE SELECT --- */}
             <Field label="Osoba kontaktowa">
               <div className="flex gap-2">
                 <div className="flex-1">
@@ -563,7 +567,7 @@ function RentalEquipmentPanel({ rentalId, rentalName }: { rentalId: number; rent
 
   async function load() {
     const [gear, i, m, k] = await Promise.all([
-      api.get(`/api/magazyn/wynajmy/${rentalId}/sprzet`).catch(() => ({ data: { planowane: [], pozycje_dokumentow: [], kategorie: [], dokumenty: [], podsumowanie: {} } })),
+      api.get(`/api/wynajmy/${rentalId}/sprzet`).catch(() => ({ data: { planowane: [], pozycje_dokumentow: [], kategorie: [], dokumenty: [], podsumowanie: {} } })),
       api.get('/api/magazyn/wszystkie-egzemplarze').catch(() => ({ data: [] })),
       api.get('/api/magazyn/modele').catch(() => ({ data: [] })),
       api.get('/api/magazyn/kategorie').catch(() => ({ data: [] })),
@@ -789,8 +793,7 @@ function RentalEquipmentPanel({ rentalId, rentalName }: { rentalId: number; rent
         .map(([id, qty]) => ({ id_modelu: Number(id), ilosc: Number(qty || 0) }))
         .filter((p) => p.id_modelu && p.ilosc > 0);
       
-      // Korzystamy z nowego endpointu wynajmu
-      await api.post(`/api/magazyn/wynajmy/${rentalId}/sprzet`, { replace: true, pozycje });
+      await api.post(`/api/wynajmy/${rentalId}/sprzet`, { replace: true, pozycje });
       
       setShowEditor(false);
       setNotice('Zapisano plan sprzętu wypożyczenia. Wydanie robisz po zeskanowaniu konkretnych egzemplarzy.');

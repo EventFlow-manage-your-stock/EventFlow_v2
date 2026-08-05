@@ -32,13 +32,13 @@ export default function UnreturnedPage() {
   async function load() {
     setLoading(true);
     try {
-      const [rentalsRes, clientsRes] = await Promise.all([
-        api.get('/api/wynajmy').catch(() => ({ data: [] })),
+      // Pobieramy dane za pomocą nowego dedykowanego endpointu WMS
+      const [unreturnedRes, clientsRes] = await Promise.all([
+        api.get('/api/magazyn/niezwrocone').catch(() => ({ data: [] })),
         api.get('/api/slowniki/kontrahenci').catch(() => ({ data: [] }))
       ]);
       
-      // Zachowujemy pierwotną logikę – pokazujemy tylko wynajmy bez rzeczywistej daty zwrotu
-      setItems((rentalsRes.data || []).filter((w: any) => !w.data_zwrotu_rzeczywista));
+      setItems(unreturnedRes.data || []);
       setClients(clientsRes.data || []);
     } catch (error) {
       console.error(error);
@@ -56,18 +56,18 @@ export default function UnreturnedPage() {
     
     return items.filter((w: any) => {
       // Filtr Kontrahenta
-      if (filters.kontrahent && String(w.id_kontrahenta || w.kontrahent?.id) !== filters.kontrahent) {
+      if (filters.kontrahent && String(w.kontrahent?.id) !== filters.kontrahent) {
         return false;
       }
 
       // Filtr dat od-do na podstawie planowanego zwrotu
-      const planDate = w.data_zwrotu_planowana?.slice?.(0, 10);
+      const planDate = w.data_koniec?.slice?.(0, 10);
       if (filters.od && planDate && planDate < filters.od) return false;
       if (filters.do && planDate && planDate > filters.do) return false;
 
-      // Wyszukiwarka tekstowa (Numer wynajmu lub nazwa klienta)
+      // Wyszukiwarka tekstowa (Numer, nazwa, nazwa klienta)
       if (query) {
-        const haystack = `${w.numer || ''} ${w.kontrahent?.nazwa || ''}`.toLowerCase();
+        const haystack = `${w.numer || ''} ${w.nazwa || ''} ${w.kontrahent?.nazwa || ''} ${w.typ_kontekstu || ''}`.toLowerCase();
         if (!haystack.includes(query)) return false;
       }
 
@@ -80,7 +80,7 @@ export default function UnreturnedPage() {
       <PageTitle
         eyebrow="Magazyn"
         title="Niezwrócony sprzęt"
-        description="Lista wynajmów bez odnotowanej rzeczywistej daty zwrotu. Filtruj według kontrahenta, wyszukuj po numerze i kontroluj opóźnienia."
+        description="Lista wydanych fizycznie sprzętów (Wydarzenia oraz Wynajmy), które nie zostały jeszcze rozliczone na dokumencie Przyjęcia (PZ)."
       />
 
       <Card className="!p-4 border-slate-200 shadow-sm">
@@ -94,7 +94,7 @@ export default function UnreturnedPage() {
                   className={`${inputClass} pl-9`}
                   value={filters.search}
                   onChange={(e) => setFilters({ ...filters, search: e.target.value })}
-                  placeholder="Szukaj po numerze wynajmu lub nazwie klienta..."
+                  placeholder="Szukaj po nazwie, numerze lub kliencie..."
                 />
               </div>
             </Field>
@@ -140,12 +140,29 @@ export default function UnreturnedPage() {
         ) : (
           <DataTable
             rows={filteredItems}
-            onRowClick={(r: any) => router.push(`/dashboard/rentals/${r.id}`)}
+            onRowClick={(r: any) => {
+              if (r.typ_kontekstu === 'wynajem') router.push(`/dashboard/rentals/${r.id}`);
+              else router.push(`/dashboard/events/${r.id}`);
+            }}
             columns={[
               {
-                key: 'numer',
-                label: 'Numer wynajmu',
-                value: (r: any) => <b className="text-cyan-700">{r.numer || `#${r.id}`}</b>
+                key: 'typ_kontekstu',
+                label: 'Źródło',
+                value: (r: any) => (
+                  <span className={`px-2 py-1 rounded-md text-xs font-black uppercase ${r.typ_kontekstu === 'wynajem' ? 'bg-orange-100 text-orange-700' : 'bg-cyan-100 text-cyan-700'}`}>
+                    {r.typ_kontekstu}
+                  </span>
+                )
+              },
+              {
+                key: 'nazwa',
+                label: 'Nazwa / Numer',
+                value: (r: any) => (
+                  <div>
+                    <b className="text-slate-900 block">{r.nazwa || '-'}</b>
+                    <span className="text-xs text-slate-400 font-bold">{r.numer || `#${r.id}`}</span>
+                  </div>
+                )
               },
               {
                 key: 'kontrahent',
@@ -153,41 +170,45 @@ export default function UnreturnedPage() {
                 value: (r: any) => r.kontrahent?.nazwa || '-'
               },
               {
-                key: 'status',
-                label: 'Status',
-                value: (r: any) => r.status?.nazwa ? (
+                key: 'status_obj',
+                label: 'Status Głównego Obiektu',
+                value: (r: any) => r.status_obj?.nazwa ? (
                   <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-bold text-slate-600">
-                    {r.status.nazwa}
+                    {r.status_obj.nazwa}
                   </span>
                 ) : '-'
               },
               {
-                key: 'data_wydania',
-                label: 'Data wydania',
-                value: (r: any) => formatDate(r.data_wydania),
-                sortValue: (r: any) => r.data_wydania
+                key: 'data_start',
+                label: 'Start / Wydanie',
+                value: (r: any) => formatDate(r.data_start),
+                sortValue: (r: any) => r.data_start
               },
               {
-                key: 'data_zwrotu_planowana',
+                key: 'data_koniec',
                 label: 'Planowany zwrot',
                 value: (r: any) => {
-                  const isOverdue = r.data_zwrotu_planowana && new Date(r.data_zwrotu_planowana) < new Date();
+                  const isOverdue = r.data_koniec && new Date(r.data_koniec) < new Date();
                   return (
                     <span className={`font-semibold ${isOverdue ? 'text-red-600' : 'text-slate-700'}`}>
-                      {formatDate(r.data_zwrotu_planowana)}
+                      {formatDate(r.data_koniec)}
                       {isOverdue && <span className="ml-2 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-black uppercase text-red-700 shadow-sm">Opóźnienie</span>}
                     </span>
                   );
                 },
-                sortValue: (r: any) => r.data_zwrotu_planowana
+                sortValue: (r: any) => r.data_koniec
               },
               {
-                key: 'pozycje',
-                label: 'Liczba pozycji',
-                value: (r: any) => <span className="font-black text-slate-500">{r.pozycje?.length || 0} szt.</span>
+                key: 'niezwrocone_szt',
+                label: 'Niezwrócono',
+                value: (r: any) => (
+                  <span className="font-black text-rose-600 bg-rose-50 px-3 py-1 rounded-full">
+                    {r.niezwrocone_szt} szt.
+                  </span>
+                )
               }
             ]}
-            empty="Brak niezwróconego sprzętu spełniającego kryteria."
+            empty="Cały wydany sprzęt został poprawnie przyjęty (rozliczony na PZ) w systemie."
           />
         )}
       </Card>

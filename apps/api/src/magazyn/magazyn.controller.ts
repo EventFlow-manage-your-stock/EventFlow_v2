@@ -252,5 +252,8 @@ export class MagazynController {
   async dodajSprzetDoWynajmu(@Param('id', ParseIntPipe) id: number, @Body() dto: any, @Req() req: Request) {
     return this.magazynService.dodajSprzetDoWynajmu(id, dto, Number((req.user as any).id_organizacji));
   }
-
+  @Get('niezwrocone')
+  async getNiezwrocone(@Req() req: Request) {
+    return this.magazynService.getNiezwrocone(Number((req.user as any).id_organizacji));
+  }
 }
