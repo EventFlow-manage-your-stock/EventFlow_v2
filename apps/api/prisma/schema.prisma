@@ -1114,6 +1114,7 @@ model Pojazd {
   ladownosc_kg      Decimal?  @db.Decimal(10, 2)
   objetosc_m3       Decimal?  @db.Decimal(10, 2)
   notatki           String?   @db.Text
+  zdjecie           String?   @db.Text
   aktywny           Boolean   @default(true)
   data_utworzenia   DateTime  @default(now())
   data_aktualizacji DateTime  @updatedAt

@@ -1,9 +1,14 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common/pipes/validation.pipe';
+import { json, urlencoded } from 'express'; // Dodany import z express
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+
+  // ZMIANA: Zwiększenie limitu wielkości payloadu dla przesyłania zdjęć w Base64
+  app.use(json({ limit: '50mb' }));
+  app.use(urlencoded({ extended: true, limit: '50mb' }));
 
   app.setGlobalPrefix('api');
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));

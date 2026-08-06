@@ -447,8 +447,31 @@ export default function EventDetailsPage() {
              <Field label="Miejsce ręcznie"><input className={inputClass} value={form.miejsce_reczne || ''} onChange={(e) => setForm({ ...form, miejsce_reczne: e.target.value })} /></Field>
           </div>
           
-          <div className="grid gap-4 md:grid-cols-1">
-             <Field label="Adres / Google Maps"><input className={inputClass} value={form.adres_reczny || ''} onChange={(e) => setForm({ ...form, adres_reczny: e.target.value })} />{maps && <a className="mt-2 inline-flex items-center gap-1 text-xs font-black text-cyan-700" href={maps} target="_blank" rel="noreferrer"><MapPin size={14} /> Otwórz trasę w Google Maps</a>}</Field>
+          <div className="grid gap-4 md:grid-cols-1 border-t border-slate-100 pt-4 mt-2">
+             <Field label="Adres docelowy / Lokalizacja">
+               <div className="flex gap-2">
+                 <input className={inputClass} value={form.adres_reczny || ''} onChange={(e) => setForm({ ...form, adres_reczny: e.target.value })} placeholder="Wpisz dokładny adres, np. ul. Długa 1, Poznań" />
+                 {maps && <a className="flex items-center justify-center gap-2 rounded-xl bg-cyan-50 px-4 py-2 text-sm font-black text-cyan-700 hover:bg-cyan-100 transition whitespace-nowrap" href={maps} target="_blank" rel="noreferrer"><MapPin size={16} /> Otwórz trasę</a>}
+               </div>
+             </Field>
+             <div className="h-64 w-full overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 shadow-sm relative">
+               {form.adres_reczny ? (
+                 <iframe
+                   width="100%"
+                   height="100%"
+                   style={{ border: 0 }}
+                   loading="lazy"
+                   allowFullScreen
+                   referrerPolicy="no-referrer-when-downgrade"
+                   src={`https://maps.google.com/maps?q=${encodeURIComponent(form.adres_reczny)}&t=&z=14&ie=UTF8&iwloc=&output=embed`}
+                 ></iframe>
+               ) : (
+                 <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-400">
+                   <MapPin size={32} className="mb-2 opacity-30" />
+                   <p className="text-sm font-bold opacity-60">Wpisz adres, aby wygenerować podgląd mapy</p>
+                 </div>
+               )}
+             </div>
           </div>
 
           <Field label="Opis"><textarea className={`${inputClass} min-h-24`} value={form.opis || ''} onChange={(e) => setForm({ ...form, opis: e.target.value })} /></Field>
@@ -1266,7 +1289,12 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
                         <p className="font-black text-slate-900">{row.nazwa}</p>
                         <p className="text-xs font-bold text-slate-400">{mode === 'wydanie' ? `Plan ${row.plan} · wydano wcześniej ${row.wydane} · skan teraz ${row.scanned}` : `Wydano ${row.wydane} · przyjęto wcześniej ${row.przyjete} · skan teraz ${row.scanned}`}</p>
                         {row.quantityOnly && <label className="mt-3 inline-flex cursor-pointer items-center gap-3 rounded-2xl border border-cyan-100 bg-cyan-50 px-3 py-2 text-xs font-black text-cyan-900 hover:bg-cyan-100">
-                          <input type="checkbox" className="h-5 w-5 rounded border-cyan-300 accent-cyan-600" checked={quantityRowSelected(row)} onChange={(e) => toggleQuantityRowWithoutScan(row, e.target.checked)} />
+                          <input
+                            type="checkbox"
+                            className="h-5 w-5 rounded border-cyan-300 accent-cyan-600"
+                            checked={quantityRowSelected(row)}
+                            onChange={(e) => toggleQuantityRowWithoutScan(row, e.target.checked)}
+                          />
                           <span>{mode === 'wydanie' ? 'Wydaj na sztuki bez skanu' : 'Przyjmij na sztuki bez skanu'}</span>
                           <span className="rounded-full bg-white px-2 py-1 text-cyan-700">{quantityRowSelected(row) ? `${row.scanned} ${row.jednostka || 'szt.'}` : `${missing} ${row.jednostka || 'szt.'}`}</span>
                         </label>}

@@ -13,6 +13,7 @@ export default function FleetVehicleEditorPage() {
     titleFromRecord: (r) => r.nazwa || r.nr_rejestracyjny || `Pojazd #${r.id}`,
     subtitleFromRecord: (r) => [r.nr_rejestracyjny, r.vin ? `VIN ${r.vin}` : null].filter(Boolean).join(' · '),
     fields: [
+      { key: 'zdjecie', label: 'Zdjęcie pojazdu', type: 'image', colSpan: 'full' },
       { key: 'nazwa', label: 'Nazwa' },
       { key: 'nr_rejestracyjny', label: 'Nr rejestracyjny' },
       { key: 'marka', label: 'Marka' },

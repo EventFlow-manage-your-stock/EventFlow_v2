@@ -153,7 +153,6 @@ function isQuantityModel(model: any): boolean {
   );
 }
 
-// BRAKUJĄCY HELPER ZAPOBIEGAJĄCY REFERENCE ERROR:
 function isQuantityOnly(row: any): boolean {
   if (!row) return false;
   return Boolean(row.rowType === 'ilosciowy_model' || row.quantityOnly === true || isQuantityModel(row));
@@ -450,8 +449,31 @@ export default function RentalDetailsPage() {
              <Field label="Miejsce ręcznie"><input className={inputClass} value={form.miejsce_reczne || ''} onChange={(e) => setForm({ ...form, miejsce_reczne: e.target.value })} /></Field>
           </div>
           
-          <div className="grid gap-4 md:grid-cols-1">
-             <Field label="Adres / Google Maps"><input className={inputClass} value={form.adres_reczny || ''} onChange={(e) => setForm({ ...form, adres_reczny: e.target.value })} />{maps && <a className="mt-2 inline-flex items-center gap-1 text-xs font-black text-cyan-700" href={maps} target="_blank" rel="noreferrer"><MapPin size={14} /> Otwórz trasę w Google Maps</a>}</Field>
+          <div className="grid gap-4 md:grid-cols-1 border-t border-slate-100 pt-4 mt-2">
+             <Field label="Adres docelowy / Lokalizacja">
+               <div className="flex gap-2">
+                 <input className={inputClass} value={form.adres_reczny || ''} onChange={(e) => setForm({ ...form, adres_reczny: e.target.value })} placeholder="Wpisz dokładny adres, np. ul. Długa 1, Poznań" />
+                 {maps && <a className="flex items-center justify-center gap-2 rounded-xl bg-cyan-50 px-4 py-2 text-sm font-black text-cyan-700 hover:bg-cyan-100 transition whitespace-nowrap" href={maps} target="_blank" rel="noreferrer"><MapPin size={16} /> Otwórz trasę</a>}
+               </div>
+             </Field>
+             <div className="h-64 w-full overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 shadow-sm relative">
+               {form.adres_reczny ? (
+                 <iframe
+                   width="100%"
+                   height="100%"
+                   style={{ border: 0 }}
+                   loading="lazy"
+                   allowFullScreen
+                   referrerPolicy="no-referrer-when-downgrade"
+                   src={`https://maps.google.com/maps?q=${encodeURIComponent(form.adres_reczny)}&t=&z=14&ie=UTF8&iwloc=&output=embed`}
+                 ></iframe>
+               ) : (
+                 <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-400">
+                   <MapPin size={32} className="mb-2 opacity-30" />
+                   <p className="text-sm font-bold opacity-60">Wpisz adres, aby wygenerować podgląd mapy</p>
+                 </div>
+               )}
+             </div>
           </div>
 
           <Field label="Opis / Notatki"><textarea className={`${inputClass} min-h-24`} value={form.notatki_wewnetrzne || ''} onChange={(e) => setForm({ ...form, notatki_wewnetrzne: e.target.value })} /></Field>
@@ -567,7 +589,7 @@ function RentalEquipmentPanel({ rentalId, rentalName }: { rentalId: number; rent
 
   async function load() {
     const [gear, i, m, k] = await Promise.all([
-      api.get(`/api/wynajmy/${rentalId}/sprzet`).catch(() => ({ data: { planowane: [], pozycje_dokumentow: [], kategorie: [], dokumenty: [], podsumowanie: {} } })),
+      api.get(`/api/magazyn/wynajmy/${rentalId}/sprzet`).catch(() => ({ data: { planowane: [], pozycje_dokumentow: [], kategorie: [], dokumenty: [], podsumowanie: {} } })),
       api.get('/api/magazyn/wszystkie-egzemplarze').catch(() => ({ data: [] })),
       api.get('/api/magazyn/modele').catch(() => ({ data: [] })),
       api.get('/api/magazyn/kategorie').catch(() => ({ data: [] })),
@@ -793,7 +815,7 @@ function RentalEquipmentPanel({ rentalId, rentalName }: { rentalId: number; rent
         .map(([id, qty]) => ({ id_modelu: Number(id), ilosc: Number(qty || 0) }))
         .filter((p) => p.id_modelu && p.ilosc > 0);
       
-      await api.post(`/api/wynajmy/${rentalId}/sprzet`, { replace: true, pozycje });
+      await api.post(`/api/magazyn/wynajmy/${rentalId}/sprzet`, { replace: true, pozycje });
       
       setShowEditor(false);
       setNotice('Zapisano plan sprzętu wypożyczenia. Wydanie robisz po zeskanowaniu konkretnych egzemplarzy.');
@@ -1223,7 +1245,7 @@ function RentalEquipmentPanel({ rentalId, rentalName }: { rentalId: number; rent
             <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
               <p className="mb-1 text-sm font-bold text-slate-500">Zeskanuj kod sprzętu / QR / S/N</p>
               <div className="flex gap-2">
-                <input ref={scanInputRef} className={inputClass} placeholder="SKANUJ KOD..." value={scanCode} onChange={(e) => setScanCode(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') scan(); }} autoFocus />
+                <input ref={scanInputRef} className={inputClass} placeholder="SKANUJ KOD..." value={scanCode} onChange={(e) => setScanCode(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); scan(); } }} autoFocus />
                 <Button onClick={scan}>Skanuj</Button>
               </div>
             </div>

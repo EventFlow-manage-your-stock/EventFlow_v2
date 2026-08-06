@@ -33,7 +33,6 @@ export class FlotaService {
   }
 
   async create(dto: any, id_organizacji: number) {
-    // EVENTFLOW_PRODUCT_POLISH_V4: pojazd dostaje VIN, przebieg, daty przeglądu/OC i dane polisy.
     return this.prisma.extendedClient.pojazd.create({
       data: {
         id_organizacji,
@@ -51,6 +50,7 @@ export class FlotaService {
         ladownosc_kg: this.n(dto.ladownosc_kg),
         objetosc_m3: this.n(dto.objetosc_m3),
         notatki: dto.notatki || null,
+        zdjecie: dto.zdjecie || null, // <--- DODANE POLE
       },
     });
   }
@@ -74,6 +74,7 @@ export class FlotaService {
         ladownosc_kg: this.n(dto.ladownosc_kg),
         objetosc_m3: this.n(dto.objetosc_m3),
         notatki: dto.notatki || null,
+        zdjecie: dto.zdjecie || null, // <--- DODANE POLE
       },
     });
   }
