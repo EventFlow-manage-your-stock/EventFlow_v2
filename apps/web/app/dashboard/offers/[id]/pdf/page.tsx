@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 import { api } from '../../../../../lib/api';
 import { Button } from '../../../../../components/ProductUI';
 
@@ -72,10 +72,18 @@ function sectionTotal(section: any) {
 
 export default function OfferPdfPage() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const id = Array.isArray(params.id) ? params.id[0] : params.id;
   const [offer, setOffer] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  // Konfiguracja widoku z parametrów URL (przesłanych z Modala na stronie oferty)
+  const showUnitPrices = searchParams.get('showUnitPrices') !== 'false';
+  const showDiscounts = searchParams.get('showDiscounts') !== 'false';
+  const showDays = searchParams.get('showDays') !== 'false';
+  const showSectionSummary = searchParams.get('showSectionSummary') !== 'false';
+  const showThumbnails = searchParams.get('showThumbnails') === 'true';
 
   useEffect(() => {
     if (!id) return;
@@ -447,7 +455,6 @@ export default function OfferPdfPage() {
           letter-spacing: -0.04em;
         }
 
-
         .pdf-footer {
           display: flex;
           justify-content: space-between;
@@ -571,24 +578,32 @@ export default function OfferPdfPage() {
                   <h2>{text(section.nazwa, 'Sekcja')}</h2>
                   {section.opis && <p>{section.opis}</p>}
                 </div>
-                <div className="pdf-section-total">{money(sectionTotal(section))}</div>
+                {showSectionSummary && <div className="pdf-section-total">{money(sectionTotal(section))}</div>}
               </div>
 
               <table>
                 <thead>
                   <tr>
-                    <th style={{ width: '36%' }}>Pozycja</th>
+                    {showThumbnails && <th style={{ width: '50px' }}>Foto</th>}
+                    <th style={{ width: showThumbnails ? '32%' : '40%' }}>Pozycja</th>
                     <th>Opis</th>
-                    <th className="pdf-text-right">Cena</th>
+                    {showUnitPrices && <th className="pdf-text-right">Cena</th>}
                     <th className="pdf-text-right">Ilość</th>
-                    <th className="pdf-text-right">Dni</th>
-                    <th className="pdf-text-right">Rabat</th>
+                    {showDays && <th className="pdf-text-right">Dni</th>}
+                    {showDiscounts && <th className="pdf-text-right">Rabat</th>}
                     <th className="pdf-text-right">Netto</th>
                   </tr>
                 </thead>
                 <tbody>
                   {section.pozycje.map((p: any) => (
                     <tr key={p.id || `${section.id}-${p.nazwa}`}>
+                      {showThumbnails && (
+                        <td style={{ padding: '6px 8px', verticalAlign: 'middle' }}>
+                          {p.model?.zdjecie ? (
+                            <img src={p.model.zdjecie} alt="" style={{ width: '42px', height: '32px', objectFit: 'cover', borderRadius: '6px', border: '1px solid #dbe4ea' }} />
+                          ) : null}
+                        </td>
+                      )}
                       <td>
                         <div className="pdf-item-name">{text(p.nazwa)}</div>
                         <div className="pdf-item-meta">
@@ -596,10 +611,10 @@ export default function OfferPdfPage() {
                         </div>
                       </td>
                       <td>{text(p.opis || p.uwagi, '')}</td>
-                      <td className="pdf-text-right">{money(p.cena_netto)}</td>
-                      <td className="pdf-text-right">{asNumber(p.ilosc, 1)}</td>
-                      <td className="pdf-text-right">{asNumber(p.dni_pracy, 1)}</td>
-                      <td className="pdf-text-right">{asNumber(p.rabat_proc, 0)}%</td>
+                      {showUnitPrices && <td className="pdf-text-right">{money(p.cena_netto)}</td>}
+                      <td className="pdf-text-right font-bold">{asNumber(p.ilosc, 1)} {p.model?.jednostka || 'szt.'}</td>
+                      {showDays && <td className="pdf-text-right">{asNumber(p.dni_pracy, 1)}</td>}
+                      {showDiscounts && <td className="pdf-text-right">{asNumber(p.rabat_proc, 0)}%</td>}
                       <td className="pdf-text-right"><strong>{money(lineNetto(p))}</strong></td>
                     </tr>
                   ))}

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { ArrowLeft, Box, Calculator, CheckCircle2, Copy, FileText, Layers, Link as LinkIcon, Mail, PackagePlus, Pencil, Plus, Save, Search, SlidersHorizontal, Trash2 } from 'lucide-react';
+import { ArrowLeft, ArrowUp, ArrowDown, Box, Calculator, CheckCircle2, Copy, FileText, Layers, Link as LinkIcon, Mail, PackagePlus, Pencil, Plus, Save, Search, SlidersHorizontal, Trash2, Printer, Settings } from 'lucide-react';
 import { api } from '../../../../lib/api';
 import { Button, Card, Field, inputClass, PageTitle } from '../../../../components/ProductUI';
 import { SimpleModal } from '../../../../components/SimpleModal';
@@ -103,6 +103,9 @@ function categoryPath(categoryId: string, byId: Map<string, any>) {
   return parts.join(' / ');
 }
 
+// Styl dla inputów wewnątrz tabeli (Spreadsheet-like)
+const tableInputClass = "w-full border border-transparent bg-transparent hover:border-slate-300 focus:border-cyan-500 focus:bg-white rounded-lg px-2 py-1.5 outline-none transition font-semibold text-slate-800 placeholder-slate-300";
+
 export default function OfferDetailsPage() {
   const params = useParams();
   const router = useRouter();
@@ -129,44 +132,55 @@ export default function OfferDetailsPage() {
   const [showBundle, setShowBundle] = useState<any>(null);
   const [bundles, setBundles] = useState<any[]>([]);
 
-  async function load() {
-  const [o, m, k, b] = await Promise.all([
-    api.get(`/api/oferty/${id}`),
-    api.get('/api/magazyn/modele').catch(() => ({ data: [] })),
-    api.get('/api/magazyn/kategorie').catch(() => ({ data: [] })),
-    api.get('/api/pakiety').catch(() => ({ data: [] })), // <--- NOWE
-  ]);
-  setOffer(o.data);
-  setModels(m.data || []);
-  setEquipmentCategories(k.data || []);
-  setBundles(b.data || []); // <--- NOWE
-  setDirtyItems({});
-}
+  // Opcje PDF
+  const [showPdfSettings, setShowPdfSettings] = useState(false);
+  const [pdfConfig, setPdfConfig] = useState({
+    showUnitPrices: true,
+    showDiscounts: true,
+    showDays: true,
+    showSectionSummary: true,
+    showThumbnails: false
+  });
 
-async function addBundle(e: any) {
-  e.preventDefault();
-  if (!showBundle) return;
-  setError('');
-  try {
-    await api.post(`/api/oferty/${id}/sekcje/${showBundle.id}/pakiety`, {
-      id_pakietu: form.id_pakietu,
-      ilosc_pakietow: form.ilosc_pakietow || 1,
-      dni_pracy: form.dni_pracy || 1
-    });
-    setForm({});
-    setShowBundle(null);
-    setNotice('Rozbito pakiet na pozycje i dodano do oferty.');
-    await load();
-  } catch (err: any) {
-    setError(err?.response?.data?.message || 'Nie udało się dodać pakietu.');
+  async function load() {
+    const [o, m, k, b] = await Promise.all([
+      api.get(`/api/oferty/${id}`),
+      api.get('/api/magazyn/modele').catch(() => ({ data: [] })),
+      api.get('/api/magazyn/kategorie').catch(() => ({ data: [] })),
+      api.get('/api/pakiety').catch(() => ({ data: [] })),
+    ]);
+    setOffer(o.data);
+    setModels(m.data || []);
+    setEquipmentCategories(k.data || []);
+    setBundles(b.data || []);
+    setDirtyItems({});
   }
-}
+
+  async function addBundle(e: any) {
+    e.preventDefault();
+    if (!showBundle) return;
+    setError('');
+    try {
+      await api.post(`/api/oferty/${id}/sekcje/${showBundle.id}/pakiety`, {
+        id_pakietu: form.id_pakietu,
+        ilosc_pakietow: form.ilosc_pakietow || 1,
+        dni_pracy: form.dni_pracy || 1
+      });
+      setForm({});
+      setShowBundle(null);
+      setNotice('Rozbito pakiet na pozycje i dodano do oferty.');
+      await load();
+    } catch (err: any) {
+      setError(err?.response?.data?.message || 'Nie udało się dodać pakietu.');
+    }
+  }
 
   useEffect(() => { load(); }, [id]);
 
   const version = offer?.wersje?.[0];
   const sections = version?.sekcje || [];
   const positions = sections.flatMap((s: any) => s.pozycje || []);
+  
   const summary = useMemo(() => {
     const sum = (typ: string) => positions.filter((p: any) => p.typ_pozycji === typ).reduce((a: number, p: any) => a + Number(p.razem_netto || calc(p)), 0);
     const sprzet = sum('sprzet');
@@ -181,7 +195,6 @@ async function addBundle(e: any) {
   const { roots: equipmentCategoryRoots, byId: equipmentCategoryById } = useMemo(() => buildCategoryTree(equipmentCategories), [equipmentCategories]);
   const activeEquipmentRootObj = equipmentRoot !== 'all' ? equipmentCategoryById.get(equipmentRoot) : null;
 
-  // EVENTFLOW_PATCH_10: w ofercie wybieramy modele sprzętu i racki, ale nie case/opakowania.
   function ef10OfferText(...values: any[]) {
     return values.filter(Boolean).map((v) => String(v)).join(' ').toLowerCase();
   }
@@ -215,7 +228,6 @@ async function addBundle(e: any) {
   function ef10ShouldShowOfferModel(model: any) {
     return ef10OfferRackLike(model) || !ef10OfferCaseLike(model);
   }
-
 
   function totalForEquipmentCategory(categoryId: string) {
     if (categoryId === 'all') return models.filter((m: any) => ef10ShouldShowOfferModel(m)).length;
@@ -304,6 +316,26 @@ async function addBundle(e: any) {
       await load();
     } catch (err: any) {
       setError(err?.response?.data?.message || err.message || 'Nie udało się usunąć grupy sprzętowej.');
+    }
+  }
+
+  async function moveSection(index: number, dir: -1 | 1) {
+    const list = [...sections];
+    const a = list[index];
+    const b = list[index + dir];
+    if (!a || !b) return;
+
+    setSavingId(-999999);
+    try {
+      await Promise.all([
+        api.put(`/api/oferty/${id}/sekcje/${a.id}`, { kolejnosc: b.kolejnosc ?? (index + dir) }),
+        api.put(`/api/oferty/${id}/sekcje/${b.id}`, { kolejnosc: a.kolejnosc ?? index })
+      ]);
+      await load();
+    } catch (err: any) {
+      setError(err?.response?.data?.message || err.message || 'Nie udało się zmienić kolejności.');
+    } finally {
+      setSavingId(null);
     }
   }
 
@@ -413,14 +445,17 @@ async function addBundle(e: any) {
   async function dupOffer() {
     setDuplicateTarget(offer);
   }
+  
   async function dupSection(section: any) {
     await api.post(`/api/oferty/${id}/sekcje/${section.id}/duplikuj`, {});
     load();
   }
+  
   async function updateSectionColor(section: any, color: string) {
     await api.put(`/api/oferty/${id}/sekcje/${section.id}`, { ...section, kolor: color });
     load();
   }
+  
   async function sync(direction: 'event-to-offer' | 'offer-to-event') {
     setError('');
     setNotice('');
@@ -435,6 +470,7 @@ async function addBundle(e: any) {
       setError(err?.response?.data?.message || err.message || 'Nie udało się zsynchronizować sprzętu.');
     }
   }
+  
   async function applyBudget(e: any) {
     e.preventDefault();
     setError('');
@@ -446,6 +482,7 @@ async function addBundle(e: any) {
       setError(err?.response?.data?.message || err.message || 'Nie udało się zastosować budżetu.');
     }
   }
+  
   function toggleSectionLock(sectionId: number) {
     setBudgetForm((prev: any) => {
       const arr = prev.pomin_sekcje_ids || [];
@@ -458,6 +495,13 @@ async function addBundle(e: any) {
     setForm({ typ_pozycji: 'sprzet', dni_pracy: 1, ilosc: 1, rabat_proc: 0, vat: 23, widoczna_w_pdf: true });
   }
 
+  function generatePdf() {
+    const q = new URLSearchParams();
+    Object.entries(pdfConfig).forEach(([k, v]) => q.set(k, String(v)));
+    window.open(`/dashboard/offers/${id}/pdf?${q.toString()}`, '_blank');
+    setShowPdfSettings(false);
+  }
+
   if (!offer) return <p className="p-8 font-bold text-slate-400">Ładowanie oferty...</p>;
 
   return <div className="mx-auto max-w-[1800px] space-y-6">
@@ -465,79 +509,209 @@ async function addBundle(e: any) {
       eyebrow="Oferty"
       title={offer.nazwa}
       description={`${offer.numer || ''} · ${offer.kontrahent?.nazwa || 'brak klienta'} · przypisana do wydarzenia: ${offer.wydarzenie?.nazwa || '-'}`}
-      action={<div className="flex flex-wrap gap-2">
-        <Button variant="secondary" onClick={() => router.back()}><ArrowLeft size={16} className="inline" /> Powrót</Button>
-        {dirtyCount > 0 && <Button onClick={saveAllItems}><Save size={16} className="inline" /> Zapisz wszystkie zmiany ({dirtyCount})</Button>}
-        <Button variant="secondary" onClick={dupOffer}><Copy size={16} className="inline" /> Duplikuj</Button>
-        <Button variant="secondary"><Mail size={16} className="inline" /> Wyślij E-mailem</Button>
-        <Button variant="secondary" onClick={() => window.open(`/dashboard/offers/${id}/pdf`, '_blank')}><FileText size={16} className="inline" /> PDF</Button>
-        <Button variant="secondary" onClick={() => { setBudgetForm({ budzet_netto: offer.budzet_netto || Math.round(summary.netto), pomin_sekcje_ids: [] }); setShowBudget(true); }}><Calculator size={16} className="inline" /> Budżet</Button>
-        <Button onClick={() => setShowSection(true)}><Plus size={16} className="inline" /> Dodaj grupę sprzętową</Button>
-      </div>}
+      action={
+        <div className="flex flex-wrap gap-2">
+          <Button variant="secondary" onClick={() => router.back()}><ArrowLeft size={16} className="inline mr-2" /> Powrót</Button>
+          {dirtyCount > 0 && <Button onClick={saveAllItems}><Save size={16} className="inline mr-2" /> Zapisz zmiany ({dirtyCount})</Button>}
+          <Button variant="secondary" onClick={dupOffer}><Copy size={16} className="inline mr-2" /> Duplikuj</Button>
+          
+          <Button variant="secondary" onClick={() => setShowPdfSettings(true)}><Printer size={16} className="inline mr-2" /> Opcje Wydruku (PDF)</Button>
+          
+          <Button variant="secondary" onClick={() => { setBudgetForm({ budzet_netto: offer.budzet_netto || Math.round(summary.netto), pomin_sekcje_ids: [] }); setShowBudget(true); }}><Calculator size={16} className="inline mr-2" /> Budżet</Button>
+          <Button onClick={() => setShowSection(true)}><Plus size={16} className="inline mr-2" /> Dodaj grupę</Button>
+        </div>
+      }
     />
 
     {error && <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-700">{error}</div>}
     {notice && <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-bold text-emerald-700">{notice}</div>}
 
     <div className="grid gap-6 xl:grid-cols-[0.8fr_0.8fr_0.8fr]">
-      <Card><h2 className="text-lg font-black">Dane oferty</h2><div className="mt-4 space-y-3 text-sm"><p><b>Klient:</b> {offer.kontrahent?.nazwa || '-'}</p><p><b>Status:</b> {offer.status?.nazwa || 'Nowa'}</p><p><b>Termin płatności:</b> {offer.termin_platnosci_dni || 14} dni</p><p><b>Budżet:</b> {money(offer.budzet_netto)}</p><p><b>Algorytm:</b> {offer.algorytm_budzetu || 'brak'}</p></div></Card>
-      <Card><h2 className="text-lg font-black">Podsumowanie</h2><div className="mt-4 grid grid-cols-2 gap-3 text-sm"><p>Sprzęt<br /><b>{money(summary.sprzet)}</b></p><p>Transport<br /><b>{money(summary.transport)}</b></p><p>Obsługa<br /><b>{money(summary.obsluga)}</b></p><p>Nocleg<br /><b>{money(summary.nocleg)}</b></p><p>Netto<br /><b>{money(summary.netto)}</b></p><p>Brutto<br /><b>{money(summary.brutto)}</b></p></div>{Number(offer.rabat_budzetowy_netto || 0) > 0 && <p className="mt-3 rounded-xl bg-emerald-50 p-3 text-xs font-black text-emerald-700">Obniżka budżetowa: {money(offer.rabat_budzetowy_netto)} ({Number(offer.rabat_budzetowy_proc || 0).toFixed(2)}%)</p>}</Card>
-      <Card><h2 className="text-lg font-black">Powiązanie z wydarzeniem</h2><div className="mt-4 flex flex-col gap-2"><Button variant="secondary" onClick={() => sync('event-to-offer')}><LinkIcon size={16} className="inline" /> Zaciągnij sprzęt z wydarzenia</Button><Button variant="secondary" onClick={() => sync('offer-to-event')}><Save size={16} className="inline" /> Wyślij ofertę do wydarzenia</Button></div><p className="mt-3 text-xs font-bold text-slate-400">Oferta może być stale korygowana: sztuki, dni, rabaty, typ pozycji i widoczność w PDF zapisujesz bezpośrednio w tabeli.</p></Card>
+      <Card>
+        <h2 className="text-lg font-black text-slate-800">Dane oferty</h2>
+        <div className="mt-4 space-y-3 text-sm text-slate-600">
+          <p className="flex justify-between border-b border-slate-100 pb-2"><span>Klient:</span> <b>{offer.kontrahent?.nazwa || '-'}</b></p>
+          <p className="flex justify-between border-b border-slate-100 pb-2"><span>Status:</span> <b>{offer.status?.nazwa || 'Nowa'}</b></p>
+          <p className="flex justify-between border-b border-slate-100 pb-2"><span>Termin płatności:</span> <b>{offer.termin_platnosci_dni || 14} dni</b></p>
+          <p className="flex justify-between border-b border-slate-100 pb-2"><span>Budżet klienta:</span> <b>{money(offer.budzet_netto)}</b></p>
+          <p className="flex justify-between border-b border-slate-100 pb-2"><span>Algorytm:</span> <b>{offer.algorytm_budzetu || 'brak'}</b></p>
+        </div>
+      </Card>
+
+      <Card>
+        <h2 className="text-lg font-black text-slate-800">Podsumowanie</h2>
+        <div className="mt-4 grid grid-cols-2 gap-4 text-sm">
+          <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Sprzęt</p>
+            <p className="text-base font-black text-slate-800 mt-0.5">{money(summary.sprzet)}</p>
+          </div>
+          <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Transport</p>
+            <p className="text-base font-black text-slate-800 mt-0.5">{money(summary.transport)}</p>
+          </div>
+          <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Obsługa</p>
+            <p className="text-base font-black text-slate-800 mt-0.5">{money(summary.obsluga)}</p>
+          </div>
+          <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Inne</p>
+            <p className="text-base font-black text-slate-800 mt-0.5">{money(summary.nocleg + summary.inne)}</p>
+          </div>
+        </div>
+        <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-4">
+          <p className="text-sm font-bold text-slate-500">Razem netto:</p>
+          <p className="text-2xl font-black text-cyan-700">{money(summary.netto)}</p>
+        </div>
+        {Number(offer.rabat_budzetowy_netto || 0) > 0 && <p className="mt-3 rounded-xl bg-emerald-50 border border-emerald-100 p-3 text-xs font-black text-emerald-700">Obniżka budżetowa: {money(offer.rabat_budzetowy_netto)} ({Number(offer.rabat_budzetowy_proc || 0).toFixed(2)}%)</p>}
+      </Card>
+
+      <Card>
+        <h2 className="text-lg font-black text-slate-800">Powiązanie z wydarzeniem</h2>
+        <div className="mt-4 flex flex-col gap-3">
+          <Button variant="secondary" onClick={() => sync('event-to-offer')}><LinkIcon size={16} className="inline mr-2" /> Zaciągnij plan sprzętu</Button>
+          <Button variant="secondary" onClick={() => sync('offer-to-event')}><Save size={16} className="inline mr-2" /> Wyślij listę na wydarzenie</Button>
+        </div>
+        <div className="mt-4 p-4 rounded-xl bg-cyan-50 border border-cyan-100 text-xs font-bold text-cyan-800 leading-relaxed">
+          Zaciągnięcie sprzętu automatycznie utworzy nową grupę na ofercie i przekopiuje sprzęt. Wysłanie zaktualizuje plan wydarzenia, zastępując go sprzętem z oferty.
+        </div>
+      </Card>
     </div>
 
-    <Card>
+    <Card className="!p-0 border-transparent shadow-none bg-transparent">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap gap-2">
-        {sections.map((s: any) => <button key={s.id} className="rounded-xl border px-4 py-2 text-sm font-black"><span className="mr-2 inline-block h-3 w-3 rounded-full" style={{ background: s.kolor || '#f59e0b' }} /> {s.nazwa} {money((s.pozycje || []).reduce((a: number, p: any) => a + Number(p.razem_netto || calc(p)), 0))}</button>)}
+          {sections.map((s: any) => 
+            <div key={s.id} className="rounded-xl border border-slate-200 bg-white shadow-sm px-4 py-2 text-sm font-black flex items-center gap-2">
+              <span className="inline-block h-3 w-3 rounded-full" style={{ background: s.kolor || '#f59e0b' }} />
+              {s.nazwa}
+              <span className="ml-2 text-cyan-700">{money((s.pozycje || []).reduce((a: number, p: any) => a + Number(p.razem_netto || calc(p)), 0))}</span>
+            </div>
+          )}
         </div>
-        <Button onClick={saveAllItems} disabled={dirtyCount === 0 || savingId === -999999}>{savingId === -999999 ? 'Zapisywanie...' : `Zapisz wszystkie zmiany${dirtyCount ? ` (${dirtyCount})` : ''}`}</Button>
+        <Button onClick={saveAllItems} disabled={dirtyCount === 0 || savingId === -999999}>{savingId === -999999 ? 'Zapisywanie...' : `Zapisz wszystkie zmiany w tabelach${dirtyCount ? ` (${dirtyCount})` : ''}`}</Button>
       </div>
 
-      <div className="space-y-6">
-        {sections.map((section: any) => <div key={section.id} className="rounded-2xl border border-slate-200">
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded-t-2xl px-4 py-3 text-white" style={{ backgroundColor: section.kolor || '#f59e0b' }}>
-            <h3 className="text-lg font-black">{section.nazwa}</h3>
-            <div className="flex flex-wrap items-center gap-2">
-              <label className="flex items-center gap-1 rounded-lg bg-white/20 px-2 py-1 text-xs font-black">Kolor <input type="color" value={section.kolor || '#f59e0b'} onChange={(e) => updateSectionColor(section, e.target.value)} className="h-6 w-8 rounded border-0 bg-transparent" /></label>
-              <button onClick={() => openEditSection(section)} className="rounded-lg bg-white/20 px-3 py-1 text-xs font-black"><Pencil size={14} className="inline" /> Edytuj nazwę</button>
-              <button onClick={() => promptSectionDiscount(section)} className="rounded-lg bg-white/20 px-3 py-1 text-xs font-black">Rabat grupy</button>
-              <button onClick={() => applySectionPatch(section, { dni_pracy: 1 })} className="rounded-lg bg-white/20 px-3 py-1 text-xs font-black">Dni = 1</button>
-              <button onClick={() => dupSection(section)} className="rounded-lg bg-white/20 px-3 py-1 text-xs font-black">Duplikuj grupę</button>
-              <button onClick={() => openAddEquipment(section)} className="rounded-lg bg-white/25 px-3 py-1 text-xs font-black"><PackagePlus size={14} className="inline" /> Dodaj sprzęt</button>
-              <button onClick={() => { setShowBundle(section); setForm({ ilosc_pakietow: 1, dni_pracy: 1 }); }} className="rounded-lg bg-white/20 px-3 py-1 text-xs font-black">
-                <Layers size={14} className="inline" /> Dodaj pakiet
-              </button>
-              <button onClick={() => openAddItem(section)} className="rounded-lg bg-white/20 px-3 py-1 text-xs font-black">+ Pozycja ręczna</button>
-              <button onClick={() => deleteSection(section)} className="rounded-lg bg-red-500/80 px-3 py-1 text-xs font-black">Usuń grupę</button>
+      <div className="space-y-8">
+        {sections.map((section: any, index: number) => (
+          <div key={section.id} className="rounded-2xl border border-slate-200 shadow-sm bg-white overflow-hidden">
+            
+            {/* Nagłówek Grupy Sprzętowej */}
+            <div className="flex flex-wrap items-center justify-between gap-2 px-5 py-4 text-white" style={{ backgroundColor: section.kolor || '#f59e0b' }}>
+              <div className="flex items-center gap-4">
+                <div className="flex flex-col gap-1">
+                  <button onClick={() => moveSection(index, -1)} disabled={index === 0} className="rounded bg-white/20 p-1 disabled:opacity-30 hover:bg-white/30 transition"><ArrowUp size={14}/></button>
+                  <button onClick={() => moveSection(index, 1)} disabled={index === sections.length - 1} className="rounded bg-white/20 p-1 disabled:opacity-30 hover:bg-white/30 transition"><ArrowDown size={14}/></button>
+                </div>
+                <h3 className="text-xl font-black">{section.nazwa}</h3>
+              </div>
+              
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="flex items-center gap-2 rounded-lg bg-white/20 px-3 py-1.5 text-xs font-black cursor-pointer hover:bg-white/30 transition">
+                  Kolor 
+                  <input type="color" value={section.kolor || '#f59e0b'} onChange={(e) => updateSectionColor(section, e.target.value)} className="h-6 w-8 rounded border-0 bg-transparent cursor-pointer" />
+                </label>
+                <button onClick={() => openEditSection(section)} className="rounded-lg bg-white/20 px-3 py-2 text-xs font-black hover:bg-white/30 transition"><Pencil size={14} className="inline mr-1" /> Edytuj</button>
+                <button onClick={() => promptSectionDiscount(section)} className="rounded-lg bg-white/20 px-3 py-2 text-xs font-black hover:bg-white/30 transition">% Rabat grupowy</button>
+                <button onClick={() => applySectionPatch(section, { dni_pracy: 1 })} className="rounded-lg bg-white/20 px-3 py-2 text-xs font-black hover:bg-white/30 transition">Dni = 1</button>
+                <button onClick={() => dupSection(section)} className="rounded-lg bg-white/20 px-3 py-2 text-xs font-black hover:bg-white/30 transition">Duplikuj grupę</button>
+                <button onClick={() => openAddEquipment(section)} className="rounded-lg bg-white/30 px-3 py-2 text-xs font-black hover:bg-white/40 transition shadow-sm"><PackagePlus size={14} className="inline mr-1" /> Dodaj sprzęt</button>
+                <button onClick={() => { setShowBundle(section); setForm({ ilosc_pakietow: 1, dni_pracy: 1 }); }} className="rounded-lg bg-white/20 px-3 py-2 text-xs font-black hover:bg-white/30 transition">
+                  <Layers size={14} className="inline mr-1" /> Dodaj z szablonu (Pakiet)
+                </button>
+                <button onClick={() => openAddItem(section)} className="rounded-lg bg-white/20 px-3 py-2 text-xs font-black hover:bg-white/30 transition"><Plus size={14} className="inline mr-1"/> Pozycja ręczna</button>
+                <button onClick={() => deleteSection(section)} className="rounded-lg bg-red-500/90 px-3 py-2 text-xs font-black hover:bg-red-600 transition shadow-sm"><Trash2 size={14} className="inline" /></button>
+              </div>
+            </div>
+
+            {/* Tabela Zawartości Grupy */}
+            <div className="overflow-x-auto bg-white">
+              <table className="w-full min-w-[1250px] text-sm text-left">
+                <thead className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500 border-b border-slate-200">
+                  <tr>
+                    <th className="px-4 py-3 w-1/4">Nazwa i Parametry</th>
+                    <th className="px-4 py-3 w-1/5">Uwagi do pozycji</th>
+                    <th className="px-4 py-3 w-[120px]">Cena netto</th>
+                    <th className="px-4 py-3 w-[120px]">Ilość</th>
+                    <th className="px-4 py-3 w-[120px]">Dni pracy</th>
+                    <th className="px-4 py-3 w-[120px]">Rabat %</th>
+                    <th className="px-4 py-3 w-[90px]">VAT %</th>
+                    <th className="px-4 py-3 w-[80px] text-center">Wid. PDF</th>
+                    <th className="px-4 py-3 text-right w-[140px]">Razem netto</th>
+                    <th className="px-4 py-3 text-right w-[120px]">Akcje</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {(section.pozycje || []).map((p: any) => <OfferPositionRow key={p.id} item={p} saving={savingId === p.id} onDraftChange={registerDirtyItem} onUpdate={(patch: any) => updateItem(p, patch)} onDelete={() => deleteItem(p)} />)}
+                </tbody>
+              </table>
+              {(!section.pozycje || section.pozycje.length === 0) && (
+                <div className="p-10 text-center text-sm font-bold text-slate-400 bg-slate-50/50">
+                  Ta grupa jest pusta. Dodaj sprzęt lub usługi za pomocą przycisków w nagłówku.
+                </div>
+              )}
             </div>
           </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[1250px] text-sm">
-              <thead className="bg-slate-50 text-xs uppercase text-slate-500">
-                <tr>
-                  <th className="p-2 text-left">Nazwa / typ</th>
-                  <th className="p-2 text-left">Opis</th>
-                  <th className="p-2">Cena netto</th>
-                  <th className="p-2">Szt.</th>
-                  <th className="p-2">Dni pracy</th>
-                  <th className="p-2">Rabat %</th>
-                  <th className="p-2">VAT %</th>
-                  <th className="p-2">PDF</th>
-                  <th className="p-2 text-right">Razem netto</th>
-                  <th className="p-2 text-right">Akcje</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(section.pozycje || []).map((p: any) => <OfferPositionRow key={p.id} item={p} saving={savingId === p.id} onDraftChange={registerDirtyItem} onUpdate={(patch: any) => updateItem(p, patch)} onDelete={() => deleteItem(p)} />)}
-              </tbody>
-            </table>
-          </div>
-        </div>)}
+        ))}
       </div>
     </Card>
 
     {duplicateTarget && <OfferDuplicateTargetModal offer={duplicateTarget} defaultEventId={offer?.id_wydarzenia} defaultRentalId={offer?.id_wynajmu} onClose={() => setDuplicateTarget(null)} onDone={(o) => router.push(`/dashboard/offers/${o.id}`)} />}
+
+    {/* MODAL USTAWIEN PDF */}
+    {showPdfSettings && (
+      <SimpleModal title="Opcje wydruku (PDF)" onClose={() => setShowPdfSettings(false)}>
+        <div className="space-y-5">
+          <p className="text-sm font-bold text-slate-500 mb-2">Wybierz, jakie informacje mają być widoczne dla klienta na ofercie.</p>
+          
+          <div className="grid gap-3">
+            <label className="flex items-center gap-3 cursor-pointer p-4 rounded-xl border border-slate-200 hover:border-cyan-300 hover:bg-cyan-50 transition bg-white">
+              <input type="checkbox" className="w-5 h-5 rounded border-slate-300 text-cyan-600 focus:ring-cyan-500" checked={pdfConfig.showUnitPrices} onChange={(e) => setPdfConfig({...pdfConfig, showUnitPrices: e.target.checked})} />
+              <div>
+                <span className="font-bold text-slate-800 block">Pokaż ceny jednostkowe</span>
+                <span className="text-xs font-semibold text-slate-500">Wyświetla kolumnę z bazową ceną za sztukę.</span>
+              </div>
+            </label>
+
+            <label className="flex items-center gap-3 cursor-pointer p-4 rounded-xl border border-slate-200 hover:border-cyan-300 hover:bg-cyan-50 transition bg-white">
+              <input type="checkbox" className="w-5 h-5 rounded border-slate-300 text-cyan-600 focus:ring-cyan-500" checked={pdfConfig.showDiscounts} onChange={(e) => setPdfConfig({...pdfConfig, showDiscounts: e.target.checked})} />
+              <div>
+                <span className="font-bold text-slate-800 block">Pokaż przydzielone rabaty</span>
+                <span className="text-xs font-semibold text-slate-500">Wyświetla kolumnę z wartością rabatu w %.</span>
+              </div>
+            </label>
+
+            <label className="flex items-center gap-3 cursor-pointer p-4 rounded-xl border border-slate-200 hover:border-cyan-300 hover:bg-cyan-50 transition bg-white">
+              <input type="checkbox" className="w-5 h-5 rounded border-slate-300 text-cyan-600 focus:ring-cyan-500" checked={pdfConfig.showDays} onChange={(e) => setPdfConfig({...pdfConfig, showDays: e.target.checked})} />
+              <div>
+                <span className="font-bold text-slate-800 block">Pokaż kolumnę "Dni pracy"</span>
+                <span className="text-xs font-semibold text-slate-500">Wyświetla mnożnik dni (użyteczne przy długich eventach).</span>
+              </div>
+            </label>
+
+            <label className="flex items-center gap-3 cursor-pointer p-4 rounded-xl border border-slate-200 hover:border-cyan-300 hover:bg-cyan-50 transition bg-white">
+              <input type="checkbox" className="w-5 h-5 rounded border-slate-300 text-cyan-600 focus:ring-cyan-500" checked={pdfConfig.showThumbnails} onChange={(e) => setPdfConfig({...pdfConfig, showThumbnails: e.target.checked})} />
+              <div>
+                <span className="font-bold text-slate-800 block">Pokaż miniatury zdjęć sprzętu</span>
+                <span className="text-xs font-semibold text-slate-500">Uatrakcyjnia wizualnie ofertę dodając zdjęcie modelu obok nazwy.</span>
+              </div>
+            </label>
+
+            <label className="flex items-center gap-3 cursor-pointer p-4 rounded-xl border border-slate-200 hover:border-cyan-300 hover:bg-cyan-50 transition bg-white">
+              <input type="checkbox" className="w-5 h-5 rounded border-slate-300 text-cyan-600 focus:ring-cyan-500" checked={pdfConfig.showSectionSummary} onChange={(e) => setPdfConfig({...pdfConfig, showSectionSummary: e.target.checked})} />
+              <div>
+                <span className="font-bold text-slate-800 block">Pokaż podsumowania finansowe w nagłówkach grup</span>
+                <span className="text-xs font-semibold text-slate-500">Wyświetla zsumowaną kwotę obok nazwy sekcji na PDF.</span>
+              </div>
+            </label>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-4 border-t border-slate-100">
+            <Button variant="secondary" onClick={() => setShowPdfSettings(false)}>Anuluj</Button>
+            <Button onClick={generatePdf}><Printer size={16} className="inline mr-2" /> Drukuj / Otwórz PDF</Button>
+          </div>
+        </div>
+      </SimpleModal>
+    )}
 
     {showBudget && <SimpleModal title="Dostosuj ofertę do budżetu klienta" onClose={() => setShowBudget(false)}>
       {error && <div className="mb-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-bold text-red-700">{error}</div>}
@@ -602,17 +776,17 @@ async function addBundle(e: any) {
 
               <div className="mt-4 rounded-[24px] bg-slate-50 p-4">
                 <p className="mb-3 text-[11px] font-black uppercase tracking-wider text-slate-400">Kategorie główne</p>
-                <div className="flex max-h-[190px] flex-wrap gap-2 overflow-y-auto pr-1">
-                  <button type="button" onClick={() => { setEquipmentRoot('all'); setEquipmentSub(''); }} className={`rounded-2xl px-4 py-3 text-sm font-black ${equipmentRoot === 'all' ? 'bg-cyan-600 text-white shadow-sm' : 'bg-white text-slate-700 hover:bg-cyan-50'}`}>Wszystkie <span className="opacity-60">{models.filter((m: any) => ef10ShouldShowOfferModel(m)).length}</span></button>
-                  {equipmentCategoryRoots.map((root: any) => <button key={root.id} type="button" onClick={() => { setEquipmentRoot(String(root.id)); setEquipmentSub(''); }} className={`rounded-2xl px-4 py-3 text-sm font-black ${equipmentRoot === String(root.id) ? 'bg-cyan-600 text-white shadow-sm' : 'bg-white text-slate-700 hover:bg-cyan-50'}`}>{root.nazwa} <span className="opacity-60">{totalForEquipmentCategory(String(root.id))}</span></button>)}
+                <div className="flex max-h-[140px] flex-wrap gap-2 overflow-y-auto pr-1">
+                  <button type="button" onClick={() => { setEquipmentRoot('all'); setEquipmentSub(''); }} className={`rounded-xl px-3 py-2 text-xs font-black ${equipmentRoot === 'all' ? 'bg-cyan-600 text-white shadow-sm' : 'bg-white text-slate-700 hover:bg-cyan-50'}`}>Wszystkie <span className="opacity-60">{models.filter((m: any) => ef10ShouldShowOfferModel(m)).length}</span></button>
+                  {equipmentCategoryRoots.map((root: any) => <button key={root.id} type="button" onClick={() => { setEquipmentRoot(String(root.id)); setEquipmentSub(''); }} className={`rounded-xl px-3 py-2 text-xs font-black ${activeRoot === String(root.id) ? 'bg-cyan-600 text-white shadow-sm' : 'bg-white text-slate-700 hover:bg-cyan-50'}`}>{root.nazwa} <span className="opacity-60">{totalForEquipmentCategory(String(root.id))}</span></button>)}
                 </div>
               </div>
 
-              {activeEquipmentRootObj?.dzieci?.length > 0 && <div className="mt-4 rounded-[24px] bg-slate-50 p-4">
-                <p className="mb-3 text-[11px] font-black uppercase tracking-wider text-slate-400">Podkategorie</p>
-                <div className="flex max-h-[220px] flex-wrap gap-2 overflow-y-auto pr-1">
-                  <button type="button" onClick={() => setEquipmentSub('')} className={`rounded-2xl px-4 py-3 text-sm font-black ${!equipmentSub ? 'bg-slate-950 text-white shadow-sm' : 'bg-white text-slate-700 hover:bg-slate-100'}`}>Wszystkie w {activeEquipmentRootObj.nazwa}</button>
-                  {activeEquipmentRootObj.dzieci.map((child: any) => <button key={child.id} type="button" onClick={() => setEquipmentSub(String(child.id))} className={`rounded-2xl px-4 py-3 text-sm font-black ${equipmentSub === String(child.id) ? 'bg-slate-950 text-white shadow-sm' : 'bg-white text-slate-700 hover:bg-slate-100'}`}>{child.nazwa} <span className="opacity-60">{totalForEquipmentCategory(String(child.id))}</span></button>)}
+              {activeEquipmentRootObj?.dzieci?.length > 0 && <div className="mt-3 rounded-2xl bg-slate-50 p-3">
+                <p className="mb-2 text-[11px] font-black uppercase tracking-wider text-slate-400">Podkategorie</p>
+                <div className="flex max-h-[160px] flex-wrap gap-2 overflow-y-auto pr-1">
+                  <button type="button" onClick={() => setEquipmentSub('')} className={`rounded-xl px-3 py-2 text-xs font-black ${!equipmentSub ? 'bg-slate-950 text-white shadow-sm' : 'bg-white text-slate-700 hover:bg-slate-100'}`}>Wszystkie w {activeEquipmentRootObj.nazwa}</button>
+                  {activeEquipmentRootObj.dzieci.map((child: any) => <button key={child.id} type="button" onClick={() => setEquipmentSub(String(child.id))} className={`rounded-xl px-3 py-2 text-xs font-black ${equipmentSub === String(child.id) ? 'bg-slate-950 text-white shadow-sm' : 'bg-white text-slate-700 hover:bg-slate-100'}`}>{child.nazwa} <span className="opacity-60">{totalForEquipmentCategory(String(child.id))}</span></button>)}
                 </div>
               </div>}
             </aside>
@@ -742,28 +916,50 @@ function OfferPositionRow({ item, saving, onDraftChange, onUpdate, onDelete }: {
     setDraft({ ...draft, [field]: next });
   };
 
-  return <tr className="border-t align-top">
-    <td className="p-2">
-      <input className={`${inputClass} mb-2`} value={draft.nazwa || ''} onChange={(e) => setDraft({ ...draft, nazwa: e.target.value })} />
-      <select className={inputClass} value={draft.typ_pozycji || 'sprzet'} onChange={(e) => setDraft({ ...draft, typ_pozycji: e.target.value })}>{positionTypes.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}</select>
+  return <tr className="border-b border-slate-100 hover:bg-slate-50/50 transition">
+    <td className="px-4 py-3 align-top">
+      <input className={`${tableInputClass} mb-2`} value={draft.nazwa || ''} onChange={(e) => setDraft({ ...draft, nazwa: e.target.value })} placeholder="Nazwa pozycji" />
+      <select className={`${tableInputClass} text-xs text-slate-500`} value={draft.typ_pozycji || 'sprzet'} onChange={(e) => setDraft({ ...draft, typ_pozycji: e.target.value })}>{positionTypes.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}</select>
     </td>
-    <td className="p-2"><textarea className={`${inputClass} min-h-[76px]`} value={draft.opis || ''} onChange={(e) => setDraft({ ...draft, opis: e.target.value })} /></td>
-    <td className="p-2"><input type="number" step="0.01" className={`${inputClass} w-28`} value={draft.cena_netto || 0} onChange={(e) => setDraft({ ...draft, cena_netto: e.target.value })} /></td>
-    <td className="p-2"><Stepper value={draft.ilosc || 1} onMinus={() => bump('ilosc', -1, 0)} onPlus={() => bump('ilosc', 1, 0)} onChange={(value) => setDraft({ ...draft, ilosc: value })} /></td>
-    <td className="p-2"><Stepper value={draft.dni_pracy || 1} onMinus={() => bump('dni_pracy', -1, 0)} onPlus={() => bump('dni_pracy', 1, 0)} onChange={(value) => setDraft({ ...draft, dni_pracy: value })} /></td>
-    <td className="p-2"><Stepper value={draft.rabat_proc || 0} suffix="%" onMinus={() => bump('rabat_proc', -5, 0)} onPlus={() => bump('rabat_proc', 5, 0)} onChange={(value) => setDraft({ ...draft, rabat_proc: value })} /></td>
-    <td className="p-2"><input type="number" step="0.01" className={`${inputClass} w-20`} value={draft.vat || 23} onChange={(e) => setDraft({ ...draft, vat: e.target.value })} /></td>
-    <td className="p-2 text-center"><input type="checkbox" checked={Boolean(draft.widoczna_w_pdf)} onChange={(e) => setDraft({ ...draft, widoczna_w_pdf: e.target.checked })} /></td>
-    <td className="p-2 text-right font-black"><span className={changed ? 'text-cyan-700' : ''}>{money(changed ? predicted : (item.razem_netto || predicted))}</span>{Number(item.rabat_budzetowy_netto || 0) > 0 && <p className="text-xs text-emerald-700">budżet -{money(item.rabat_budzetowy_netto)}</p>}</td>
-    <td className="p-2 text-right"><div className="flex justify-end gap-2"><button onClick={() => onUpdate(patch)} disabled={!changed || saving} className="rounded-lg bg-cyan-600 px-3 py-2 text-xs font-black text-white disabled:opacity-40"><Save size={14} className="inline" /> {saving ? '...' : 'Zapisz'}</button><button onClick={onDelete} className="rounded-lg border border-red-200 px-3 py-2 text-xs font-black text-red-600"><Trash2 size={14} className="inline" /></button></div></td>
+    <td className="px-4 py-3 align-top">
+      <textarea className={`${tableInputClass} min-h-[76px] resize-none text-xs`} value={draft.opis || ''} onChange={(e) => setDraft({ ...draft, opis: e.target.value })} placeholder="Brak uwag..." />
+    </td>
+    <td className="px-4 py-3 align-top">
+      <input type="number" step="0.01" className={`${tableInputClass} text-right`} value={draft.cena_netto || 0} onChange={(e) => setDraft({ ...draft, cena_netto: e.target.value })} />
+    </td>
+    <td className="px-4 py-3 align-top">
+      <Stepper value={draft.ilosc || 1} onMinus={() => bump('ilosc', -1, 0)} onPlus={() => bump('ilosc', 1, 0)} onChange={(value) => setDraft({ ...draft, ilosc: value })} />
+    </td>
+    <td className="px-4 py-3 align-top">
+      <Stepper value={draft.dni_pracy || 1} onMinus={() => bump('dni_pracy', -1, 0)} onPlus={() => bump('dni_pracy', 1, 0)} onChange={(value) => setDraft({ ...draft, dni_pracy: value })} />
+    </td>
+    <td className="px-4 py-3 align-top">
+      <Stepper value={draft.rabat_proc || 0} suffix="%" onMinus={() => bump('rabat_proc', -5, 0)} onPlus={() => bump('rabat_proc', 5, 0)} onChange={(value) => setDraft({ ...draft, rabat_proc: value })} />
+    </td>
+    <td className="px-4 py-3 align-top">
+      <input type="number" step="0.01" className={`${tableInputClass} text-right`} value={draft.vat || 23} onChange={(e) => setDraft({ ...draft, vat: e.target.value })} />
+    </td>
+    <td className="px-4 py-3 align-middle text-center">
+      <input type="checkbox" className="w-5 h-5 rounded border-slate-300 text-cyan-600 focus:ring-cyan-500 cursor-pointer" checked={Boolean(draft.widoczna_w_pdf)} onChange={(e) => setDraft({ ...draft, widoczna_w_pdf: e.target.checked })} title="Widoczna na wygenerowanym pliku PDF" />
+    </td>
+    <td className="px-4 py-3 align-middle text-right">
+      <span className={`text-base font-black ${changed ? 'text-cyan-700' : 'text-slate-800'}`}>{money(changed ? predicted : (item.razem_netto || predicted))}</span>
+      {Number(item.rabat_budzetowy_netto || 0) > 0 && <p className="text-xs font-bold text-emerald-600 mt-1">rabat budżet. -{money(item.rabat_budzetowy_netto)}</p>}
+    </td>
+    <td className="px-4 py-3 align-middle text-right">
+      <div className="flex justify-end gap-2">
+        <button onClick={() => onUpdate(patch)} disabled={!changed || saving} className="rounded-lg bg-cyan-600 px-3 py-2 text-xs font-black text-white hover:bg-cyan-700 transition shadow-sm disabled:opacity-40 disabled:shadow-none"><Save size={14}/></button>
+        <button onClick={onDelete} className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-black text-red-600 hover:bg-red-100 transition shadow-sm"><Trash2 size={14} /></button>
+      </div>
+    </td>
   </tr>;
 }
 
 function Stepper({ value, suffix, onMinus, onPlus, onChange }: { value: any; suffix?: string; onMinus: () => void; onPlus: () => void; onChange: (value: string) => void }) {
-  return <div className="flex w-32 items-center overflow-hidden rounded-xl border border-slate-200 bg-white">
-    <button type="button" onClick={onMinus} className="px-2 py-2 font-black text-slate-500 hover:bg-slate-50">−</button>
-    <input type="number" step="0.01" className="w-full border-0 px-1 py-2 text-center text-sm font-black outline-none" value={value} onChange={(e) => onChange(e.target.value)} />
-    {suffix && <span className="pr-1 text-xs font-black text-slate-400">{suffix}</span>}
-    <button type="button" onClick={onPlus} className="px-2 py-2 font-black text-slate-500 hover:bg-slate-50">+</button>
+  return <div className="flex w-full min-w-[90px] max-w-[120px] items-center overflow-hidden rounded-xl border border-slate-200 bg-slate-50 focus-within:border-cyan-500 focus-within:bg-white transition shadow-sm">
+    <button type="button" onClick={onMinus} className="px-2.5 py-2 font-black text-slate-500 hover:bg-slate-200 hover:text-slate-800 transition">−</button>
+    <input type="number" step="0.01" className="w-full border-0 bg-transparent px-1 py-1.5 text-center text-sm font-black outline-none" value={value} onChange={(e) => onChange(e.target.value)} />
+    {suffix && <span className="pr-2 text-xs font-black text-slate-400">{suffix}</span>}
+    <button type="button" onClick={onPlus} className="px-2.5 py-2 font-black text-slate-500 hover:bg-slate-200 hover:text-slate-800 transition">+</button>
   </div>;
 }
