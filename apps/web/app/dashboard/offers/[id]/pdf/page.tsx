@@ -78,7 +78,7 @@ export default function OfferPdfPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  // Konfiguracja widoku z parametrów URL (przesłanych z Modala na stronie oferty)
+  // Konfiguracja widoku z parametrów URL (przesłanych z Modala opcji)
   const showUnitPrices = searchParams.get('showUnitPrices') !== 'false';
   const showDiscounts = searchParams.get('showDiscounts') !== 'false';
   const showDays = searchParams.get('showDays') !== 'false';
@@ -113,17 +113,15 @@ export default function OfferPdfPage() {
     return { netto, vat, brutto };
   }, [sections]);
 
-  if (loading) {
-    return <div className="pdf-loading">Ładowanie oferty...</div>;
-  }
+  // Inteligentne ukrywanie kolumny z rabatami, jeżeli żaden wpis na ofercie nie posiada zniżki
+  const hasAnyDiscount = useMemo(() => {
+    return sections.some((s: any) => s.pozycje.some((p: any) => Number(p.rabat_proc) > 0 || Number(p.rabat_netto) > 0));
+  }, [sections]);
+  const actuallyShowDiscounts = showDiscounts && hasAnyDiscount;
 
-  if (error) {
-    return <div className="pdf-loading text-red-700">{error}</div>;
-  }
-
-  if (!offer) {
-    return <div className="pdf-loading">Nie znaleziono oferty.</div>;
-  }
+  if (loading) return <div className="pdf-loading">Ładowanie oferty...</div>;
+  if (error) return <div className="pdf-loading text-red-700">{error}</div>;
+  if (!offer) return <div className="pdf-loading">Nie znaleziono oferty.</div>;
 
   const version = offer.wersje?.[0];
   const issueDate = offer.data_sporzadzenia || offer.data_utworzenia || new Date();
@@ -455,6 +453,7 @@ export default function OfferPdfPage() {
           letter-spacing: -0.04em;
         }
 
+
         .pdf-footer {
           display: flex;
           justify-content: space-between;
@@ -554,10 +553,10 @@ export default function OfferPdfPage() {
 
             <div className="pdf-card">
               <h2>Wydarzenie</h2>
-              <p><strong>{text(event?.nazwa)}</strong></p>
-              <p>Start: {date(event?.data_start, true)}</p>
-              <p>Koniec: {date(event?.data_koniec, true)}</p>
-              <p>Miejsce: {text(event?.miejsce?.nazwa || event?.miejsce_reczne)}</p>
+              <p><strong>{text(event?.nazwa || (offer.wynajem ? `Wynajem #${offer.wynajem.numer}` : 'Brak przypisania'))}</strong></p>
+              {event?.data_start && <p>Start: {date(event.data_start, true)}</p>}
+              {event?.data_koniec && <p>Koniec: {date(event.data_koniec, true)}</p>}
+              {event?.miejsce?.nazwa || event?.miejsce_reczne ? <p>Miejsce: {text(event.miejsce?.nazwa || event.miejsce_reczne)}</p> : null}
             </div>
 
             <div className="pdf-card">
@@ -573,7 +572,7 @@ export default function OfferPdfPage() {
 
           {sections.map((section: any) => (
             <section className="pdf-section" key={section.id || section.nazwa}>
-              <div className="pdf-section-header">
+              <div className="pdf-section-header" style={{ background: `linear-gradient(90deg, #0f172a, ${section.kolor || '#0891b2'})` }}>
                 <div>
                   <h2>{text(section.nazwa, 'Sekcja')}</h2>
                   {section.opis && <p>{section.opis}</p>}
@@ -590,7 +589,7 @@ export default function OfferPdfPage() {
                     {showUnitPrices && <th className="pdf-text-right">Cena</th>}
                     <th className="pdf-text-right">Ilość</th>
                     {showDays && <th className="pdf-text-right">Dni</th>}
-                    {showDiscounts && <th className="pdf-text-right">Rabat</th>}
+                    {actuallyShowDiscounts && <th className="pdf-text-right">Rabat</th>}
                     <th className="pdf-text-right">Netto</th>
                   </tr>
                 </thead>
@@ -614,7 +613,9 @@ export default function OfferPdfPage() {
                       {showUnitPrices && <td className="pdf-text-right">{money(p.cena_netto)}</td>}
                       <td className="pdf-text-right font-bold">{asNumber(p.ilosc, 1)} {p.model?.jednostka || 'szt.'}</td>
                       {showDays && <td className="pdf-text-right">{asNumber(p.dni_pracy, 1)}</td>}
-                      {showDiscounts && <td className="pdf-text-right">{asNumber(p.rabat_proc, 0)}%</td>}
+                      {actuallyShowDiscounts && (
+                         <td className="pdf-text-right">{asNumber(p.rabat_proc, 0) > 0 ? `${asNumber(p.rabat_proc, 0)}%` : '-'}</td>
+                      )}
                       <td className="pdf-text-right"><strong>{money(lineNetto(p))}</strong></td>
                     </tr>
                   ))}
