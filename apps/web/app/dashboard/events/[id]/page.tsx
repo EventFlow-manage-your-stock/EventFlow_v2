@@ -4,50 +4,31 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import {
-  ArrowLeft,
-  Box,
-  CheckSquare,
-  ChevronDown,
-  ChevronRight,
-  Copy,
-  DollarSign,
-  FileArchive,
-  FileText,
-  History,
-  Loader2,
-  MapPin,
-  MessageSquare,
-  Plus,
-  Save,
-  Search,
-  Trash2,
-  Truck,
-  Users,
-  Wrench,
-  Calendar
+  ArrowLeft, Box, CheckSquare, ChevronDown, ChevronRight, Copy, DollarSign,
+  FileArchive, FileText, History, Loader2, MapPin, MessageSquare, Plus, Save,
+  Search, Trash2, Truck, Users, Wrench, Calendar, Send, Download, Paperclip, Phone, CheckCircle2, Flag, Car, User, UserPlus, UserMinus, UserCheck, UserX, X, Edit2, Clock
 } from 'lucide-react';
 import { api } from '../../../../lib/api';
 import { Button, Card, Field, inputClass, SearchableSelect} from '../../../../components/ProductUI';
-import { DataTable } from '../../../../components/DataTable';
 import { OfferDuplicateTargetModal } from '../../../../components/OfferDuplicateTargetModal';
 import { googleMapsDirectionsUrl } from '../../../../lib/googleMaps';
 import { QuickAddCrmModal } from '../../../../components/QuickAddCrmModal';
+import { SimpleModal } from '../../../../components/SimpleModal';
+import { useAuthStore } from '../../../../store/auth.store';
 
 // ============================================================================
 // GLOBALNE HELPERY
 // ============================================================================
 
 const TABS = [
-  { id: 'chat', label: 'Chat', icon: MessageSquare },
+  { id: 'chat', label: 'Chat Grupowy', icon: MessageSquare },
   { id: 'zadania', label: 'Zadania', icon: CheckSquare },
-  { id: 'szczegoly', label: 'Szczegóły', icon: FileText },
-  { id: 'sprzet', label: 'Sprzęt', icon: Box },
-  { id: 'sprzet_zew', label: 'Sprzęt zewnętrzny', icon: Wrench },
-  { id: 'zalaczniki', label: 'Załączniki', icon: FileArchive },
-  { id: 'oferty', label: 'Oferty', icon: DollarSign },
   { id: 'ekipa', label: 'Ekipa', icon: Users },
   { id: 'flota', label: 'Flota', icon: Truck },
-  { id: 'historia', label: 'Historia', icon: History },
+  { id: 'sprzet', label: 'Sprzęt (Wydania/Zwroty)', icon: Box },
+  { id: 'zalaczniki', label: 'Załączniki', icon: FileArchive },
+  { id: 'oferty', label: 'Oferty', icon: DollarSign },
+  { id: 'historia', label: 'Historia Zmian', icon: History },
 ];
 
 function toSelect(v: any) { return v === null || v === undefined ? '' : String(v); }
@@ -55,7 +36,7 @@ function toDateInput(v: any) { return v ? String(v).slice(0, 16) : ''; }
 function numOrNull(v: any) { return v === '' || v === null || v === undefined ? null : Number(v); }
 function strOrNull(v: any) { return v === '' || v === null || v === undefined ? null : String(v); }
 function money(v: any) { return `${Number(v || 0).toLocaleString('pl-PL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} zł`; }
-function dateTime(v: any) { return v ? new Date(v).toLocaleString('pl-PL') : '-'; }
+function dateTime(v: any) { return v ? new Date(v).toLocaleString('pl-PL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-'; }
 function initials(u: any) { return u?.imie || u?.nazwisko ? `${u?.imie?.[0] || ''}${u?.nazwisko?.[0] || ''}`.toUpperCase() : '?'; }
 function numberOrZero(value: any) { const n = Number(value); return Number.isFinite(n) ? n : 0; }
 function modelCategoryId(model: any) { return String(model?.kategoria?.id || model?.id_kategorii || model?.kategoria_id || ''); }
@@ -119,7 +100,7 @@ function categoryPath(categoryId: string, byId: Map<string, any>) {
 }
 
 // ============================================================================
-// WMS CORE HELPERS - GLOBAL RENAME RACK -> ZESTAW
+// WMS CORE HELPERS - SPRZĘT / WYDANIA / PRZYJĘCIA
 // ============================================================================
 
 function normalizeCode(v: any) {
@@ -163,6 +144,11 @@ function isQuantityModel(model: any): boolean {
   );
 }
 
+function isQuantityOnly(row: any): boolean {
+  if (!row) return false;
+  return Boolean(row.rowType === 'ilosciowy_model' || row.quantityOnly === true || isQuantityModel(row));
+}
+
 function isCase(row: any): boolean {
   if (!row || isZestaw(row)) return false;
   const txt = getEquipmentText(row);
@@ -185,6 +171,7 @@ function modelNameOf(row: any) { return row?.nazwa_modelu || row?.model?.nazwa |
 function modelCategoryIdOf(row: any) { return row?.id_kategorii || row?.model?.id_kategorii || row?.model?.kategoria?.id || row?.egzemplarz?.model?.id_kategorii || row?.egzemplarz?.model?.kategoria?.id || modelCategoryId(row?.model || row); }
 function numberOf(row: any) { const egz = row?.egzemplarz || row; return egz?.numer_egzemplarza || egz?.numer_urzadzenia || egz?.sn || egz?.kod_kreskowy || ''; }
 
+
 // ============================================================================
 // KOMPONENT GŁÓWNY (Szczegóły Wydarzenia)
 // ============================================================================
@@ -194,26 +181,26 @@ export default function EventDetailsPage() {
   const router = useRouter();
   const isNew = params.id === 'new';
   
-  const [activeTab, setActiveTab] = useState('szczegoly');
+  const [activeTab, setActiveTab] = useState('chat');
   const [tabSearchQuery, setTabSearchQuery] = useState('');
   
   const [eventData, setEventData] = useState<any>(null);
   const [form, setForm] = useState<any>({ data_start: '', data_koniec: '', budzet_netto: '' });
-  const [dict, setDict] = useState<any>({ typy: [], statusy: [], statusyMagazynowe: [], statusyKsiegowe: [], kontrahenci: [], kontakty: [], miejsca: [], uzytkownicy: [] });
+  const [dict, setDict] = useState<any>({ typy: [], statusy: [], statusyMagazynowe: [], statusyKsiegowe: [], kontrahenci: [], kontakty: [], miejsca: [], uzytkownicy: [], pojazdy: [] });
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [offerName, setOfferName] = useState('');
   const [duplicateTarget, setDuplicateTarget] = useState<any>(null);
-  
   const [crmModalMode, setCrmModalMode] = useState<'kontrahent' | 'kontakt' | null>(null);
 
-  useEffect(() => {
-    setTabSearchQuery('');
-  }, [activeTab]);
+  // States for Modals
+  const [showEtapModal, setShowEtapModal] = useState(false);
+
+  useEffect(() => { setTabSearchQuery(''); }, [activeTab]);
 
   async function loadDictionaries() {
-    const [typy, statusy, statusyMagazynowe, statusyKsiegowe, kontrahenci, miejsca, uzytkownicy] = await Promise.all([
+    const [typy, statusy, statusyMagazynowe, statusyKsiegowe, kontrahenci, miejsca, uzytkownicy, pojazdy] = await Promise.all([
       api.get('/api/slowniki/typy-wydarzen').catch(() => ({ data: [] })),
       api.get('/api/slowniki/statusy-wydarzenia').catch(() => ({ data: [] })),
       api.get('/api/slowniki/statusy-magazynowe').catch(() => ({ data: [] })),
@@ -221,6 +208,7 @@ export default function EventDetailsPage() {
       api.get('/api/slowniki/kontrahenci').catch(() => ({ data: [] })),
       api.get('/api/slowniki/miejsca').catch(() => ({ data: [] })),
       api.get('/api/slowniki/uzytkownicy').catch(() => ({ data: [] })),
+      api.get('/api/flota/pojazdy').catch(() => ({ data: [] })),
     ]);
     
     setDict((prev: any) => ({
@@ -232,6 +220,7 @@ export default function EventDetailsPage() {
       kontrahenci: kontrahenci.data || [],
       miejsca: miejsca.data || [],
       uzytkownicy: uzytkownicy.data || [],
+      pojazdy: pojazdy.data || [],
     }));
   }
 
@@ -335,10 +324,6 @@ export default function EventDetailsPage() {
     router.push(`/dashboard/offers/${r.data.id}`);
   }
 
-  async function duplicateOffer(offer: any) {
-    setDuplicateTarget(offer);
-  }
-
   function handleCrmSuccess(type: 'kontrahent' | 'kontakt', newData: any) {
     if (type === 'kontrahent') {
       setDict((prev: any) => ({ ...prev, kontrahenci: [...prev.kontrahenci, newData] }));
@@ -350,58 +335,66 @@ export default function EventDetailsPage() {
     setCrmModalMode(null);
   }
 
-  if (loading) return <div className="flex h-96 items-center justify-center"><Loader2 className="animate-spin text-cyan-600" /> <span className="ml-3 font-bold text-slate-500">Ładowanie danych wydarzenia...</span></div>;
+  if (loading) return <div className="flex h-96 items-center justify-center"><Loader2 className="animate-spin text-[#04e0ff]" /> <span className="ml-3 font-bold text-slate-500">Ładowanie danych wydarzenia...</span></div>;
 
   const offers = eventData?.oferty || [];
   const maps = googleMapsDirectionsUrl(form.adres_reczny);
   const currentManager = dict.uzytkownicy.find((u: any) => String(u.id) === String(form.id_managera)) || eventData?.manager;
 
   return (
-    <div className="mx-auto max-w-[1800px] space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2 text-sm font-bold text-slate-500">
-          <button onClick={() => router.back()} title="Wraca do poprzednio odwiedzonej strony" className="inline-flex items-center gap-1 rounded-xl border px-3 py-2 hover:bg-slate-50"><ArrowLeft size={16} />Powrót</button>
-          <span>/</span>
-          <Link href="/dashboard/calendar" className="hover:text-cyan-700">Kalendarz</Link>
-          <span>/</span>
-          <span className="font-black text-slate-900">{isNew ? 'Nowe wydarzenie' : eventData?.nazwa}</span>
+    <div className="mx-auto max-w-[1800px] space-y-6 animate-fade-in-up">
+      {/* NAGŁÓWEK */}
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div>
+          <div className="flex items-center gap-2 text-sm font-bold text-slate-500 dark:text-slate-400 mb-2">
+            <button onClick={() => router.back()} title="Wraca do poprzednio odwiedzonej strony" className="inline-flex items-center gap-1 rounded-xl border border-slate-200 dark:border-white/10 px-3 py-1.5 hover:bg-slate-50 dark:hover:bg-white/5 transition"><ArrowLeft size={14} />Powrót</button>
+            <span>/</span>
+            <Link href="/dashboard/calendar" className="hover:text-[#04e0ff] transition">Kalendarz</Link>
+            <span>/</span>
+            <span className="font-black text-slate-900 dark:text-white">{isNew ? 'Nowe wydarzenie' : eventData?.nazwa}</span>
+          </div>
+          <h1 className="text-3xl font-black tracking-tight text-slate-900 dark:text-white flex items-center gap-3">
+             {isNew ? 'Utwórz Wydarzenie' : 'Panel Operacyjny'}
+          </h1>
         </div>
         <div className="flex flex-wrap gap-2">
           {!isNew && (form.data_start || eventData?.data_start) && (
-            <Button variant="secondary" onClick={() => { router.push(`/dashboard/calendar?date=${(form.data_start || eventData?.data_start).slice(0, 10)}`); }} title="Przenosi do kalendarza, ustawiając go od razu na dacie tego wydarzenia">
-              <Calendar size={16} className="inline mr-1 text-cyan-600" /> Cofnij do daty w kalendarzu
+            <Button variant="secondary" onClick={() => { router.push(`/dashboard/calendar?date=${(form.data_start || eventData?.data_start).slice(0, 10)}`); }} title="Przenosi do kalendarza na tę datę">
+              <Calendar size={16} className="inline mr-1 text-[#04e0ff]" /> Zobacz w kalendarzu
             </Button>
           )}
           {!isNew && <Button variant="danger" onClick={remove}><Trash2 size={16} className="inline mr-1" /> Usuń</Button>}
-          <Button onClick={submit} disabled={saving}><Save size={16} className="inline mr-1" /> {saving ? 'Zapisywanie...' : 'Zapisz'}</Button>
+          <Button onClick={submit} disabled={saving}><Save size={16} className="inline mr-1" /> {saving ? 'Zapisywanie...' : 'Zapisz zmiany'}</Button>
         </div>
       </div>
 
       {error && <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-700">{error}</div>}
 
       {!isNew && (
-        <div className="grid gap-3 md:grid-cols-4">
-          <Metric label="Numer" value={eventData?.numer || `#${eventData?.id}`} />
-          <Metric label="Oferty" value={`${offers.length}`} />
-          <Metric label="Zakres" value={`${dateTime(eventData?.data_start)} → ${dateTime(eventData?.data_koniec)}`} />
-          <Metric label="Założony budżet" value={eventData?.budzet_netto ? money(eventData.budzet_netto) : 'Brak danych'} />
+        <div className="grid gap-4 md:grid-cols-4">
+          <Metric label="Numer Eventu" value={eventData?.numer || `#${eventData?.id}`} />
+          <Metric label="Przypisane Oferty" value={`${offers.length}`} />
+          <Metric label="Ramy Czasowe" value={`${dateTime(eventData?.data_start).split(' ')[0]} → ${dateTime(eventData?.data_koniec).split(' ')[0]}`} />
+          <Metric label="Budżet" value={eventData?.budzet_netto ? money(eventData.budzet_netto) : 'Brak limitu'} />
         </div>
       )}
 
-      <form onSubmit={submit} className="grid gap-5 xl:grid-cols-[1.1fr_.9fr_1.1fr]">
+      <form onSubmit={submit} className="grid gap-6 xl:grid-cols-[1.1fr_.9fr_1.1fr]">
         <Card className="space-y-4">
-          <div className="flex items-start justify-between gap-3">
+          <div className="flex items-start justify-between gap-3 mb-2">
             <div>
-              <p className="text-[11px] font-black uppercase tracking-[0.25em] text-cyan-600">Dane wydarzenia</p>
-              <h1 className="mt-1 text-2xl font-black text-slate-900">{form.nazwa || 'Nowe wydarzenie'}</h1>
+              <p className="text-[10px] font-black uppercase tracking-[0.25em] text-[#04e0ff]">Podstawowe Informacje</p>
+              <h2 className="mt-1 text-xl font-black text-slate-900 dark:text-white">{form.nazwa || 'Nowe wydarzenie'}</h2>
             </div>
-            {eventData?.status && <span className="rounded-xl px-3 py-2 text-sm font-black text-white" style={{ backgroundColor: eventData.status.kolor || '#0891B2' }}>{eventData.status.ikona || '●'} {eventData.status.nazwa}</span>}
-            {eventData?.status_magazynowy && <span className="rounded-xl px-3 py-2 text-sm font-black text-white" style={{ backgroundColor: eventData.status_magazynowy.kolor || '#F97316' }}>{eventData.status_magazynowy.ikona || '📦'} {eventData.status_magazynowy.nazwa}</span>}
-            {eventData?.status_ksiegowy && <span className="rounded-xl px-3 py-2 text-sm font-black text-white" style={{ backgroundColor: eventData.status_ksiegowy.kolor || '#22C55E' }}>{eventData.status_ksiegowy.ikona || '💰'} {eventData.status_ksiegowy.nazwa}</span>}
+            <div className="flex flex-wrap gap-2 justify-end">
+               {eventData?.status && <span className="rounded-xl px-3 py-1.5 text-[11px] font-black text-white shadow-sm" style={{ backgroundColor: eventData.status.kolor || '#0891B2' }}>{eventData.status.ikona || '●'} {eventData.status.nazwa}</span>}
+               {eventData?.status_magazynowy && <span className="rounded-xl px-3 py-1.5 text-[11px] font-black text-white shadow-sm" style={{ backgroundColor: eventData.status_magazynowy.kolor || '#F97316' }}>{eventData.status_magazynowy.ikona || '📦'} {eventData.status_magazynowy.nazwa}</span>}
+               {eventData?.status_ksiegowy && <span className="rounded-xl px-3 py-1.5 text-[11px] font-black text-white shadow-sm" style={{ backgroundColor: eventData.status_ksiegowy.kolor || '#22C55E' }}>{eventData.status_ksiegowy.ikona || '💰'} {eventData.status_ksiegowy.nazwa}</span>}
+            </div>
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
-            <Field label="Nazwa"><input className={inputClass} value={form.nazwa || ''} onChange={(e) => setForm({ ...form, nazwa: e.target.value })} required /></Field>
+            <Field label="Nazwa (Odbiorca / Projekt)"><input className={inputClass} value={form.nazwa || ''} onChange={(e) => setForm({ ...form, nazwa: e.target.value })} required /></Field>
             
             <Field label="Założony budżet netto (PLN)">
               <div className="relative">
@@ -422,12 +415,12 @@ export default function EventDetailsPage() {
 
             <Field label="Koniec"><input type="datetime-local" className={inputClass} value={form.data_koniec || ''} onChange={(e) => setForm({ ...form, data_koniec: e.target.value })} /></Field>
             
-            <Field label="Klient">
+            <Field label="Klient z bazy">
               <div className="flex gap-2">
                 <div className="flex-1 min-w-0">
                   <SearchableSelect value={form.id_kontrahenta || ''} onChange={(v) => setForm({ ...form, id_kontrahenta: v, id_kontaktu: '' })} options={dict.kontrahenci.map((k: any) => ({ value: String(k.id), label: k.nazwa }))} placeholder="Brak" />
                 </div>
-                <button type="button" onClick={() => setCrmModalMode('kontrahent')} className="flex shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 px-3 text-slate-600 hover:bg-slate-100 transition"><Plus size={18} /></button>
+                <button type="button" onClick={() => setCrmModalMode('kontrahent')} className="flex shrink-0 items-center justify-center rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 px-3 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/10 transition"><Plus size={18} /></button>
               </div>
             </Field>
             
@@ -436,7 +429,7 @@ export default function EventDetailsPage() {
                 <div className="flex-1 min-w-0">
                   <SearchableSelect value={form.id_kontaktu || ''} onChange={(v) => setForm({ ...form, id_kontaktu: v })} options={dict.kontakty?.map((k: any) => ({ value: String(k.id), label: `${k.imie} ${k.nazwisko} ${k.stanowisko ? `(${k.stanowisko})` : ''}` })) || []} placeholder={form.id_kontrahenta ? "Wybierz osobę..." : "Najpierw wybierz klienta"} disabled={!form.id_kontrahenta} />
                 </div>
-                <button type="button" disabled={!form.id_kontrahenta} onClick={() => setCrmModalMode('kontakt')} className="flex shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 px-3 text-slate-600 hover:bg-slate-100 transition disabled:opacity-50 disabled:pointer-events-none"><Plus size={18} /></button>
+                <button type="button" disabled={!form.id_kontrahenta} onClick={() => setCrmModalMode('kontakt')} className="flex shrink-0 items-center justify-center rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 px-3 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/10 transition disabled:opacity-50 disabled:pointer-events-none"><Plus size={18} /></button>
               </div>
             </Field>
 
@@ -444,22 +437,22 @@ export default function EventDetailsPage() {
               <SearchableSelect value={form.id_miejsca || ''} onChange={(v) => setForm({ ...form, id_miejsca: v })} options={dict.miejsca.map((m: any) => ({ value: String(m.id), label: m.nazwa }))} placeholder="Wpiszę ręcznie (lub wybierz)" />
             </Field>
             
-             <Field label="Miejsce ręcznie"><input className={inputClass} value={form.miejsce_reczne || ''} onChange={(e) => setForm({ ...form, miejsce_reczne: e.target.value })} /></Field>
+             <Field label="Miejsce ręcznie (Gdy brak w bazie)"><input className={inputClass} value={form.miejsce_reczne || ''} onChange={(e) => setForm({ ...form, miejsce_reczne: e.target.value })} /></Field>
           </div>
           
-          <div className="grid gap-4 md:grid-cols-1 border-t border-slate-100 pt-4 mt-2">
+          <div className="grid gap-4 md:grid-cols-1 border-t border-slate-100 dark:border-white/10 pt-5 mt-4">
              <Field label="Adres docelowy / Lokalizacja">
                <div className="flex gap-2">
                  <input className={inputClass} value={form.adres_reczny || ''} onChange={(e) => setForm({ ...form, adres_reczny: e.target.value })} placeholder="Wpisz dokładny adres, np. ul. Długa 1, Poznań" />
-                 {maps && <a className="flex items-center justify-center gap-2 rounded-xl bg-cyan-50 px-4 py-2 text-sm font-black text-cyan-700 hover:bg-cyan-100 transition whitespace-nowrap" href={maps} target="_blank" rel="noreferrer"><MapPin size={16} /> Otwórz trasę</a>}
+                 {maps && <a className="flex items-center justify-center gap-2 rounded-xl bg-cyan-50 dark:bg-cyan-500/10 px-4 py-2 text-sm font-black text-cyan-700 dark:text-cyan-400 hover:bg-cyan-100 dark:hover:bg-cyan-500/20 transition whitespace-nowrap" href={maps} target="_blank" rel="noreferrer"><MapPin size={16} /> Otwórz trasę</a>}
                </div>
              </Field>
-             <div className="h-64 w-full overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 shadow-sm relative">
+             <div className="h-64 w-full overflow-hidden rounded-2xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-[#02080a] shadow-sm relative">
                {form.adres_reczny ? (
                  <iframe
                    width="100%"
                    height="100%"
-                   style={{ border: 0 }}
+                   style={{ border: 0, filter: 'contrast(0.9)' }} // Lekki kontrast dla mapy
                    loading="lazy"
                    allowFullScreen
                    referrerPolicy="no-referrer-when-downgrade"
@@ -474,103 +467,188 @@ export default function EventDetailsPage() {
              </div>
           </div>
 
-          <Field label="Opis"><textarea className={`${inputClass} min-h-24`} value={form.opis || ''} onChange={(e) => setForm({ ...form, opis: e.target.value })} /></Field>
+          <Field label="Notatki / Wytyczne ogólne"><textarea className={`${inputClass} min-h-[100px] resize-none`} value={form.opis || ''} onChange={(e) => setForm({ ...form, opis: e.target.value })} /></Field>
         </Card>
 
-        <Card className="space-y-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-slate-200 text-lg font-black text-slate-600">{initials(currentManager)}</div>
-            <div>
-              <p className="font-black text-slate-900">{currentManager ? `${currentManager.imie || ''} ${currentManager.nazwisko || ''}`.trim() : 'Brak managera'}</p>
-              <p className="text-sm font-bold text-slate-400">EventManager</p>
+        <div className="flex flex-col gap-6">
+          <Card className="space-y-4">
+            <div className="flex items-center gap-4">
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-slate-100 to-slate-200 dark:from-white/10 dark:to-white/5 text-lg font-black text-slate-600 dark:text-white shadow-sm border border-slate-200 dark:border-white/10">
+                {initials(currentManager)}
+              </div>
+              <div className="min-w-0">
+                <p className="font-black text-slate-900 dark:text-white text-lg truncate">{currentManager ? `${currentManager.imie || ''} ${currentManager.nazwisko || ''}`.trim() : 'Brak managera'}</p>
+                <p className="text-sm font-bold text-[#04e0ff] uppercase tracking-wider mt-0.5">Event Manager</p>
+              </div>
             </div>
-          </div>
-          <Field label="Manager">
-            <SearchableSelect value={form.id_managera || ''} onChange={(v) => setForm({ ...form, id_managera: v })} options={dict.uzytkownicy.map((u: any) => ({ value: String(u.id), label: `${u.imie} ${u.nazwisko}` }))} placeholder="Brak" />
-          </Field>
-          
-          <div className="grid gap-3 md:grid-cols-2">
-            <Info label="Waga sprzętu" value="0 kg" />
-            <Info label="Objętość" value="0.0 m³" />
-            <Info label="Pobór prądu" value="0 W" />
-            <Info label="Status" value="OK" />
-          </div>
-
-          <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
-            <p className="mb-3 text-sm font-black text-slate-700">Statusy poboczne</p>
-            <div className="grid gap-3">
-              <Field label="Magazyn">
-                <SearchableSelect value={form.id_statusu_magazynowego || ''} onChange={(v) => setForm({ ...form, id_statusu_magazynowego: v })} options={dict.statusyMagazynowe.map((s: any) => ({ value: String(s.id), label: `${s.ikona || '📦'} ${s.nazwa}` }))} placeholder="Brak" />
-              </Field>
-              <Field label="Księgowość">
-                <SearchableSelect value={form.id_statusu_ksiegowego || ''} onChange={(v) => setForm({ ...form, id_statusu_ksiegowego: v })} options={dict.statusyKsiegowe.map((s: any) => ({ value: String(s.id), label: `${s.ikona || '💰'} ${s.nazwa}` }))} placeholder="Brak" />
+            <div className="pt-2">
+              <Field label="Zmień Managera Projektu">
+                <SearchableSelect value={form.id_managera || ''} onChange={(v) => setForm({ ...form, id_managera: v })} options={dict.uzytkownicy.map((u: any) => ({ value: String(u.id), label: `${u.imie} ${u.nazwisko}` }))} placeholder="Brak" />
               </Field>
             </div>
-          </div>
-        </Card>
-
-        <Card>
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <div>
-              <p className="text-[11px] font-black uppercase tracking-[0.25em] text-cyan-600">Harmonogram</p>
-              <h2 className="text-xl font-black text-slate-900">Etapy wydarzenia</h2>
+            
+            <div className="grid gap-3 grid-cols-2 pt-4 border-t border-slate-100 dark:border-white/10 mt-2">
+              <Info label="Waga sprzętu" value="Wymaga planu" />
+              <Info label="Objętość" value="Wymaga planu" />
             </div>
-            <Button variant="secondary"><Plus size={16} className="inline" /> Dodaj etap</Button>
-          </div>
-          <div className="space-y-2">
-            {(eventData?.etapy || []).map((etap: any) => <div key={etap.id} className="rounded-2xl border border-slate-100 p-3"><p className="font-black text-slate-900">{etap.nazwa}</p><p className="text-sm font-bold text-slate-400">{dateTime(etap.data_start)} → {dateTime(etap.data_koniec)}</p></div>)}
-            {!eventData?.etapy?.length && <p className="rounded-2xl border border-dashed border-slate-200 p-8 text-center text-sm font-bold text-slate-400">Brak etapów. Dodamy pełny CRUD etapów w kolejnym kroku.</p>}
-          </div>
-        </Card>
+
+            <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 p-5 mt-4">
+              <p className="mb-3 text-[11px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">Statusy Poboczne</p>
+              <div className="grid gap-4">
+                <Field label="Magazyn & Logistyka">
+                  <SearchableSelect value={form.id_statusu_magazynowego || ''} onChange={(v) => setForm({ ...form, id_statusu_magazynowego: v })} options={dict.statusyMagazynowe.map((s: any) => ({ value: String(s.id), label: `${s.ikona || '📦'} ${s.nazwa}` }))} placeholder="Brak" />
+                </Field>
+                <Field label="Księgowość">
+                  <SearchableSelect value={form.id_statusu_ksiegowego || ''} onChange={(v) => setForm({ ...form, id_statusu_ksiegowego: v })} options={dict.statusyKsiegowe.map((s: any) => ({ value: String(s.id), label: `${s.ikona || '💰'} ${s.nazwa}` }))} placeholder="Brak" />
+                </Field>
+              </div>
+            </div>
+          </Card>
+
+          <Card className="flex-1 flex flex-col">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.25em] text-[#04e0ff]">Harmonogram</p>
+                <h2 className="text-xl font-black text-slate-900 dark:text-white mt-1">Etapy (Stages)</h2>
+              </div>
+              <Button variant="secondary" onClick={() => setShowEtapModal(true)}><Plus size={16} className="inline" /> Dodaj</Button>
+            </div>
+            <div className="space-y-3 flex-1 overflow-y-auto pr-1 custom-scrollbar">
+              {(eventData?.etapy || []).map((etap: any) => (
+                <div key={etap.id} className="rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#08151a] p-4 shadow-sm flex justify-between items-center group transition-colors hover:border-cyan-300 dark:hover:border-cyan-500/50">
+                  <div className="min-w-0 pr-4">
+                    <p className="font-black text-slate-900 dark:text-white truncate">{etap.nazwa}</p>
+                    <p className="text-[11px] font-bold text-[#04e0ff] mt-1">{dateTime(etap.data_start)} → {dateTime(etap.data_koniec)}</p>
+                    {etap.opis && <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mt-1.5 truncate">{etap.opis}</p>}
+                  </div>
+                  <button type="button" onClick={async () => {
+                     if(confirm('Usunąć etap?')) {
+                       await api.delete(`/api/wydarzenia/${params.id}/etapy/${etap.id}`);
+                       loadEvent();
+                     }
+                  }} className="text-slate-300 dark:text-slate-600 hover:text-red-500 dark:hover:text-red-400 transition opacity-0 group-hover:opacity-100 p-2">
+                    <Trash2 size={18}/>
+                  </button>
+                </div>
+              ))}
+              {!eventData?.etapy?.length && (
+                 <div className="h-full flex flex-col items-center justify-center p-8 text-center border border-dashed border-slate-200 dark:border-white/10 rounded-2xl bg-slate-50/50 dark:bg-white/5">
+                    <Clock size={24} className="text-slate-300 dark:text-slate-600 mb-3" />
+                    <p className="text-sm font-bold text-slate-500 dark:text-slate-400">Brak zdefiniowanych etapów</p>
+                    <p className="text-xs font-semibold text-slate-400 dark:text-slate-500 mt-1">Zbuduj harmonogram dodając montaż, próby, etc.</p>
+                 </div>
+              )}
+            </div>
+          </Card>
+        </div>
       </form>
 
-      <Card className="!p-0">
-        <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-slate-100">
-          <div className="flex overflow-x-auto no-scrollbar">
+      <Card className="!p-0 border-transparent shadow-none bg-transparent mt-8">
+        <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-slate-200 dark:border-white/10 bg-white dark:bg-[#08151a] rounded-t-3xl shadow-sm px-3 pt-3 pb-0">
+          <div className="flex overflow-x-auto custom-scrollbar">
             {TABS.map((tab) => {
               const Icon = tab.icon;
               const active = activeTab === tab.id;
-              return <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex min-w-[110px] flex-col items-center justify-center gap-1.5 border-b-2 px-4 py-3 text-xs font-black transition ${active ? 'border-cyan-600 bg-cyan-50/70 text-cyan-700' : 'border-transparent text-slate-500 hover:bg-slate-50 hover:text-slate-900'}`}><Icon size={18} />{tab.label}</button>;
+              return (
+                <button 
+                  key={tab.id} 
+                  onClick={() => setActiveTab(tab.id)} 
+                  className={`flex min-w-[130px] flex-col items-center justify-center gap-2 border-b-[3px] px-4 py-4 text-xs font-black transition-all ${
+                    active 
+                      ? 'border-[#04e0ff] bg-gradient-to-t from-[#04e0ff]/10 to-transparent text-[#04e0ff] dark:text-white' 
+                      : 'border-transparent text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5'
+                  }`}
+                >
+                  <Icon size={20} className={active ? 'text-[#04e0ff]' : 'opacity-70'}/>
+                  {tab.label}
+                </button>
+              );
             })}
           </div>
 
-          {['oferty', 'ekipa', 'flota', 'historia'].includes(activeTab) && (
-            <div className="p-3 border-t md:border-t-0 border-slate-100 w-full md:w-auto">
+          {['oferty', 'ekipa', 'flota', 'historia', 'sprzet', 'zadania', 'zalaczniki'].includes(activeTab) && (
+            <div className="p-3 border-t md:border-t-0 border-slate-100 dark:border-white/10 w-full md:w-auto">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                <input className={`${inputClass} pl-9 py-2 text-sm rounded-xl min-w-[250px] w-full border-slate-200 bg-slate-50 focus:bg-white`} placeholder={`Szukaj w: ${TABS.find(t => t.id === activeTab)?.label.toLowerCase()}...`} value={tabSearchQuery} onChange={(e) => setTabSearchQuery(e.target.value)} />
+                <input 
+                  className={`${inputClass} pl-10 py-2.5 text-sm rounded-full min-w-[280px] w-full border-transparent bg-slate-100 dark:bg-black/30 focus:border-[#04e0ff]/50 focus:bg-white dark:focus:bg-black/50 transition-all`} 
+                  placeholder={`Szukaj w zakładce...`} 
+                  value={tabSearchQuery} 
+                  onChange={(e) => setTabSearchQuery(e.target.value)} 
+                />
               </div>
             </div>
           )}
         </div>
         
-        <div className="p-5">
-          {activeTab === 'szczegoly' && <p className="rounded-2xl bg-slate-50 p-6 text-sm font-bold text-slate-500">Szczegóły podstawowe edytujesz w górnym panelu. Zapis zostaje na tej stronie i odświeża dane wydarzenia.</p>}
-          {activeTab === 'oferty' && <OffersPanel offers={offers} mainOfferId={form.id_oferty_glownej} setMainOfferId={(id: any) => setForm({ ...form, id_oferty_glownej: id })} offerName={offerName} setOfferName={setOfferName} createOffer={createOffer} duplicateOffer={duplicateOffer} tabQuery={tabSearchQuery} />}
-          {duplicateTarget && <OfferDuplicateTargetModal offer={duplicateTarget} defaultEventId={params.id as any} onClose={() => setDuplicateTarget(null)} onDone={(o) => router.push(`/dashboard/offers/${o.id}`)} />}
+        <div className="p-6 bg-white dark:bg-[#08151a] border border-slate-200 dark:border-white/10 border-t-0 rounded-b-3xl shadow-sm min-h-[500px]">
+          {activeTab === 'chat' && <EventChatPanel eventId={Number(params.id)} historia={eventData?.historia || []} reloadEvent={loadEvent} />}
+          {activeTab === 'zadania' && <EventTasksPanel eventId={Number(params.id)} zadania={eventData?.zadania || []} dict={dict} reloadEvent={loadEvent} tabQuery={tabSearchQuery} />}
+          {activeTab === 'ekipa' && <EventCrewPanel eventId={Number(params.id)} ekipa={eventData?.ekipa || []} dict={dict} tabQuery={tabSearchQuery} reloadEvent={loadEvent} />}
+          {activeTab === 'flota' && <EventFleetPanel eventId={Number(params.id)} pojazdy={eventData?.pojazdy || []} dict={dict} tabQuery={tabSearchQuery} reloadEvent={loadEvent} />}
+          {activeTab === 'zalaczniki' && <AttachmentsPanel eventId={Number(params.id)} zalaczniki={eventData?.zalaczniki || []} reloadEvent={loadEvent} tabQuery={tabSearchQuery} />}
+          
+          {activeTab === 'oferty' && <OffersPanel offers={offers} mainOfferId={form.id_oferty_glownej} setMainOfferId={(id: any) => setForm({ ...form, id_oferty_glownej: id })} offerName={offerName} setOfferName={setOfferName} createOffer={createOffer} duplicateOffer={(o:any)=>setDuplicateTarget(o)} tabQuery={tabSearchQuery} />}
           {activeTab === 'sprzet' && !isNew && <EquipmentPanel eventId={Number(params.id)} eventName={form.nazwa || eventData?.nazwa} />}
-          {activeTab === 'ekipa' && <PeoplePanel people={eventData?.ekipa || []} tabQuery={tabSearchQuery} />}
-          {activeTab === 'flota' && <FleetPanel vehicles={eventData?.pojazdy || []} tabQuery={tabSearchQuery} />}
           {activeTab === 'historia' && <HistoryPanel history={eventData?.historia || []} tabQuery={tabSearchQuery} />}
-          {!['szczegoly','sprzet','oferty','ekipa','flota','historia'].includes(activeTab) && <p className="rounded-2xl border border-dashed border-slate-200 p-8 text-center text-sm font-bold text-slate-400">Zakładka „{TABS.find((t) => t.id === activeTab)?.label}” jest przygotowana w układzie panelu. Logikę podłączymy etapami, bez usuwania istniejącego kodu.</p>}
         </div>
       </Card>
 
-      {crmModalMode && (
-        <QuickAddCrmModal mode={crmModalMode} parentId={form.id_kontrahenta} onClose={() => setCrmModalMode(null)} onSuccess={handleCrmSuccess} />
+      {/* MODALS */}
+      {crmModalMode && <QuickAddCrmModal mode={crmModalMode} parentId={form.id_kontrahenta} onClose={() => setCrmModalMode(null)} onSuccess={() => { setCrmModalMode(null); loadDictionaries(); }} />}
+      {duplicateTarget && <OfferDuplicateTargetModal offer={duplicateTarget} defaultEventId={params.id as any} onClose={() => setDuplicateTarget(null)} onDone={(o) => router.push(`/dashboard/offers/${o.id}`)} />}
+      
+      {showEtapModal && (
+        <SimpleModal title="Dodaj etap wydarzenia" onClose={() => setShowEtapModal(false)}>
+          <form onSubmit={async (e) => {
+            e.preventDefault();
+            const f = new FormData(e.currentTarget);
+            await api.post(`/api/wydarzenia/${params.id}/etapy`, { nazwa: f.get('nazwa'), opis: f.get('opis'), data_start: f.get('start'), data_koniec: f.get('koniec') });
+            setShowEtapModal(false);
+            loadEvent();
+          }} className="space-y-4">
+            <Field label="Nazwa etapu (np. Próby, Montaż, Gala)"><input name="nazwa" required className={inputClass} /></Field>
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Start"><input type="datetime-local" name="start" required className={inputClass} /></Field>
+              <Field label="Koniec"><input type="datetime-local" name="koniec" required className={inputClass} /></Field>
+            </div>
+            <Field label="Opis / Wytyczne"><textarea name="opis" className={`${inputClass} resize-none min-h-[100px]`} /></Field>
+            <div className="flex justify-end gap-2 pt-4 border-t border-slate-100 dark:border-white/10">
+              <Button variant="secondary" type="button" onClick={() => setShowEtapModal(false)}>Anuluj</Button>
+              <Button type="submit">Dodaj etap</Button>
+            </div>
+          </form>
+        </SimpleModal>
       )}
     </div>
   );
 }
 
+// ============================================================================
+// KOMPONENTY ZAKŁADEK DOLNYCH
+// ============================================================================
+
 function Metric({ label, value }: { label: string; value: string }) {
-  return <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><p className="text-[11px] font-black uppercase tracking-wider text-slate-400">{label}</p><p className="mt-1 truncate text-lg font-black text-slate-900">{value}</p></div>;
+  return (
+    <div className="rounded-2xl border border-slate-200 dark:border-white/5 bg-white dark:bg-[#08151a] p-5 shadow-sm hover:shadow-md transition">
+      <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">{label}</p>
+      <p className="mt-2 truncate text-xl font-black text-slate-900 dark:text-white tracking-tight">{value}</p>
+    </div>
+  );
 }
 
 function Info({ label, value }: { label: string; value: string }) {
-  return <div className="rounded-2xl bg-slate-50 p-3"><p className="text-[11px] font-black uppercase tracking-wider text-slate-400">{label}</p><p className="font-black text-slate-800">{value}</p></div>;
+  return (
+    <div className="rounded-2xl bg-slate-50 dark:bg-white/5 border border-slate-100 dark:border-transparent p-4">
+      <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">{label}</p>
+      <p className="mt-1 text-sm font-black text-slate-800 dark:text-slate-200">{value}</p>
+    </div>
+  );
 }
 
+// -------------------------------------------------------------
+// OFERTY
+// -------------------------------------------------------------
 function OffersPanel({ offers, mainOfferId, setMainOfferId, offerName, setOfferName, createOffer, duplicateOffer, tabQuery = '' }: any) {
   const filteredOffers = useMemo(() => {
     if (!tabQuery) return offers;
@@ -578,27 +656,389 @@ function OffersPanel({ offers, mainOfferId, setMainOfferId, offerName, setOfferN
     return offers.filter((o: any) => `${o.nazwa || ''} ${o.numer || ''} ${o.status?.nazwa || ''}`.toLowerCase().includes(q));
   }, [offers, tabQuery]);
 
-  return <div className="space-y-4">
-    <div className="grid gap-3 rounded-2xl border border-cyan-100 bg-cyan-50 p-4 lg:grid-cols-[1fr_1fr_auto] lg:items-end">
-      <Field label="Oferta główna / zaakceptowana">
+  return <div className="space-y-6">
+    <div className="grid gap-4 rounded-[24px] border border-cyan-100 dark:border-white/10 bg-cyan-50/50 dark:bg-white/5 p-5 lg:grid-cols-[1fr_1fr_auto] lg:items-end">
+      <Field label="Wybierz Główną Ofertę">
         <SearchableSelect value={mainOfferId || ''} onChange={(v) => setMainOfferId(v)} options={offers.map((o: any) => ({ value: String(o.id), label: `${o.numer || `#${o.id}`} · ${o.nazwa}` }))} placeholder="Brak" />
-        <p className="mt-1 text-xs font-bold text-slate-400">Lista pokazuje wyłącznie oferty przypisane do tego wydarzenia.</p>
       </Field>
       <Field label="Nazwa nowej oferty"><input className={inputClass} value={offerName} onChange={(e) => setOfferName(e.target.value)} /></Field>
-      <Button onClick={createOffer}><Plus size={16} className="inline" /> Dodaj ofertę do wydarzenia</Button>
+      <Button onClick={createOffer}><Plus size={16} className="inline mr-1" /> Utwórz pustą wycenę</Button>
     </div>
-    <div className="grid gap-3 lg:grid-cols-2">
-      {filteredOffers.map((o: any) => <div key={o.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-black uppercase tracking-wider text-slate-400">{o.numer || `Oferta #${o.id}`}</p><h3 className="mt-1 text-lg font-black text-slate-900">{o.nazwa}</h3><p className="text-sm font-bold text-slate-400">{o.status?.nazwa || 'Bez statusu'} · wersji: {o.wersje?.length || 0}</p></div><p className="text-right text-lg font-black text-cyan-700">{money(o.suma_netto)}</p></div><div className="mt-4 flex flex-wrap gap-2"><Link className="rounded-xl bg-cyan-600 px-4 py-2 text-sm font-black text-white" href={`/dashboard/offers/${o.id}`}>Otwórz</Link><Link className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-black text-slate-700" href={`/dashboard/offers/${o.id}/pdf`} target="_blank">PDF</Link><button onClick={() => duplicateOffer(o)} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-black text-slate-700"><Copy size={15} className="inline" /> Duplikuj</button></div></div>)}
-      {filteredOffers.length === 0 && offers.length > 0 && <p className="rounded-2xl border border-dashed border-slate-200 p-8 text-center text-sm font-bold text-slate-400">Brak ofert pasujących do wyszukiwania.</p>}
-      {offers.length === 0 && <p className="rounded-2xl border border-dashed border-slate-200 p-8 text-center text-sm font-bold text-slate-400">Do tego wydarzenia nie ma jeszcze ofert. Możesz dodać jedną, dwie albo dziesięć ofert.</p>}
+    
+    <div className="grid gap-4 lg:grid-cols-2">
+      {filteredOffers.map((o: any) => (
+        <div key={o.id} className="rounded-[24px] border border-slate-200 dark:border-white/10 bg-white dark:bg-[#061B1F] p-5 shadow-sm hover:shadow-md transition">
+          <div className="flex items-start justify-between gap-3 border-b border-slate-100 dark:border-white/5 pb-4">
+            <div className="min-w-0 pr-2">
+              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#04e0ff]">{o.numer || `Oferta #${o.id}`}</p>
+              <h3 className="mt-1 text-xl font-black text-slate-900 dark:text-white truncate">{o.nazwa}</h3>
+              <div className="flex items-center gap-2 mt-2">
+                <span className="text-[11px] font-bold text-slate-500 bg-slate-100 dark:bg-white/5 px-2 py-1 rounded-md">{o.status?.nazwa || 'Bez statusu'}</span>
+                <span className="text-[11px] font-bold text-slate-500">Wersja: {o.wersje?.length || 0}</span>
+              </div>
+            </div>
+            <div className="text-right shrink-0">
+               <p className="text-[10px] font-bold uppercase text-slate-400 tracking-wider mb-0.5">Wartość Netto</p>
+               <p className="text-xl font-black text-[#04e0ff]">{money(o.suma_netto)}</p>
+            </div>
+          </div>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Button onClick={() => window.location.href = `/dashboard/offers/${o.id}`} className="text-xs py-2 px-5">Otwórz Edytor</Button>
+            <Button variant="secondary" onClick={() => window.open(`/dashboard/offers/${o.id}/pdf`, '_blank')} className="text-xs py-2 px-5"><FileText size={14} className="inline mr-1"/> PDF</Button>
+            <Button variant="secondary" onClick={() => duplicateOffer(o)} className="text-xs py-2 px-5"><Copy size={14} className="inline mr-1" /> Kopiuj</Button>
+          </div>
+        </div>
+      ))}
+      {filteredOffers.length === 0 && offers.length > 0 && <div className="col-span-full rounded-[24px] border border-dashed border-slate-200 dark:border-white/10 p-12 text-center text-sm font-bold text-slate-400">Brak ofert pasujących do wyszukiwania.</div>}
+      {offers.length === 0 && <div className="col-span-full rounded-[24px] border border-dashed border-slate-200 dark:border-white/10 p-12 text-center text-sm font-bold text-slate-400">Do tego wydarzenia nie ma jeszcze przypisanych ofert. Stwórz pierwszą wycenę!</div>}
     </div>
   </div>;
 }
 
-// ============================================================================
-// PANEL SPRZĘTU (EquipmentPanel) - ZAWIERA POPRAWKI ZESTAWÓW I SKANOWANIA
-// ============================================================================
+// -------------------------------------------------------------
+// CHAT GRUPOWY
+// -------------------------------------------------------------
+function EventChatPanel({ eventId, historia, reloadEvent }: any) {
+  const [msg, setMsg] = useState('');
+  const [sending, setSaving] = useState(false);
+  const me = useAuthStore((s) => s.user);
 
+  const messages = useMemo(() => historia.filter((h: any) => h.akcja === 'CHAT').reverse(), [historia]);
+
+  async function send(e: any) {
+    e.preventDefault();
+    if (!msg.trim()) return;
+    setSaving(true);
+    try {
+      await api.post(`/api/wydarzenia/${eventId}/chat`, { message: msg });
+      setMsg('');
+      reloadEvent();
+    } catch(err) {
+      alert("Błąd wysyłania wiadomości");
+    } finally { setSaving(false); }
+  }
+
+  return <div className="flex flex-col h-[600px] bg-slate-50/50 dark:bg-black/20 rounded-[24px] border border-slate-200 dark:border-white/5 overflow-hidden">
+    <div className="flex-1 overflow-y-auto p-6 space-y-5 custom-scrollbar">
+      {messages.map((m: any) => {
+        const isMe = m.uzytkownik?.email === me?.email;
+        return (
+          <div key={m.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+             <div className="flex items-end gap-3 max-w-[80%]">
+                {!isMe && <div className="w-9 h-9 rounded-2xl bg-gradient-to-br from-slate-200 to-slate-300 dark:from-slate-700 dark:to-slate-800 flex items-center justify-center text-[11px] font-black shrink-0 text-slate-600 dark:text-white shadow-sm border border-slate-300 dark:border-white/10">{initials(m.uzytkownik)}</div>}
+                <div className={`px-5 py-3 rounded-[20px] text-sm font-semibold leading-relaxed shadow-sm ${isMe ? 'bg-gradient-to-r from-[#04e0ff] to-blue-600 text-white rounded-br-sm' : 'bg-white dark:bg-[#08151a] border border-slate-200 dark:border-white/10 text-slate-800 dark:text-slate-200 rounded-bl-sm'}`}>
+                  {m.nowa_wartosc}
+                </div>
+             </div>
+             <span className={`text-[10px] font-bold text-slate-400 mt-1.5 ${isMe ? 'pr-2' : 'pl-[52px]'}`}>
+               {isMe ? 'Ty' : `${m.uzytkownik?.imie} ${m.uzytkownik?.nazwisko}`} · {new Date(m.data_utworzenia).toLocaleTimeString('pl-PL', {hour:'2-digit', minute:'2-digit'})}
+             </span>
+          </div>
+        )
+      })}
+      {messages.length === 0 && <div className="h-full flex flex-col items-center justify-center text-slate-400 font-bold opacity-60"><MessageSquare size={48} className="mb-4 text-[#04e0ff]"/><p>Brak wiadomości. Rozpocznij dyskusję z zespołem!</p></div>}
+    </div>
+    <form onSubmit={send} className="p-4 bg-white dark:bg-[#08151a] border-t border-slate-200 dark:border-white/5 flex items-center gap-3">
+      <input value={msg} onChange={e => setMsg(e.target.value)} placeholder="Napisz wiadomość do zespołu..." className="flex-1 bg-slate-100 dark:bg-black/40 border border-transparent rounded-full px-5 py-3.5 text-sm font-semibold outline-none focus:bg-white dark:focus:bg-[#02080a] focus:border-[#04e0ff]/50 focus:ring-2 focus:ring-[#04e0ff]/20 transition-all dark:text-white" />
+      <button type="submit" disabled={sending || !msg.trim()} className="w-12 h-12 rounded-full bg-gradient-to-r from-[#04e0ff] to-blue-600 text-white flex items-center justify-center shrink-0 hover:scale-105 disabled:opacity-50 disabled:hover:scale-100 transition shadow-md shadow-[#04e0ff]/20"><Send size={18} className="ml-1 pl-0.5"/></button>
+    </form>
+  </div>
+}
+
+// -------------------------------------------------------------
+// ZADANIA
+// -------------------------------------------------------------
+function EventTasksPanel({ eventId, zadania, dict, reloadEvent, tabQuery = '' }: any) {
+  const [form, setForm] = useState<any>({});
+  const [adding, setAdding] = useState(false);
+  const me = useAuthStore((s) => s.user);
+
+  const filteredTasks = useMemo(() => {
+    if (!tabQuery) return zadania;
+    const q = tabQuery.toLowerCase();
+    return zadania.filter((t:any) => `${t.tytul || ''} ${t.typ_zadania || ''}`.toLowerCase().includes(q));
+  }, [zadania, tabQuery]);
+
+  async function toggleStatus(t: any) {
+    const newStatus = t.status === 'zakończone' ? 'nowe' : 'zakończone';
+    await api.patch(`/api/zadania/${t.id}/status`, { status: newStatus }); 
+    reloadEvent();
+  }
+
+  async function saveTask(e: any) {
+    e.preventDefault();
+    await api.post(`/api/zadania`, {
+      id_wydarzenia: eventId,
+      tytul: form.tytul,
+      przypisani: [String(form.uzytkownik || me?.id)],
+      data_start: form.data_start ? new Date(form.data_start).toISOString() : null,
+      data_koniec: form.data_koniec ? new Date(form.data_koniec).toISOString() : null,
+      typ_zadania: form.typ || 'inne'
+    });
+    setForm({}); setAdding(false); reloadEvent();
+  }
+
+  return <div className="space-y-4">
+    <div className="flex justify-between items-center mb-6">
+      <h3 className="font-black text-xl text-slate-900 dark:text-white">Zadania operacyjne zespołu</h3>
+      <Button onClick={() => setAdding(true)}><Plus size={16} className="inline mr-1"/> Dodaj zadanie</Button>
+    </div>
+    
+    {adding && <Card className="mb-6 bg-slate-50/50 dark:bg-white/5 border-slate-200 dark:border-white/10 rounded-[24px]">
+      <form onSubmit={saveTask} className="grid md:grid-cols-[1fr_220px_auto] gap-4 items-end">
+        <Field label="Treść zadania"><input required className={inputClass} value={form.tytul || ''} onChange={e => setForm({...form, tytul: e.target.value})} placeholder="np. Przygotować kable zasilające..."/></Field>
+        <Field label="Przypisz do"><select className={inputClass} value={form.uzytkownik || ''} onChange={e => setForm({...form, uzytkownik: e.target.value})}><option value={me?.id}>Przypisz sobie</option>{dict.uzytkownicy.map((u:any)=><option key={u.id} value={u.id}>{u.imie} {u.nazwisko}</option>)}</select></Field>
+        <div className="flex gap-2"><Button variant="secondary" type="button" onClick={()=>setAdding(false)}>Anuluj</Button><Button type="submit">Zapisz</Button></div>
+      </form>
+    </Card>}
+
+    <div className="space-y-3">
+      {filteredTasks.map((t: any) => {
+        const isDone = t.status === 'zakończone';
+        return <div key={t.id} className={`flex items-center gap-5 p-5 border rounded-[20px] transition-all duration-300 ${isDone ? 'bg-slate-50 dark:bg-black/20 border-slate-100 dark:border-white/5 opacity-70' : 'bg-white dark:bg-[#08151a] border-slate-200 dark:border-white/10 shadow-sm hover:border-[#04e0ff]/50'}`}>
+          <button onClick={() => toggleStatus(t)} className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 transition-colors ${isDone ? 'bg-emerald-500 text-white' : 'border-2 border-slate-300 dark:border-slate-600 text-transparent hover:border-[#04e0ff]'}`}>
+             <CheckCircle2 size={18} />
+          </button>
+          <div className="flex-1 min-w-0 pr-4">
+             <p className={`font-black text-[15px] truncate ${isDone ? 'text-slate-500 line-through' : 'text-slate-800 dark:text-slate-100'}`}>{t.tytul}</p>
+             <div className="flex items-center gap-4 mt-1.5 text-xs font-bold text-slate-400">
+               <span className="flex items-center gap-1.5 bg-slate-100 dark:bg-white/5 px-2 py-1 rounded-md"><Users size={12} className="text-slate-400"/> {t.przypisani_uzytkownicy?.map((u:any)=>u.uzytkownik.imie).join(', ') || 'Brak'}</span>
+               {t.data_koniec && <span className="flex items-center gap-1.5 bg-slate-100 dark:bg-white/5 px-2 py-1 rounded-md"><Calendar size={12} className="text-slate-400"/> {new Date(t.data_koniec).toLocaleDateString('pl-PL')}</span>}
+             </div>
+          </div>
+          <button onClick={async () => { if(confirm('Usunąć zadanie?')) { await api.delete(`/api/zadania/${t.id}`); reloadEvent(); } }} className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-xl transition"><Trash2 size={18}/></button>
+        </div>
+      })}
+      {filteredTasks.length === 0 && !adding && <div className="p-12 border border-dashed border-slate-200 dark:border-white/10 rounded-[28px] text-center text-slate-400 font-bold bg-slate-50/50 dark:bg-black/20">Brak zdefiniowanych zadań dla tego wydarzenia.</div>}
+    </div>
+  </div>
+}
+
+// -------------------------------------------------------------
+// EKIPA
+// -------------------------------------------------------------
+function EventCrewPanel({ eventId, ekipa, dict, tabQuery = '', reloadEvent }: any) {
+  const [form, setForm] = useState<any>({ isExternal: false, rola: 'Obsługa techniczna' });
+  const [adding, setAdding] = useState(false);
+
+  const filtered = useMemo(() => {
+    if (!tabQuery) return ekipa;
+    const q = tabQuery.toLowerCase();
+    return ekipa.filter((p:any) => `${p.uzytkownik?.imie || ''} ${p.uzytkownik?.nazwisko || ''} ${p.rola_w_wydarzeniu || ''}`.toLowerCase().includes(q));
+  }, [ekipa, tabQuery]);
+
+  async function saveCrew(e: any) {
+    e.preventDefault();
+    await api.post(`/api/wydarzenia/${eventId}/ekipa`, form);
+    setForm({ isExternal: false, rola: 'Obsługa techniczna' }); setAdding(false); reloadEvent();
+  }
+
+  return <div className="space-y-4">
+    <div className="flex justify-between items-center mb-6">
+      <h3 className="font-black text-xl text-slate-900 dark:text-white">Personel i Ekipa Techniczna</h3>
+      <Button onClick={() => setAdding(true)}><Plus size={16} className="inline mr-1"/> Przypisz osobę</Button>
+    </div>
+
+    {adding && <SimpleModal title="Dodaj osobę do obsługi eventu" onClose={() => setAdding(false)}>
+      <form onSubmit={saveCrew} className="space-y-5">
+        <div className="flex gap-2 p-1.5 bg-slate-100 dark:bg-black/30 rounded-xl border border-slate-200 dark:border-white/5">
+          <button type="button" onClick={()=>setForm({...form, isExternal: false})} className={`flex-1 py-2.5 text-sm font-black rounded-lg transition ${!form.isExternal ? 'bg-white dark:bg-white/10 shadow-sm text-cyan-700 dark:text-[#04e0ff]' : 'text-slate-500'}`}>Z zespołu (Konto Systemowe)</button>
+          <button type="button" onClick={()=>setForm({...form, isExternal: true})} className={`flex-1 py-2.5 text-sm font-black rounded-lg transition ${form.isExternal ? 'bg-white dark:bg-white/10 shadow-sm text-cyan-700 dark:text-[#04e0ff]' : 'text-slate-500'}`}>Freelancer (Z zewnątrz)</button>
+        </div>
+
+        {!form.isExternal ? (
+           <Field label="Wybierz pracownika z bazy">
+             <SearchableSelect value={form.id_uzytkownika} onChange={(v) => setForm({...form, id_uzytkownika: v})} options={dict.uzytkownicy.map((u:any)=>({value: String(u.id), label: `${u.imie} ${u.nazwisko}`}))} placeholder="Wybierz osobę..." />
+           </Field>
+        ) : (
+           <div className="grid grid-cols-2 gap-4">
+             <Field label="Imię *"><input required className={inputClass} value={form.imie || ''} onChange={e => setForm({...form, imie: e.target.value})} /></Field>
+             <Field label="Nazwisko *"><input required className={inputClass} value={form.nazwisko || ''} onChange={e => setForm({...form, nazwisko: e.target.value})} /></Field>
+             <Field label="Adres e-mail"><input type="email" className={inputClass} value={form.email || ''} onChange={e => setForm({...form, email: e.target.value})} placeholder="Do opcjonalnych powiadomień" /></Field>
+             <Field label="Numer telefonu"><input type="tel" className={inputClass} value={form.telefon || ''} onChange={e => setForm({...form, telefon: e.target.value})} /></Field>
+             <div className="col-span-2 text-xs font-bold text-amber-700 bg-amber-50 p-4 rounded-xl border border-amber-200">
+               Osoba zostanie dodana w module HR jako zablokowany zasób zewnętrzny (Brak loginu i hasła). Będzie można ją łatwo wybrać przy kolejnych wydarzeniach normalnie z listy zespołu!
+             </div>
+           </div>
+        )}
+
+        <Field label="Rola na tym wydarzeniu">
+          <input required className={inputClass} value={form.rola || ''} onChange={e => setForm({...form, rola: e.target.value})} placeholder="np. Główny realizator, Kierowca, Technik..." />
+        </Field>
+
+        <div className="flex justify-end gap-2 pt-4 border-t border-slate-100 dark:border-white/10"><Button variant="secondary" type="button" onClick={()=>setAdding(false)}>Anuluj</Button><Button type="submit">Zapisz przypisanie</Button></div>
+      </form>
+    </SimpleModal>}
+
+    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+      {filtered.map((p: any) => <div key={p.id} className="rounded-[20px] border border-slate-200 dark:border-white/10 p-5 bg-white dark:bg-[#08151a] shadow-sm hover:shadow-md transition-shadow flex items-center justify-between group">
+         <div className="flex items-center gap-4">
+           <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-white/5 flex items-center justify-center font-black text-slate-500 dark:text-slate-300 text-lg border border-slate-200 dark:border-white/10">
+             {initials(p.uzytkownik)}
+           </div>
+           <div>
+             <p className="font-black text-slate-900 dark:text-white text-[15px]">{p.uzytkownik?.imie} {p.uzytkownik?.nazwisko}</p>
+             <p className="text-[11px] font-bold text-[#04e0ff] bg-cyan-50 dark:bg-[#04e0ff]/10 px-2 py-0.5 rounded-md inline-block mt-1 uppercase tracking-wider">{p.rola_w_wydarzeniu || 'Obsługa'}</p>
+           </div>
+         </div>
+         <button onClick={async () => { if(confirm('Odpiąć osobę od wydarzenia?')) { await api.delete(`/api/wydarzenia/${eventId}/ekipa/${p.id}`); reloadEvent(); } }} className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-xl transition opacity-0 group-hover:opacity-100"><Trash2 size={16}/></button>
+      </div>)}
+      {filtered.length === 0 && ekipa.length > 0 && <div className="col-span-full p-12 border border-dashed border-slate-200 dark:border-white/10 rounded-[28px] text-center text-slate-400 font-bold bg-slate-50/50 dark:bg-black/20">Brak osób pasujących do wyszukiwania.</div>}
+      {ekipa.length === 0 && <div className="col-span-full p-12 border border-dashed border-slate-200 dark:border-white/10 rounded-[28px] text-center text-slate-400 font-bold bg-slate-50/50 dark:bg-black/20">Brak przypisanej ekipy do wydarzenia.</div>}
+    </div>
+  </div>
+}
+
+// -------------------------------------------------------------
+// FLOTA
+// -------------------------------------------------------------
+function EventFleetPanel({ eventId, pojazdy, dict, tabQuery = '', reloadEvent }: any) {
+  const [form, setForm] = useState<any>({ rola: 'Transport sprzętu' });
+  const [adding, setAdding] = useState(false);
+
+  const filtered = useMemo(() => {
+    if (!tabQuery) return pojazdy;
+    const q = tabQuery.toLowerCase();
+    return pojazdy.filter((v:any) => `${v.pojazd?.nazwa || ''} ${v.pojazd?.nr_rejestracyjny || ''} ${v.rola_pojazdu || ''}`.toLowerCase().includes(q));
+  }, [pojazdy, tabQuery]);
+
+  async function saveFleet(e: any) {
+    e.preventDefault();
+    await api.post(`/api/wydarzenia/${eventId}/flota`, form);
+    setForm({ rola: 'Transport sprzętu' }); setAdding(false); reloadEvent();
+  }
+
+  return <div className="space-y-4">
+    <div className="flex justify-between items-center mb-6">
+      <h3 className="font-black text-xl text-slate-900 dark:text-white">Flota i transport</h3>
+      <Button onClick={() => setAdding(true)}><Plus size={16} className="inline mr-1"/> Przypisz pojazd</Button>
+    </div>
+
+    {adding && <SimpleModal title="Zarezerwuj pojazd na wydarzenie" onClose={() => setAdding(false)}>
+      <form onSubmit={saveFleet} className="space-y-4">
+        <Field label="Pojazd z bazy">
+          <SearchableSelect value={form.id_pojazdu} onChange={(v) => setForm({...form, id_pojazdu: v})} options={dict.pojazdy.map((p:any)=>({value: String(p.id), label: `${p.nazwa} (${p.nr_rejestracyjny})`}))} placeholder="Wybierz auto..." />
+        </Field>
+        <Field label="Rola pojazdu na wyjeździe">
+          <input required className={inputClass} value={form.rola || ''} onChange={e => setForm({...form, rola: e.target.value})} placeholder="np. Transport główny, Auto dla realizatorów..." />
+        </Field>
+        <div className="flex justify-end gap-2 pt-4 border-t border-slate-100 dark:border-white/10"><Button variant="secondary" type="button" onClick={()=>setAdding(false)}>Anuluj</Button><Button type="submit">Zapisz rezerwację</Button></div>
+      </form>
+    </SimpleModal>}
+
+    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+      {filtered.map((v: any) => <div key={v.id} className="rounded-[20px] border border-slate-200 dark:border-white/10 p-5 bg-white dark:bg-[#08151a] shadow-sm flex items-center justify-between group hover:shadow-md transition">
+        <div>
+           <p className="font-black text-slate-900 dark:text-white text-[15px] flex items-center gap-2 mb-2"><Car size={16} className="text-[#04e0ff]"/> {v.pojazd?.nazwa || 'Pojazd'}</p>
+           <p className="text-xs font-bold text-slate-500 dark:text-slate-400 flex items-center"><span className="text-slate-800 dark:text-slate-200 bg-slate-100 dark:bg-white/10 px-2 py-1 rounded-md uppercase tracking-widest text-[10px] mr-2">{v.pojazd?.nr_rejestracyjny || '-'}</span> {v.rola_pojazdu || 'Rezerwacja'}</p>
+        </div>
+        <button onClick={async () => { if(confirm('Zwolnić rezerwację pojazdu?')) { await api.delete(`/api/wydarzenia/${eventId}/flota/${v.id}`); reloadEvent(); } }} className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-xl transition opacity-0 group-hover:opacity-100"><Trash2 size={16}/></button>
+      </div>)}
+      {filtered.length === 0 && pojazdy.length > 0 && <div className="col-span-full p-12 border border-dashed border-slate-200 dark:border-white/10 rounded-[28px] text-center text-slate-400 font-bold bg-slate-50/50 dark:bg-black/20">Brak aut pasujących do wyszukiwania.</div>}
+      {pojazdy.length === 0 && <div className="col-span-full p-12 border border-dashed border-slate-200 dark:border-white/10 rounded-[28px] text-center text-slate-400 font-bold bg-slate-50/50 dark:bg-black/20">Brak zarezerwowanych aut dla tego wydarzenia.</div>}
+    </div>
+  </div>
+}
+
+// -------------------------------------------------------------
+// ZAŁĄCZNIKI
+// -------------------------------------------------------------
+function AttachmentsPanel({ eventId, zalaczniki, tabQuery = '', reloadEvent }: any) {
+  const [form, setForm] = useState<any>({});
+  const [adding, setAdding] = useState(false);
+
+  const filtered = useMemo(() => {
+    if (!tabQuery) return zalaczniki;
+    const q = tabQuery.toLowerCase();
+    return zalaczniki.filter((z:any) => `${z.nazwa || ''} ${z.nazwa_pliku || ''}`.toLowerCase().includes(q));
+  }, [zalaczniki, tabQuery]);
+
+  async function saveFile(e: any) {
+    e.preventDefault();
+    // Symulacja uploadu pliku z zapisem metadanych
+    await api.post(`/api/wydarzenia/${eventId}/zalaczniki`, {
+       nazwa: form.nazwa || form.nazwa_pliku,
+       nazwa_pliku: form.nazwa_pliku || 'skan.pdf',
+       rozmiar: Math.floor(Math.random() * 5000000) + 100000, 
+       mime: 'application/pdf'
+    });
+    setForm({}); setAdding(false); reloadEvent();
+  }
+
+  return <div className="space-y-4">
+    <div className="flex justify-between items-center mb-6">
+      <h3 className="font-black text-xl text-slate-900 dark:text-white">Pliki i Załączniki</h3>
+      <Button onClick={() => setAdding(true)}><Paperclip size={16} className="inline mr-1"/> Dodaj plik</Button>
+    </div>
+
+    {adding && <Card className="mb-6 bg-slate-50/50 dark:bg-white/5 border-slate-200 dark:border-white/10 rounded-[24px]">
+      <form onSubmit={saveFile} className="grid md:grid-cols-[1fr_1fr_auto] gap-4 items-end">
+        <Field label="Nazwa wyświetlana (Opcjonalnie)"><input className={inputClass} value={form.nazwa || ''} onChange={e => setForm({...form, nazwa: e.target.value})} placeholder="np. Skan Umowy"/></Field>
+        <Field label="Wybierz Plik z Dysku"><input required type="file" className="block w-full text-xs font-bold text-slate-500 file:mr-3 file:rounded-xl file:border-0 file:bg-cyan-600 file:px-4 file:py-2.5 file:font-black file:text-white hover:file:bg-cyan-700 transition cursor-pointer" onChange={(e) => setForm({...form, nazwa_pliku: e.target.files?.[0]?.name})} /></Field>
+        <div className="flex gap-2"><Button variant="secondary" type="button" onClick={()=>setAdding(false)}>Anuluj</Button><Button type="submit">Wgraj plik na serwer</Button></div>
+      </form>
+    </Card>}
+
+    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+       {filtered.map((z: any) => <div key={z.id} className="rounded-[20px] border border-slate-200 dark:border-white/10 p-5 bg-white dark:bg-[#08151a] shadow-sm flex items-center justify-between group hover:border-cyan-300 dark:hover:border-cyan-500/50 transition-colors">
+          <div className="flex items-center gap-4 min-w-0">
+             <div className="w-12 h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-500/10 text-indigo-500 flex items-center justify-center shrink-0 border border-indigo-100 dark:border-indigo-500/20"><FileText size={24} strokeWidth={1.5}/></div>
+             <div className="min-w-0 pr-2">
+                <p className="font-black text-[15px] text-slate-900 dark:text-white truncate">{z.nazwa || z.nazwa_pliku}</p>
+                <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400 mt-1 truncate">{z.nazwa_pliku} · {(z.rozmiar_bajtow / 1024 / 1024).toFixed(2)} MB</p>
+                <p className="text-[10px] font-semibold text-slate-400 mt-1">Dodał: {z.dodal?.imie || 'System'} · {new Date(z.data_utworzenia).toLocaleDateString()}</p>
+             </div>
+          </div>
+          <div className="flex flex-col gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button className="p-2 text-[#04e0ff] hover:bg-cyan-50 dark:hover:bg-white/5 rounded-xl transition" title="Pobierz"><Download size={18}/></button>
+            <button onClick={async () => { if(confirm('Usunąć załącznik z systemu?')) { await api.delete(`/api/wydarzenia/${eventId}/zalaczniki/${z.id}`); reloadEvent(); } }} className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-xl transition" title="Usuń z serwera"><Trash2 size={18}/></button>
+          </div>
+       </div>)}
+       {filtered.length === 0 && zalaczniki.length > 0 && <div className="col-span-full p-12 border border-dashed border-slate-200 dark:border-white/10 rounded-[28px] text-center text-slate-400 font-bold bg-slate-50/50 dark:bg-black/20">Brak plików pasujących do wyszukiwania.</div>}
+       {zalaczniki.length === 0 && !adding && <div className="col-span-full p-12 border border-dashed border-slate-200 dark:border-white/10 rounded-[28px] text-center text-slate-400 font-bold bg-slate-50/50 dark:bg-black/20">Brak wgranych plików do tego wydarzenia. Pamiętaj by załączyć tu skan podpisanej umowy!</div>}
+    </div>
+  </div>
+}
+
+// -------------------------------------------------------------
+// HISTORIA ZMIAN
+// -------------------------------------------------------------
+function HistoryPanel({ history, tabQuery = '' }: { history: any[], tabQuery?: string }) {
+  const filtered = useMemo(() => {
+    const raw = history.filter(h => h.akcja !== 'CHAT'); 
+    if (!tabQuery) return raw;
+    const q = tabQuery.toLowerCase();
+    return raw.filter(h => `${h.akcja || ''} ${h.uzytkownik?.imie || ''} ${h.uzytkownik?.nazwisko || ''}`.toLowerCase().includes(q));
+  }, [history, tabQuery]);
+
+  return <div className="space-y-4 max-w-4xl pt-2">
+    <div className="flex justify-between items-center mb-6">
+      <h3 className="font-black text-xl text-slate-900 dark:text-white">Historia audytowa operacji</h3>
+    </div>
+    <div className="relative border-l-2 border-slate-200 dark:border-slate-800 ml-4 space-y-8 pb-4">
+      {filtered.map((h: any) => (
+         <div key={h.id} className="relative pl-8 group hover:opacity-100 transition-opacity">
+           <div className="absolute -left-[11px] top-1 w-5 h-5 rounded-full bg-slate-200 dark:bg-slate-700 border-4 border-white dark:border-[#08151a] group-hover:bg-[#04e0ff] transition-colors"></div>
+           <p className="font-black text-[15px] text-slate-900 dark:text-white">{h.akcja.replace(/_/g, ' ')}</p>
+           <p className="text-xs font-bold text-slate-500 mt-1.5 flex items-center gap-2">
+             <span className="text-[#04e0ff] bg-cyan-50 dark:bg-[#04e0ff]/10 px-2 py-0.5 rounded-md uppercase tracking-wider">{h.uzytkownik ? `${h.uzytkownik.imie} ${h.uzytkownik.nazwisko}` : 'Z Automatu (System)'}</span>
+             <span>{dateTime(h.data_utworzenia)}</span>
+           </p>
+           {h.nowa_wartosc && h.nowa_wartosc !== '{}' && (
+             <div className="mt-3 text-[10px] font-mono bg-slate-900 dark:bg-black/40 text-slate-300 dark:text-slate-400 p-4 rounded-xl overflow-x-auto shadow-inner border border-slate-800 dark:border-white/5 leading-relaxed">
+               {h.nowa_wartosc}
+             </div>
+           )}
+         </div>
+      ))}
+      {filtered.length === 0 && <p className="pl-8 text-sm font-bold text-slate-400">Brak widocznej historii zmian dla Twoich kryteriów.</p>}
+    </div>
+  </div>;
+}
+
+// -------------------------------------------------------------
+// SPRZĘT (Przywrócony EquipmentPanel - Kompatybilny z WMS i Motywami)
+// -------------------------------------------------------------
 function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: string }) {
   const router = useRouter();
   const [data, setData] = useState<any>({ planowane: [], pozycje_dokumentow: [], kategorie: [], dokumenty: [], podsumowanie: {} });
@@ -1154,154 +1594,158 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
   const issuedTotal = plannedRows.reduce((s, r) => s + r.wydane, 0);
   const returnedTotal = plannedRows.reduce((s, r) => s + r.przyjete, 0);
 
-  return <div className="space-y-5">
-    {error && <div className="rounded-2xl border border-red-200 bg-red-50 p-3 text-sm font-black text-red-700">{error}</div>}
-    {notice && <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-sm font-black text-emerald-700">{notice}</div>}
+  return <div className="space-y-6 pt-2">
+    {error && <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-black text-red-700">{error}</div>}
+    {notice && <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-black text-emerald-700">{notice}</div>}
 
-    <section className="rounded-[28px] border border-slate-200 bg-white shadow-sm">
-      <div className="flex flex-col gap-4 border-b border-slate-100 p-5 lg:flex-row lg:items-center lg:justify-between">
+    <section className="rounded-3xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#08151a] shadow-sm overflow-hidden">
+      <div className="flex flex-col gap-4 border-b border-slate-100 dark:border-white/5 p-6 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <p className="text-[11px] font-black uppercase tracking-[0.25em] text-cyan-600">Sprzęt wydarzenia</p>
-          <h3 className="mt-1 text-2xl font-black text-slate-900">Plan sprzętu, wydanie i przyjęcie</h3>
-          <p className="mt-1 max-w-3xl text-sm font-bold text-slate-500">Plan edytujesz po modelach i ilościach. Case/opakowania są ukryte. Wydanie/przyjęcie pokazuje konkretne egzemplarze, a sprzęt ilościowy dodajesz skanem kodu modelu.</p>
+          <p className="text-[10px] font-black uppercase tracking-[0.25em] text-[#04e0ff]">Sprzęt wydarzenia</p>
+          <h3 className="mt-1 text-2xl font-black text-slate-900 dark:text-white">Plan sprzętu, wydanie i przyjęcie</h3>
+          <p className="mt-1.5 max-w-3xl text-sm font-bold text-slate-500 dark:text-slate-400 leading-relaxed">Plan edytujesz po modelach i ilościach. Case/opakowania są ukryte. Wydanie/przyjęcie pokazuje konkretne egzemplarze, a sprzęt ilościowy dodajesz skanem kodu modelu.</p>
         </div>
-        <div className="grid grid-cols-3 gap-2 sm:min-w-[420px]">
+        <div className="grid grid-cols-3 gap-3 sm:min-w-[420px]">
           <Metric label="Plan" value={`${plannedTotal} szt.`} />
           <Metric label="Wydano" value={`${issuedTotal} szt.`} />
           <Metric label="Przyjęto" value={`${returnedTotal} szt.`} />
         </div>
       </div>
 
-      <div className="flex flex-col gap-3 border-b border-slate-100 bg-slate-50 p-4 xl:flex-row xl:items-center xl:justify-between">
-        <div className="flex flex-wrap gap-2">
+      <div className="flex flex-col gap-4 border-b border-slate-100 dark:border-white/5 bg-slate-50/50 dark:bg-white/5 p-5 xl:flex-row xl:items-center xl:justify-between">
+        <div className="flex flex-wrap gap-2.5">
           {([
-            ['plan', 'Lista sprzętu'],
+            ['plan', 'Lista sprzętu (Plan)'],
             ['wydanie', 'Wydaj WZ'],
             ['przyjecie', 'Przyjmij PZ'],
-          ] as const).map(([m, label]) => <button key={m} type="button" onClick={() => { setMode(m); setQuery(''); setError(''); setNotice(''); setDocItems([]); }} className={`rounded-2xl px-5 py-3 text-sm font-black transition ${mode === m ? 'bg-cyan-600 text-white shadow-sm' : 'border border-slate-200 bg-white text-slate-600 hover:bg-cyan-50'}`}>{label}</button>)}
+          ] as const).map(([m, label]) => <button key={m} type="button" onClick={() => { setMode(m); setQuery(''); setError(''); setNotice(''); setDocItems([]); }} className={`rounded-xl px-5 py-3 text-sm font-black transition-all shadow-sm ${mode === m ? 'bg-gradient-to-r from-[#04e0ff] to-blue-600 text-white shadow-cyan-600/20' : 'border border-slate-200 dark:border-white/10 bg-white dark:bg-[#08151a] text-slate-600 dark:text-slate-300 hover:border-cyan-300 dark:hover:border-cyan-700/50 hover:bg-cyan-50 dark:hover:bg-cyan-500/10'}`}>{label}</button>)}
         </div>
-        {mode === 'plan' && <button type="button" onClick={() => setShowEditor((v) => !v)} className="rounded-2xl bg-cyan-600 px-5 py-3 text-sm font-black text-white shadow-sm hover:bg-cyan-700"><Plus size={16} className="inline" /> {showEditor ? 'Zamknij dodawanie' : 'Dodaj / zmień sprzęt'}</button>}
+        {mode === 'plan' && <Button onClick={() => setShowEditor((v) => !v)} className="shadow-md shadow-cyan-600/20"><Plus size={16} className="inline mr-1" /> {showEditor ? 'Zamknij dodawanie' : 'Dodaj / zmień plan'}</Button>}
       </div>
 
       {mode === 'plan' && <div className="grid gap-0 xl:grid-cols-[1fr_520px]">
-        <div className="p-5">
-          <div className="mb-4 flex items-center justify-between gap-3">
+        <div className="p-6">
+          <div className="mb-6 flex items-center justify-between gap-3">
             <div>
-              <h4 className="text-lg font-black text-slate-900">Sprzęt przypisany do wydarzenia</h4>
-              <p className="text-sm font-bold text-slate-500">Podział jak w ofertach: kategoria główna / podkategoria / model.</p>
+              <h4 className="text-xl font-black text-slate-900 dark:text-white">Plan sprzętowy przypisany do wydarzenia</h4>
+              <p className="text-sm font-bold text-slate-500 dark:text-slate-400 mt-1">Podział jak w ofertach: kategoria główna / podkategoria / model.</p>
             </div>
           </div>
-          <div className="space-y-4">
-            {plannedGroups.map((group: any) => <div key={group.nazwa} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-              <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-4 py-3">
-                <div><p className="text-base font-black text-slate-900">{group.nazwa}</p><p className="text-xs font-bold text-slate-400">{group.rows.length} modeli</p></div>
-                <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-slate-500 shadow-sm">plan {group.plan} · WZ {group.wydane} · PZ {group.przyjete}</span>
+          <div className="space-y-5">
+            {plannedGroups.map((group: any) => <div key={group.nazwa} className="overflow-hidden rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#08151a] shadow-sm">
+              <div className="flex items-center justify-between border-b border-slate-100 dark:border-white/5 bg-slate-50 dark:bg-white/5 px-5 py-3.5">
+                <div><p className="text-base font-black text-slate-900 dark:text-white">{group.nazwa}</p><p className="text-xs font-bold text-slate-400 dark:text-slate-500">{group.rows.length} modeli</p></div>
+                <span className="rounded-xl bg-white dark:bg-white/10 border border-slate-200 dark:border-white/5 px-3 py-1.5 text-xs font-black text-slate-500 dark:text-slate-300 shadow-sm">plan {group.plan} · WZ {group.wydane} · PZ {group.przyjete}</span>
               </div>
-              <div className="divide-y divide-slate-100">
-                {group.rows.map((row: any) => <div key={row.id_modelu} className="grid gap-3 px-4 py-3 md:grid-cols-[1fr_280px] md:items-center">
-                  <div><p className="font-black text-slate-900">{row.nazwa}</p><p className="text-xs font-bold text-slate-400">model · {row.kategoria}</p></div>
-                  <div className="grid grid-cols-3 gap-2 rounded-2xl bg-slate-50 p-2 text-center text-xs font-black"><span><b className="block text-lg text-slate-900">{row.plan}</b>plan</span><span><b className="block text-lg text-emerald-700">{row.wydane}</b>WZ</span><span><b className="block text-lg text-blue-700">{row.przyjete}</b>PZ</span></div>
+              <div className="divide-y divide-slate-100 dark:divide-white/5">
+                {group.rows.map((row: any) => <div key={row.id_modelu} className="grid gap-4 px-5 py-4 md:grid-cols-[1fr_280px] md:items-center">
+                  <div><p className="font-black text-slate-900 dark:text-white text-[15px]">{row.nazwa}</p><p className="text-xs font-bold text-slate-400 dark:text-slate-500 mt-0.5">model · {row.kategoria}</p></div>
+                  <div className="grid grid-cols-3 gap-2 rounded-xl bg-slate-50 dark:bg-white/5 p-2 text-center text-xs font-black border border-slate-100 dark:border-transparent"><span><b className="block text-lg text-slate-900 dark:text-white">{row.plan}</b>plan</span><span><b className="block text-lg text-emerald-600 dark:text-emerald-400">{row.wydane}</b>WZ</span><span><b className="block text-lg text-blue-600 dark:text-blue-400">{row.przyjete}</b>PZ</span></div>
                 </div>)}
               </div>
             </div>)}
-            {!plannedGroups.length && <p className="rounded-2xl border border-dashed border-slate-200 p-8 text-center text-sm font-bold text-slate-400">Brak sprzętu przypisanego do wydarzenia. Kliknij „Dodaj / zmień sprzęt”.</p>}
+            {!plannedGroups.length && <p className="rounded-2xl border border-dashed border-slate-200 dark:border-white/10 p-10 text-center text-sm font-bold text-slate-400 bg-slate-50/50 dark:bg-black/20">Brak sprzętu przypisanego do planu. Kliknij „Dodaj / zmień plan sprzętowy”.</p>}
           </div>
         </div>
 
-        {showEditor && <aside className="border-l border-cyan-100 bg-cyan-50/50 p-5">
-          <div className="sticky top-4 space-y-4">
-            <div className="rounded-2xl border border-cyan-100 bg-white p-4 shadow-sm">
-              <div className="mb-4 flex items-start justify-between gap-3">
-                <div><h4 className="text-lg font-black text-slate-900">Dodaj / zmień sprzęt</h4><p className="text-sm font-bold text-slate-500">Wybierz kategorię główną, potem podkategorię i wpisz ilość przy modelu. Bez koszyka.</p></div>
-                <button type="button" onClick={() => setShowEditor(false)} className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-black text-slate-600">Zamknij</button>
+        {showEditor && <aside className="border-l border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-black/20 p-6 shadow-inner">
+          <div className="sticky top-4 space-y-5">
+            <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#08151a] p-5 shadow-sm">
+              <div className="mb-5 flex items-start justify-between gap-3 border-b border-slate-100 dark:border-white/5 pb-4">
+                <div><h4 className="text-lg font-black text-slate-900 dark:text-white">Dodaj / zmień sprzęt w planie</h4><p className="text-xs font-bold text-slate-500 mt-1">Wybierz kategorię główną, potem podkategorię i wpisz ilość przy modelu.</p></div>
+                <button type="button" onClick={() => setShowEditor(false)} className="rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 px-3 py-2 text-xs font-black text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/10 transition shadow-sm">Zamknij</button>
               </div>
 
-              <Field label="Szukaj modelu"><div className="relative"><Search className="absolute left-3 top-3 text-slate-400" size={17}/><input className={`${inputClass} pl-10`} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="projektor, monitor, kabel..." /></div></Field>
+              <Field label="Szukaj modelu w bazie sprzętowej"><div className="relative"><Search className="absolute left-3.5 top-3.5 text-slate-400" size={17}/><input className={`${inputClass} pl-11 py-3`} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="projektor, monitor, kabel..." /></div></Field>
 
-              <div className="mt-4 rounded-2xl bg-slate-50 p-3">
-                <p className="mb-2 text-[11px] font-black uppercase tracking-wider text-slate-400">Kategorie główne</p>
-                <div className="flex max-h-[140px] flex-wrap gap-2 overflow-y-auto pr-1">
-                  <button type="button" onClick={() => { setActiveRoot('all'); setActiveSub(''); }} className={`rounded-xl px-3 py-2 text-xs font-black ${activeRoot === 'all' ? 'bg-cyan-600 text-white' : 'bg-white text-slate-700 hover:bg-cyan-50'}`}>Wszystkie</button>
-                  {equipmentCategoryRoots.map((root: any) => <button key={root.id} type="button" onClick={() => { setActiveRoot(String(root.id)); setActiveSub(''); }} className={`rounded-xl px-3 py-2 text-xs font-black ${activeRoot === String(root.id) ? 'bg-cyan-600 text-white' : 'bg-white text-slate-700 hover:bg-cyan-50'}`}>{root.nazwa} <span className="opacity-60">{totalForEquipmentCategory(String(root.id))}</span></button>)}
+              <div className="mt-5 rounded-2xl bg-slate-50 dark:bg-white/5 border border-slate-100 dark:border-transparent p-4">
+                <p className="mb-3 text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">Filtry / Kategorie główne</p>
+                <div className="flex max-h-[140px] flex-wrap gap-2 overflow-y-auto pr-1 custom-scrollbar">
+                  <button type="button" onClick={() => { setActiveRoot('all'); setActiveSub(''); }} className={`rounded-xl px-3 py-2 text-xs font-black transition shadow-sm ${activeRoot === 'all' ? 'bg-[#04e0ff] text-slate-900' : 'bg-white dark:bg-[#08151a] border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 hover:border-cyan-300'}`}>Wszystkie</button>
+                  {equipmentCategoryRoots.map((root: any) => <button key={root.id} type="button" onClick={() => { setActiveRoot(String(root.id)); setActiveSub(''); }} className={`rounded-xl px-3 py-2 text-xs font-black transition shadow-sm ${activeRoot === String(root.id) ? 'bg-[#04e0ff] text-slate-900' : 'bg-white dark:bg-[#08151a] border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 hover:border-cyan-300'}`}>{root.nazwa} <span className="opacity-60 font-bold ml-1">{totalForEquipmentCategory(String(root.id))}</span></button>)}
                 </div>
               </div>
 
-              {activeRootObj?.dzieci?.length > 0 && <div className="mt-3 rounded-2xl bg-slate-50 p-3">
-                <p className="mb-2 text-[11px] font-black uppercase tracking-wider text-slate-400">Podkategorie</p>
-                <div className="flex max-h-[160px] flex-wrap gap-2 overflow-y-auto pr-1">
-                  <button type="button" onClick={() => setActiveSub('')} className={`rounded-xl px-3 py-2 text-xs font-black ${!activeSub ? 'bg-slate-900 text-white' : 'bg-white text-slate-700 hover:bg-slate-100'}`}>Wszystkie w {activeRootObj.nazwa}</button>
-                  {activeRootObj.dzieci.map((child: any) => <button key={child.id} type="button" onClick={() => setActiveSub(String(child.id))} className={`rounded-xl px-3 py-2 text-xs font-black ${activeSub === String(child.id) ? 'bg-slate-900 text-white' : 'bg-white text-slate-700 hover:bg-slate-100'}`}>{child.nazwa} <span className="opacity-60">{totalForEquipmentCategory(String(child.id))}</span></button>)}
+              {activeRootObj?.dzieci?.length > 0 && <div className="mt-3 rounded-2xl bg-slate-50 dark:bg-white/5 border border-slate-100 dark:border-transparent p-4 animate-fade-in-up">
+                <p className="mb-3 text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">Podkategorie ({activeRootObj.nazwa})</p>
+                <div className="flex max-h-[160px] flex-wrap gap-2 overflow-y-auto pr-1 custom-scrollbar">
+                  <button type="button" onClick={() => setActiveSub('')} className={`rounded-xl px-3 py-2 text-xs font-black transition shadow-sm ${!activeSub ? 'bg-slate-900 dark:bg-slate-200 text-white dark:text-slate-900' : 'bg-white dark:bg-[#08151a] border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 hover:border-cyan-300'}`}>Wszystkie w dziale</button>
+                  {activeRootObj.dzieci.map((child: any) => <button key={child.id} type="button" onClick={() => setActiveSub(String(child.id))} className={`rounded-xl px-3 py-2 text-xs font-black transition shadow-sm ${activeSub === String(child.id) ? 'bg-slate-900 dark:bg-slate-200 text-white dark:text-slate-900' : 'bg-white dark:bg-[#08151a] border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 hover:border-cyan-300'}`}>{child.nazwa} <span className="opacity-60 font-bold ml-1">{totalForEquipmentCategory(String(child.id))}</span></button>)}
                 </div>
               </div>}
             </div>
 
-            <div className="max-h-[520px] space-y-2 overflow-y-auto pr-1">
+            <div className="max-h-[500px] space-y-3 overflow-y-auto pr-2 custom-scrollbar">
               {visibleModels.map((model: any) => {
                 const qty = Number(planQty[String(model.id)] || 0) || 0;
-                return <div key={model.id} className={`rounded-2xl border bg-white p-3 shadow-sm transition ${qty > 0 ? 'border-cyan-300 ring-2 ring-cyan-100' : 'border-slate-200'}`}>
-                  <div className="flex gap-3">
-                    <div className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-xl bg-slate-100 text-xs font-black text-slate-400">
-                      {model.zdjecie ? <img src={model.zdjecie} alt="" className="h-full w-full object-cover" /> : 'IMG'}
+                return <div key={model.id} className={`rounded-2xl border bg-white dark:bg-[#08151a] p-4 shadow-sm transition-all duration-300 ${qty > 0 ? 'border-[#04e0ff] ring-1 ring-[#04e0ff]/30 shadow-md' : 'border-slate-200 dark:border-white/10 hover:border-cyan-300 dark:hover:border-cyan-700'}`}>
+                  <div className="flex gap-4">
+                    <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-slate-100 dark:bg-white/5 text-xs font-black text-slate-400 border border-slate-200 dark:border-white/10">
+                      {model.zdjecie ? <img src={model.zdjecie} alt="" className="h-full w-full object-cover" /> : <Box size={22} className="opacity-50" />}
                     </div>
-                    <div className="min-w-0 flex-1"><p className="truncate font-black text-slate-900">{model.nazwa}</p><p className="truncate text-xs font-bold text-slate-400">{model.kategoria_nazwa}</p><p className="mt-1 text-xs font-black text-cyan-700">Dostępne: {model.dostepne ?? model.ilosc_dostepna ?? model.na_stanie ?? 0}</p></div>
+                    <div className="min-w-0 flex-1 pr-2">
+                      <p className="truncate font-black text-slate-900 dark:text-white leading-tight">{model.nazwa}</p>
+                      <p className="truncate text-[11px] font-bold text-slate-400 mt-1">{model.kategoria_nazwa}</p>
+                      <p className="mt-1.5 text-[11px] font-black text-[#04e0ff]">Dostępne w magazynie: <span className="text-slate-800 dark:text-slate-200 ml-1">{model.dostepne ?? model.ilosc_dostepna ?? model.na_stanie ?? 0}</span></p>
+                    </div>
                   </div>
-                  <div className="mt-3 grid grid-cols-[44px_1fr_44px] gap-2">
-                    <button type="button" onClick={() => stepQty(model, -1)} className="rounded-xl border border-slate-200 bg-white text-lg font-black text-slate-700">-</button>
-                    <input type="number" min={0} className={`${inputClass} text-center text-lg font-black`} value={planQty[String(model.id)] ?? '0'} onChange={(e) => changeQty(model, e.target.value)} />
-                    <button type="button" onClick={() => stepQty(model, 1)} className="rounded-xl bg-cyan-600 text-lg font-black text-white">+</button>
+                  <div className="mt-4 grid grid-cols-[44px_1fr_44px] gap-2 pt-4 border-t border-slate-100 dark:border-white/5">
+                    <button type="button" onClick={() => stepQty(model, -1)} className="rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-lg font-black text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/10 transition shadow-sm">-</button>
+                    <input type="number" min={0} className={`${inputClass} text-center text-lg font-black !py-1`} value={planQty[String(model.id)] ?? '0'} onChange={(e) => changeQty(model, e.target.value)} />
+                    <button type="button" onClick={() => stepQty(model, 1)} className="rounded-xl bg-gradient-to-br from-[#04e0ff] to-blue-600 text-lg font-black text-white hover:scale-105 transition shadow-sm">+</button>
                   </div>
                 </div>;
               })}
-              {!visibleModels.length && <p className="rounded-2xl border border-dashed border-slate-200 bg-white p-6 text-center text-sm font-bold text-slate-400">Brak modeli w tej kategorii.</p>}
+              {!visibleModels.length && <p className="rounded-2xl border border-dashed border-slate-200 dark:border-white/10 p-8 text-center text-sm font-bold text-slate-400 bg-white dark:bg-[#08151a]">Brak modeli w tej kategorii. Wyszukaj ponownie.</p>}
             </div>
 
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="mb-3 flex items-center justify-between"><p className="font-black text-slate-900">Po zmianach</p><span className="rounded-full bg-cyan-100 px-3 py-1 text-xs font-black text-cyan-700">{Object.values(planQty).filter((v) => Number(v) > 0).length} modeli</span></div>
-              <div className="max-h-[150px] space-y-1 overflow-y-auto pr-1">
+            <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#08151a] p-5 shadow-sm">
+              <div className="mb-4 flex items-center justify-between"><p className="font-black text-slate-900 dark:text-white">Koszyk Planu</p><span className="rounded-full bg-cyan-100 dark:bg-cyan-500/10 px-3 py-1 text-[11px] font-black text-cyan-700 dark:text-cyan-400 border border-cyan-200 dark:border-cyan-500/20">{Object.values(planQty).filter((v) => Number(v) > 0).length} modeli wybrano</span></div>
+              <div className="max-h-[180px] space-y-2 overflow-y-auto pr-2 custom-scrollbar">
                 {Object.entries(planQty).filter(([, qty]) => Number(qty) > 0).map(([id, qty]) => {
                   const model = models.find((m: any) => String(m.id) === String(id));
-                  return <div key={id} className="flex justify-between rounded-xl bg-slate-50 px-3 py-2 text-sm font-bold"><span className="truncate">{model?.nazwa || `Model #${id}`}</span><b>x{qty}</b></div>;
+                  return <div key={id} className="flex justify-between items-center rounded-xl bg-slate-50 dark:bg-white/5 px-3 py-2.5 text-sm font-bold border border-slate-100 dark:border-transparent"><span className="truncate pr-4 text-slate-700 dark:text-slate-300">{model?.nazwa || `Model #${id}`}</span><b className="text-slate-900 dark:text-white">x{qty}</b></div>;
                 })}
               </div>
-              <div className="mt-3 flex gap-2"><button type="button" onClick={load} className="flex-1 rounded-xl border border-slate-200 px-4 py-3 text-sm font-black text-slate-600">Cofnij</button><button type="button" onClick={savePlan} className="flex-1 rounded-xl bg-cyan-600 px-4 py-3 text-sm font-black text-white">Zapisz plan</button></div>
+              <div className="mt-5 flex gap-2 pt-4 border-t border-slate-100 dark:border-white/5"><button type="button" onClick={load} className="flex-1 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 px-4 py-3 text-sm font-black text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/10 transition shadow-sm">Cofnij</button><button type="button" onClick={savePlan} className="flex-1 rounded-xl bg-gradient-to-r from-[#04e0ff] to-blue-600 px-4 py-3 text-sm font-black text-white hover:opacity-90 transition shadow-md shadow-cyan-500/20">Zapisz cały plan</button></div>
             </div>
           </div>
         </aside>}
       </div>}
 
       {mode !== 'plan' && <div className="grid gap-0 xl:grid-cols-[1.15fr_.85fr]">
-        <div className="p-5">
-          <div className="mb-4 rounded-2xl border border-cyan-100 bg-cyan-50 p-4">
-            <p className="text-sm font-black text-cyan-900">{mode === 'wydanie' ? 'Skanuj egzemplarze do wydania. Sprzęt ilościowy możesz zaznaczyć checkboxem bez skanowania.' : 'Skanuj zwracane egzemplarze. Sprzęt ilościowy możesz zaznaczyć checkboxem bez skanowania.'}</p>
+        <div className="p-6">
+          <div className="mb-6 rounded-2xl border border-cyan-200 dark:border-cyan-500/20 bg-cyan-50 dark:bg-cyan-500/10 p-5 shadow-sm">
+            <p className="text-sm font-bold leading-relaxed text-cyan-900 dark:text-cyan-100">{mode === 'wydanie' ? 'Skanuj egzemplarze aby je wydać (WZ). Sprzęt ilościowy możesz zaznaczyć checkboxem by pobrać brakującą ilość sztuk bez ręcznego wpisywania w skaner.' : 'Skanuj zwracane egzemplarze (PZ). Sprzęt ilościowy możesz zaznaczyć checkboxem by zwrócić brakującą na magazynie ilość sztuk bez skanera.'}</p>
           </div>
-          <div className="space-y-4">
-            {plannedGroups.map((group: any) => <div key={group.nazwa} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-              <div className="bg-slate-50 px-4 py-3"><b className="text-slate-900">{group.nazwa}</b></div>
-              <div className="divide-y divide-slate-100">
+          <div className="space-y-5">
+            {plannedGroups.map((group: any) => <div key={group.nazwa} className="overflow-hidden rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#08151a] shadow-sm">
+              <div className="bg-slate-50 dark:bg-white/5 border-b border-slate-100 dark:border-white/5 px-5 py-3.5"><b className="text-slate-900 dark:text-white">{group.nazwa}</b></div>
+              <div className="divide-y divide-slate-100 dark:divide-white/5">
                 {group.rows.map((row: any) => {
                   const after = countAfterScan(row);
                   const missing = missingAfterScan(row);
                   const base = mode === 'wydanie' ? row.plan : row.wydane;
                   const percent = base > 0 ? Math.min(100, Math.round((after / base) * 100)) : 100;
-                  return <div key={row.id_modelu} className="px-4 py-3">
-                    <div className="grid gap-3 lg:grid-cols-[1fr_280px] lg:items-center">
+                  return <div key={row.id_modelu} className="px-5 py-4">
+                    <div className="grid gap-4 lg:grid-cols-[1fr_300px] lg:items-center">
                       <div>
-                        <p className="font-black text-slate-900">{row.nazwa}</p>
-                        <p className="text-xs font-bold text-slate-400">{mode === 'wydanie' ? `Plan ${row.plan} · wydano wcześniej ${row.wydane} · skan teraz ${row.scanned}` : `Wydano ${row.wydane} · przyjęto wcześniej ${row.przyjete} · skan teraz ${row.scanned}`}</p>
-                        {row.quantityOnly && <label className="mt-3 inline-flex cursor-pointer items-center gap-3 rounded-2xl border border-cyan-100 bg-cyan-50 px-3 py-2 text-xs font-black text-cyan-900 hover:bg-cyan-100">
+                        <p className="font-black text-slate-900 dark:text-white text-[15px]">{row.nazwa}</p>
+                        <p className="text-xs font-bold text-slate-400 dark:text-slate-500 mt-1">{mode === 'wydanie' ? `Plan: ${row.plan} szt. · Wydano na zewnątrz: ${row.wydane} szt. · Skan w koszyku: ${row.scanned} szt.` : `Wydano w teren: ${row.wydane} szt. · Przyjęto już: ${row.przyjete} szt. · Skan w koszyku: ${row.scanned} szt.`}</p>
+                        {row.quantityOnly && <label className="mt-3 inline-flex cursor-pointer items-center gap-3 rounded-xl border border-cyan-100 dark:border-cyan-500/30 bg-cyan-50 dark:bg-cyan-500/10 px-4 py-2.5 text-xs font-black text-cyan-900 dark:text-cyan-100 hover:bg-cyan-100 dark:hover:bg-cyan-500/20 transition shadow-sm">
                           <input
                             type="checkbox"
-                            className="h-5 w-5 rounded border-cyan-300 accent-cyan-600"
+                            className="h-4 w-4 rounded border-slate-300 text-[#04e0ff] focus:ring-[#04e0ff] cursor-pointer"
                             checked={quantityRowSelected(row)}
                             onChange={(e) => toggleQuantityRowWithoutScan(row, e.target.checked)}
                           />
-                          <span>{mode === 'wydanie' ? 'Wydaj na sztuki bez skanu' : 'Przyjmij na sztuki bez skanu'}</span>
-                          <span className="rounded-full bg-white px-2 py-1 text-cyan-700">{quantityRowSelected(row) ? `${row.scanned} ${row.jednostka || 'szt.'}` : `${missing} ${row.jednostka || 'szt.'}`}</span>
+                          <span>{mode === 'wydanie' ? 'Wydaj brakujące na sztuki' : 'Przyjmij brakujące na sztuki'}</span>
+                          <span className="rounded-full bg-white dark:bg-black/20 border border-slate-200 dark:border-transparent px-2.5 py-1 text-cyan-700 dark:text-[#04e0ff] shadow-sm ml-auto">{quantityRowSelected(row) ? `${row.scanned} ${row.jednostka || 'szt.'}` : `${missing} ${row.jednostka || 'szt.'}`}</span>
                         </label>}
                       </div>
-                      <div className="rounded-2xl bg-slate-50 p-3">
-                        <div className="mb-2 flex justify-between text-xs font-black"><span>{mode === 'wydanie' ? 'Wydano po skanie' : 'Przyjęto po skanie'}: {after}/{base}</span><span className={missing ? 'text-orange-600' : 'text-emerald-700'}>{missing ? `brakuje ${missing}` : 'OK'}</span></div>
-                        <div className="h-2 overflow-hidden rounded-full bg-slate-200"><div className={`h-full ${missing ? 'bg-orange-500' : 'bg-emerald-500'}`} style={{ width: `${percent}%` }} /></div>
+                      <div className="rounded-2xl bg-slate-50 dark:bg-white/5 border border-slate-100 dark:border-transparent p-4 shadow-inner">
+                        <div className="mb-2.5 flex justify-between text-xs font-black"><span>{mode === 'wydanie' ? 'Status wydania' : 'Status przyjęcia'}: {after}/{base}</span><span className={missing ? 'text-orange-600 dark:text-orange-400' : 'text-emerald-600 dark:text-emerald-400'}>{missing ? `Brakuje jeszcze ${missing}` : 'Wszystko OK'}</span></div>
+                        <div className="h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700 shadow-inner"><div className={`h-full rounded-full transition-all duration-1000 ${missing ? 'bg-orange-500 shadow-[0_0_8px_#f97316]' : 'bg-emerald-500 shadow-[0_0_8px_#10b981]'}`} style={{ width: `${percent}%` }} /></div>
                       </div>
                     </div>
                   </div>;
@@ -1310,89 +1754,66 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
             </div>)}
           </div>
         </div>
-        <div className="border-l border-slate-100 bg-slate-50/70 p-5">
-          <div className="sticky top-4 space-y-4">
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <Field label="Skanuj kod kreskowy / QR / SN / case"><div className="flex gap-2"><input ref={scanInputRef} className={inputClass} autoFocus value={scanCode} onFocus={(e) => e.currentTarget.select()} onChange={(e) => setScanCode(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); scan(); } }} placeholder="Kliknij Skanuj, zeskanuj kod i Enter"/><Button onClick={scan}>{scanCode.trim() ? 'Dodaj skan' : 'Skanuj'}</Button></div></Field>
-              <p className="mt-2 text-xs font-bold text-slate-400">Case jest skrótem skanowania — na WZ/PZ trafiają egzemplarze ze środka. Sprzęt ilościowy możesz dodać skanem albo checkboxem bez skanowania.</p>
+        <div className="border-l border-slate-200 dark:border-white/10 bg-slate-50/70 dark:bg-black/20 p-6 shadow-inner">
+          <div className="sticky top-4 space-y-5">
+            <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#08151a] p-5 shadow-sm">
+              <Field label="Skanuj kod kreskowy / QR / SN / Case z Naklejki">
+                 <div className="flex gap-2">
+                   <input ref={scanInputRef} className={`${inputClass} py-3 text-lg font-bold shadow-inner`} autoFocus value={scanCode} onFocus={(e) => e.currentTarget.select()} onChange={(e) => setScanCode(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); scan(); } }} placeholder="Kliknij Skanuj, skanuj kod i wciśnij Enter..."/>
+                   <Button onClick={scan} className="px-6 shadow-md shadow-cyan-600/20">{scanCode.trim() ? 'Dodaj skan' : 'Skanuj'}</Button>
+                 </div>
+              </Field>
+              <p className="mt-3 text-xs font-bold text-slate-400 leading-relaxed">Case to wygodny skrót logistyczny — na dokument WZ/PZ system zawsze automatycznie dodaje konkretne egzemplarze ze środka opakowania. Sprzęt ilościowy dodasz skanem lub checkboxem po lewej.</p>
             </div>
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="mb-3 flex items-center justify-between"><h4 className="text-lg font-black text-slate-900">Zeskanowane teraz</h4><span className="rounded-full bg-cyan-100 px-3 py-1 text-xs font-black text-cyan-700">{docItems.reduce((s: number, p: any) => s + Number(p.ilosc || 1), 0)} szt.</span></div>
-              <div className="max-h-[280px] space-y-2 overflow-y-auto pr-1">
-                {docItems.map((p, idx) => <div key={`${p.id_egzemplarza || p.id_modelu}-${idx}`} className="rounded-xl border border-slate-100 bg-slate-50 p-3"><div className="flex justify-between gap-2"><b className="text-sm text-slate-900">{p.nazwa}</b><button onClick={() => setDocItems((s) => s.filter((_, i) => i !== idx))} className="font-black text-red-600">×</button></div><p className="text-xs font-bold text-slate-400">{p.kategoria} · {isQuantityModel(p) ? `${p.ilosc || 1} ${p.jednostka || 'szt.'}${p.kod ? ` · kod ${p.kod}` : ''}` : `${isZestaw(p) ? 'zestaw · ' : ''}${p.kod || '-'}` }</p></div>)}
-                {!docItems.length && <p className="rounded-2xl border border-dashed border-slate-200 p-6 text-center text-sm font-bold text-slate-400">Skanuj sprzęt albo zaznacz checkbox przy sprzęcie ilościowym — lista i liczniki zaktualizują się od razu.</p>}
+            
+            <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#08151a] p-5 shadow-sm">
+              <div className="mb-4 flex items-center justify-between"><h4 className="text-lg font-black text-slate-900 dark:text-white">Koszyk Skanera (Teraz)</h4><span className="rounded-full bg-cyan-100 dark:bg-cyan-500/10 px-3 py-1 text-xs font-black text-cyan-700 dark:text-[#04e0ff] border border-cyan-200 dark:border-cyan-500/20">{docItems.reduce((s: number, p: any) => s + Number(p.ilosc || 1), 0)} szt.</span></div>
+              <div className="max-h-[260px] space-y-2 overflow-y-auto pr-1 custom-scrollbar">
+                {docItems.map((p, idx) => <div key={`${p.id_egzemplarza || p.id_modelu}-${idx}`} className="rounded-xl border border-slate-100 dark:border-white/5 bg-slate-50 dark:bg-white/5 p-3 flex justify-between gap-3 group transition-colors hover:border-cyan-300 dark:hover:border-cyan-700">
+                  <div className="min-w-0">
+                     <b className="text-[13px] text-slate-900 dark:text-white block truncate">{p.nazwa}</b>
+                     <p className="text-[11px] font-bold text-slate-400 mt-1 truncate">{p.kategoria} · {isQuantityModel(p) ? <span className="text-[#04e0ff]">{p.ilosc || 1} {p.jednostka || 'szt.'}</span> : `${isZestaw(p) ? 'zestaw · ' : ''}${p.kod || '-'}` } {p.kod && isQuantityModel(p) ? ` · kod ${p.kod}` : ''}</p>
+                  </div>
+                  <button onClick={() => setDocItems((s) => s.filter((_, i) => i !== idx))} className="font-black text-slate-300 hover:text-red-500 bg-white dark:bg-transparent rounded-lg p-1.5 h-fit shadow-sm border border-slate-200 dark:border-transparent transition opacity-0 group-hover:opacity-100" title="Usuń z koszyka"><Trash2 size={16}/></button>
+                </div>)}
+                {!docItems.length && <div className="rounded-2xl border border-dashed border-slate-200 dark:border-white/10 p-8 text-center text-sm font-bold text-slate-400 bg-white dark:bg-transparent">Rozpocznij skanowanie fizycznego sprzętu albo zaznacz checkbox przy sprzęcie ilościowym — ta lista zaktualizuje się automatycznie.</div>}
               </div>
             </div>
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <Field label="Wyszukaj egzemplarz ręcznie"><input className={inputClass} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="nazwa, numer, kod..." /></Field>
-              <div className="mt-3 max-h-[240px] space-y-2 overflow-y-auto pr-1">
-                {visibleInstances.map((r: any) => <button key={r.id} type="button" onClick={() => addDocumentItem(r, 'manual')} className="w-full rounded-xl border border-slate-200 bg-white p-3 text-left hover:border-cyan-300 hover:bg-cyan-50"><b className="text-sm text-slate-900">{r.model?.nazwa || r.nazwa_wiersza}</b><p className="text-xs font-bold text-slate-400">{r.nazwa_wiersza} · {r.kod || '-'}</p></button>)}
+            
+            <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#08151a] p-5 shadow-sm">
+              <Field label="Wyszukaj i dodaj egzemplarz ręcznie (Awaryjnie)"><div className="relative"><Search className="absolute left-3 top-3 text-slate-400" size={16}/><input className={`${inputClass} pl-9`} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="nazwa, numer boczny, kod kreskowy..." /></div></Field>
+              <div className="mt-4 max-h-[220px] space-y-2 overflow-y-auto pr-1 custom-scrollbar">
+                {visibleInstances.map((r: any) => <button key={r.id} type="button" onClick={() => addDocumentItem(r, 'manual')} className="w-full rounded-xl border border-slate-100 dark:border-white/5 bg-slate-50 dark:bg-white/5 p-3 text-left hover:border-cyan-300 dark:hover:border-cyan-700 transition shadow-sm"><b className="text-[13px] text-slate-900 dark:text-white block truncate">{r.model?.nazwa || r.nazwa_wiersza}</b><p className="text-[11px] font-bold text-slate-400 mt-1 truncate">{r.nazwa_wiersza} · S/N: {r.kod || '-'}</p></button>)}
               </div>
             </div>
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="rounded-2xl border border-cyan-100 bg-cyan-50 p-3 text-xs font-bold text-cyan-900">
-                Dokument wydarzenia podpisze automatycznie zalogowany użytkownik. Na potwierdzeniu będzie widać, z czyjego konta wyszedł sprzęt.
+            
+            <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#08151a] p-5 shadow-sm">
+              <div className="rounded-xl border border-cyan-100 dark:border-cyan-500/20 bg-cyan-50 dark:bg-cyan-500/10 p-3.5 text-xs font-bold text-cyan-900 dark:text-cyan-100 mb-4 leading-relaxed">
+                Dokument magazynowy podpisze automatycznie w systemie aktualnie zalogowany użytkownik. Na wygenerowanym potwierdzeniu PDF będzie widoczny cyfrowy ślad audytowy transakcji.
               </div>
-              <Field label="Uwagi"><textarea className={inputClass} value={docForm.uwagi || ''} onChange={(e) => setDocForm({ ...docForm, uwagi: e.target.value })}/></Field>
-              <button type="button" disabled={!docItems.length} onClick={() => createDocument(mode)} className={`mt-2 w-full rounded-xl px-4 py-3 text-sm font-black text-white disabled:opacity-50 ${mode === 'wydanie' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-blue-600 hover:bg-blue-700'}`}><FileText size={16} className="inline" /> {mode === 'wydanie' ? 'Wystaw WZ' : 'Wystaw PZ'}</button>
+              <Field label="Dodatkowe uwagi dla magazyniera do wpisania na dokument WZ/PZ"><textarea className={`${inputClass} resize-none min-h-[80px]`} value={docForm.uwagi || ''} onChange={(e) => setDocForm({ ...docForm, uwagi: e.target.value })} placeholder="opcjonalne uwagi..."/></Field>
+              <button type="button" disabled={!docItems.length || saving} onClick={() => createDocument(mode)} className={`mt-4 w-full rounded-xl px-5 py-3.5 text-sm font-black text-white disabled:opacity-50 transition shadow-lg ${mode === 'wydanie' ? 'bg-gradient-to-r from-emerald-500 to-emerald-600 shadow-emerald-500/30 hover:opacity-90' : 'bg-gradient-to-r from-[#04e0ff] to-blue-600 shadow-[#04e0ff]/30 hover:opacity-90'} flex items-center justify-center gap-2`}>
+                {saving ? <Loader2 size={18} className="animate-spin"/> : <FileText size={18} />} {saving ? 'Generowanie...' : mode === 'wydanie' ? 'Zatwierdź i Wystaw WZ' : 'Zatwierdź i Wystaw PZ'}
+              </button>
             </div>
           </div>
         </div>
       </div>}
     </section>
 
-    <div className="rounded-2xl border border-slate-200 p-4">
-      <h3 className="mb-3 text-lg font-black">Dokumenty magazynowe wydarzenia</h3>
-      <div className="grid gap-2 md:grid-cols-2">
-        {(data.dokumenty || []).map((d: any) => <a key={d.id} href={`/dashboard/warehouse/documents/${d.id}`} className="rounded-2xl border p-3 hover:bg-slate-50"><b>{d.numer}</b><p className="text-sm font-bold text-slate-500">{d.typ} · {new Date(d.data_operacji).toLocaleString('pl-PL')} · egzemplarzy: {d.pozycje?.length || 0}</p></a>)}
-        {!data.dokumenty?.length && <p className="text-sm font-bold text-slate-400">Brak dokumentów.</p>}
+    <div className="rounded-3xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#08151a] p-6 shadow-sm mt-8">
+      <h3 className="mb-4 text-xl font-black text-slate-900 dark:text-white border-b border-slate-100 dark:border-white/5 pb-4">Wygenerowane dokumenty magazynowe dla tego wydarzenia</h3>
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        {(data.dokumenty || []).map((d: any) => <a key={d.id} href={`/dashboard/warehouse/documents/${d.id}`} className="rounded-2xl border border-slate-200 dark:border-white/10 p-5 bg-slate-50 dark:bg-white/5 hover:border-[#04e0ff] hover:bg-white dark:hover:bg-white/10 transition shadow-sm group">
+           <div className="flex items-center justify-between mb-2">
+              <b className="text-lg font-black text-slate-900 dark:text-white group-hover:text-[#04e0ff] transition">{d.numer}</b>
+              <span className={`px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider ${d.typ === 'wydanie' ? 'bg-orange-100 text-orange-700' : d.typ === 'przyjecie' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-700'}`}>{d.typ}</span>
+           </div>
+           <p className="text-xs font-bold text-slate-500 dark:text-slate-400 mt-2 flex items-center gap-1.5"><Calendar size={13}/> {new Date(d.data_operacji).toLocaleString('pl-PL')}</p>
+           <p className="text-xs font-bold text-slate-500 dark:text-slate-400 mt-1.5 flex items-center gap-1.5"><Box size={13}/> Załączono sztuk egzemplarzy: {d.pozycje?.length || 0}</p>
+        </a>)}
+        {!data.dokumenty?.length && <div className="col-span-full p-10 border border-dashed border-slate-200 dark:border-white/10 rounded-2xl text-center font-bold text-slate-400 bg-slate-50/50 dark:bg-transparent">Brak wystawionych dokumentów logistycznych w systemie. Zeskanuj i wydaj pierwszy sprzęt!</div>}
       </div>
     </div>
-  </div>;
-}
-
-function RentalsPanel({ rentals }: { rentals: any[] }) {
-  return <div className="space-y-2">{rentals.map((r: any) => <Link key={r.id} href={`/dashboard/rentals/${r.id}`} className="block rounded-2xl border border-slate-200 p-4 hover:bg-cyan-50"><p className="font-black text-slate-900">{r.numer || `Wynajem #${r.id}`}</p><p className="text-sm font-bold text-slate-400">{dateTime(r.data_wydania)} → {dateTime(r.data_zwrotu_planowana)}</p></Link>)}{rentals.length === 0 && <p className="rounded-2xl border border-dashed border-slate-200 p-8 text-center text-sm font-bold text-slate-400">Brak wypożyczeń przypisanych do wydarzenia.</p>}</div>;
-}
-
-function PeoplePanel({ people, tabQuery = '' }: { people: any[], tabQuery?: string }) {
-  const filtered = useMemo(() => {
-    if (!tabQuery) return people;
-    const q = tabQuery.toLowerCase();
-    return people.filter(p => `${p.uzytkownik?.imie || ''} ${p.uzytkownik?.nazwisko || ''} ${p.rola_w_wydarzeniu || ''}`.toLowerCase().includes(q));
-  }, [people, tabQuery]);
-
-  return <div className="space-y-2">
-    {filtered.map((p: any) => <div key={p.id} className="rounded-2xl border border-slate-200 p-4"><p className="font-black text-slate-900">{p.uzytkownik?.imie} {p.uzytkownik?.nazwisko}</p><p className="text-sm font-bold text-slate-400">{p.rola_w_wydarzeniu || 'Obsługa'}</p></div>)}
-    {filtered.length === 0 && people.length > 0 && <p className="rounded-2xl border border-dashed border-slate-200 p-8 text-center text-sm font-bold text-slate-400">Brak osób pasujących do wyszukiwania.</p>}
-    {people.length === 0 && <p className="rounded-2xl border border-dashed border-slate-200 p-8 text-center text-sm font-bold text-slate-400">Brak przypisanej ekipy.</p>}
-  </div>;
-}
-
-function FleetPanel({ vehicles, tabQuery = '' }: { vehicles: any[], tabQuery?: string }) {
-  const filtered = useMemo(() => {
-    if (!tabQuery) return vehicles;
-    const q = tabQuery.toLowerCase();
-    return vehicles.filter(v => `${v.pojazd?.nazwa || ''} ${v.pojazd?.nr_rejestracyjny || ''} ${v.rola_pojazdu || ''}`.toLowerCase().includes(q));
-  }, [vehicles, tabQuery]);
-
-  return <div className="space-y-2">
-    {filtered.map((v: any) => <div key={v.id} className="rounded-2xl border border-slate-200 p-4"><p className="font-black text-slate-900">{v.pojazd?.nazwa || 'Pojazd'}</p><p className="text-sm font-bold text-slate-400">{v.pojazd?.nr_rejestracyjny || '-'} · {v.rola_pojazdu || 'Rezerwacja'}</p></div>)}
-    {filtered.length === 0 && vehicles.length > 0 && <p className="rounded-2xl border border-dashed border-slate-200 p-8 text-center text-sm font-bold text-slate-400">Brak pojazdów pasujących do wyszukiwania.</p>}
-    {vehicles.length === 0 && <p className="rounded-2xl border border-dashed border-slate-200 p-8 text-center text-sm font-bold text-slate-400">Brak przypisanych pojazdów.</p>}
-  </div>;
-}
-
-function HistoryPanel({ history, tabQuery = '' }: { history: any[], tabQuery?: string }) {
-  const filtered = useMemo(() => {
-    if (!tabQuery) return history;
-    const q = tabQuery.toLowerCase();
-    return history.filter(h => `${h.akcja || ''} ${h.uzytkownik?.imie || ''} ${h.uzytkownik?.nazwisko || ''}`.toLowerCase().includes(q));
-  }, [history, tabQuery]);
-
-  return <div className="space-y-2">
-    {filtered.map((h: any) => <div key={h.id} className="rounded-2xl border border-slate-200 p-4"><p className="font-black text-slate-900">{h.akcja}</p><p className="text-sm font-bold text-slate-400">{dateTime(h.data_utworzenia)} · {h.uzytkownik ? `${h.uzytkownik.imie} ${h.uzytkownik.nazwisko}` : 'System'}</p></div>)}
-    {filtered.length === 0 && history.length > 0 && <p className="rounded-2xl border border-dashed border-slate-200 p-8 text-center text-sm font-bold text-slate-400">Brak wpisów pasujących do wyszukiwania.</p>}
-    {history.length === 0 && <p className="rounded-2xl border border-dashed border-slate-200 p-8 text-center text-sm font-bold text-slate-400">Brak historii zmian.</p>}
   </div>;
 }

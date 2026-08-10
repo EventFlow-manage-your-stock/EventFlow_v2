@@ -83,16 +83,20 @@ export class WydarzeniaService {
         status_magazynowy: true,
         status_ksiegowy: true,
         oferta_glowna: true,
-        etapy: { orderBy: { kolejnosc: 'asc' } },
+        etapy: { orderBy: { data_start: 'asc' } },
         oferty: {
           where: { aktywny: true },
           include: { status: true, wersje: { take: 1, orderBy: { numer_wersji: 'desc' } } },
           orderBy: { data_utworzenia: 'desc' },
         },
-        // EVENTFLOW_PRODUCT_POLISH_V28: wynajem jest osobnym bytem, nie częścią wydarzenia.
-        // Wydanie sprzętu do wydarzenia obsługuje moduł WZ/PZ, nie tworzymy ani nie pokazujemy tu wynajmów.
         ekipa: { include: { uzytkownik: true } },
         pojazdy: { include: { pojazd: true } },
+        // DODANE: Pobieranie powiązanych zadań z osobami przypisanymi
+        zadania: { 
+          where: { aktywny: true },
+          include: { przypisani_uzytkownicy: { include: { uzytkownik: true } } },
+          orderBy: { data_utworzenia: 'desc' }
+        },
       },
     });
 
@@ -101,11 +105,126 @@ export class WydarzeniaService {
     const historia = await this.prisma.extendedClient.logZmian.findMany({
       where: { id_organizacji, typ_obiektu: 'Wydarzenie', id_obiektu: id },
       orderBy: { data_utworzenia: 'desc' },
-      include: { uzytkownik: true },
+      include: { uzytkownik: { select: { imie: true, nazwisko: true, avatar: true } } },
     });
 
-    return { ...event, historia };
+    // DODANE: Pobieranie załączników
+    const zalaczniki = await this.prisma.extendedClient.zalacznik.findMany({
+      where: { id_organizacji, typ_obiektu: 'Wydarzenie', id_obiektu: id, aktywny: true },
+      include: { dodal: { select: { imie: true, nazwisko: true } } },
+      orderBy: { data_utworzenia: 'desc' },
+    });
+
+    return { ...event, historia, zalaczniki };
   }
+
+  async addEtap(id_wydarzenia: number, dto: any, id_organizacji: number) {
+    return this.prisma.extendedClient.etapWydarzenia.create({
+      data: {
+        id_organizacji,
+        id_wydarzenia,
+        nazwa: dto.nazwa,
+        opis: dto.opis || null,
+        data_start: new Date(dto.data_start),
+        data_koniec: new Date(dto.data_koniec),
+      }
+    });
+  }
+
+  async removeEtap(id: number, id_organizacji: number) {
+    return this.prisma.extendedClient.etapWydarzenia.delete({
+      where: { id, id_organizacji }
+    });
+  }
+
+  async addEkipa(id_wydarzenia: number, dto: any, id_organizacji: number) {
+    let id_uzytkownika = dto.id_uzytkownika;
+
+    // MAGIA EVENTFLOW: Tworzenie użytkownika zewnętrznego w locie
+    if (dto.isExternal) {
+      const newUser = await this.prisma.extendedClient.uzytkownik.create({
+        data: {
+          id_organizacji,
+          imie: dto.imie,
+          nazwisko: dto.nazwisko,
+          email: dto.email || `external_${Date.now()}@temp.eventflow.pl`,
+          telefon: dto.telefon || null,
+          stanowisko: 'Współpracownik Zewnętrzny',
+          haslo: 'none', // Blokada logowania
+          aktywny: true,
+        }
+      });
+      id_uzytkownika = newUser.id;
+    }
+
+    return this.prisma.extendedClient.wydarzenieUzytkownik.create({
+      data: {
+        id_organizacji,
+        id_wydarzenia,
+        id_uzytkownika: Number(id_uzytkownika),
+        rola_w_wydarzeniu: dto.rola || 'Obsługa techniczna',
+      }
+    });
+  }
+
+  async removeEkipa(id: number, id_organizacji: number) {
+    return this.prisma.extendedClient.wydarzenieUzytkownik.delete({
+      where: { id, id_organizacji }
+    });
+  }
+
+  async addFlota(id_wydarzenia: number, dto: any, id_organizacji: number) {
+    return this.prisma.extendedClient.wydarzeniePojazd.create({
+      data: {
+        id_organizacji,
+        id_wydarzenia,
+        id_pojazdu: Number(dto.id_pojazdu),
+        rola_pojazdu: dto.rola || 'Transport sprzętu',
+      }
+    });
+  }
+
+  async removeFlota(id: number, id_organizacji: number) {
+    return this.prisma.extendedClient.wydarzeniePojazd.delete({
+      where: { id, id_organizacji }
+    });
+  }
+
+  async addChatMessage(id_wydarzenia: number, message: string, id_organizacji: number, id_uzytkownika: number) {
+    return this.prisma.extendedClient.logZmian.create({
+      data: {
+        id_organizacji,
+        id_uzytkownika,
+        typ_obiektu: 'Wydarzenie',
+        id_obiektu: id_wydarzenia,
+        akcja: 'CHAT', // Unikalny identyfikator wiadomości
+        nowa_wartosc: message,
+      }
+    });
+  }
+
+  async addZalacznik(id_wydarzenia: number, dto: any, id_organizacji: number, id_uzytkownika: number) {
+    return this.prisma.extendedClient.zalacznik.create({
+      data: {
+        id_organizacji,
+        typ_obiektu: 'Wydarzenie',
+        id_obiektu: id_wydarzenia,
+        nazwa: dto.nazwa,
+        nazwa_pliku: dto.nazwa_pliku,
+        rozmiar_bajtow: Number(dto.rozmiar) || 0,
+        mime: dto.mime || 'application/octet-stream',
+        id_uzytkownika_dodal: id_uzytkownika
+      }
+    });
+  }
+
+  async removeZalacznik(id: number, id_organizacji: number) {
+    return this.prisma.extendedClient.zalacznik.update({
+      where: { id, id_organizacji },
+      data: { aktywny: false }
+    });
+  }
+
 
   async create(dto: any, id_organizacji: number, id_uzytkownika: number) {
     const numer = `E${new Date().getFullYear()}/${new Date().getMonth() + 1}/${Math.floor(Math.random() * 1000)}`;

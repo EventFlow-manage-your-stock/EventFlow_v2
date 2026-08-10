@@ -75,6 +75,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isNotifOpen, setIsNotifOpen] = useState(false);
+
+  // Stany dla TopBar (Ukrywanie przy scrollowaniu)
+  const [isTopBarVisible, setIsTopBarVisible] = useState(true);
+  const lastScrollY = useRef(0);
   
   const searchRef = useRef<HTMLDivElement>(null);
   const notifRef = useRef<HTMLDivElement>(null);
@@ -117,6 +121,31 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       }
     }
   }, [user, router]);
+
+  // Nasłuchiwanie scrolla do ukrywania górnego paska
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const handleScroll = () => {
+      const currentScrollY = window.scrollY;
+
+      // Tolerancja 60px od góry, gdzie pasek jest zawsze widoczny
+      if (currentScrollY < 60) {
+        setIsTopBarVisible(true);
+      } else if (currentScrollY > lastScrollY.current && isTopBarVisible) {
+        // Scroll w dół - chowamy
+        setIsTopBarVisible(false);
+      } else if (currentScrollY < lastScrollY.current && !isTopBarVisible) {
+        // Scroll w górę - pokazujemy
+        setIsTopBarVisible(true);
+      }
+
+      lastScrollY.current = currentScrollY;
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [isTopBarVisible]);
 
   // Zamykanie modali po kliknięciu poza obszar
   useEffect(() => {
@@ -301,8 +330,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       {/* MAIN CONTENT WRAPPER */}
       <div className={`flex flex-col flex-1 min-w-0 transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${isCollapsed ? 'lg:ml-[112px]' : 'lg:ml-[312px]'}`}>
         
-        {/* TOP BAR WYSPA */}
-        <header className="sticky top-4 z-30 mx-4 lg:mx-8 mb-8 flex h-16 shrink-0 items-center justify-between rounded-2xl border border-slate-200 bg-white/80 px-4 backdrop-blur-xl dark:border-white/5 dark:bg-[#08151a]/80 sm:px-6 transition-colors duration-300 shadow-sm">
+        {/* TOP BAR WYSPA - CHOWAJĄCA SIĘ PRZY SCROLLU */}
+        <header className={`sticky z-30 mx-4 lg:mx-8 mb-8 flex h-16 shrink-0 items-center justify-between rounded-2xl border border-slate-200 bg-white/80 px-4 backdrop-blur-xl dark:border-white/5 dark:bg-[#08151a]/80 sm:px-6 shadow-sm transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] ${isTopBarVisible ? 'top-4 translate-y-0 opacity-100' : 'top-4 -translate-y-[150%] opacity-0 pointer-events-none'}`}>
           <div className="flex items-center gap-4">
             {/* Przycisk Menu Mobilnego */}
             <button className="lg:hidden p-2 rounded-xl text-slate-500 hover:bg-slate-100 dark:hover:bg-white/5 transition" onClick={() => setIsMobileOpen(true)}>
@@ -362,7 +391,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     <button className="text-[11px] font-black uppercase tracking-wider text-[#04e0ff] hover:text-cyan-700 transition-colors">Oznacz jako przeczytane</button>
                   </div>
                   <div className="p-2 max-h-[350px] overflow-y-auto custom-scrollbar">
-                    {/* Przykładowe powiadomienie 1 */}
                     <div className="p-4 rounded-2xl hover:bg-cyan-50 dark:hover:bg-white/5 transition cursor-pointer mb-1">
                       <div className="flex items-start gap-3">
                         <div className="w-2 h-2 rounded-full bg-[#04e0ff] mt-1.5 shrink-0 shadow-[0_0_8px_#04e0ff]"></div>
@@ -373,7 +401,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                         </div>
                       </div>
                     </div>
-                    {/* Przykładowe powiadomienie 2 */}
                     <div className="p-4 rounded-2xl hover:bg-cyan-50 dark:hover:bg-white/5 transition cursor-pointer">
                       <div className="flex items-start gap-3">
                         <div className="w-2 h-2 rounded-full bg-rose-500 mt-1.5 shrink-0"></div>
@@ -393,7 +420,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </div>
 
             {/* Szybki Wpis */}
-            <Button className="hidden sm:flex ml-1" onClick={() => router.push('/dashboard/calendar')}>
+            <Button className="hidden sm:flex ml-1 shadow-md shadow-[#04e0ff]/20" onClick={() => router.push('/dashboard/calendar')}>
               <Plus size={16} className="mr-1 inline" /> Szybki wpis
             </Button>
           </div>
