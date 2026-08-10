@@ -1,10 +1,10 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class UzytkownicyService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private prisma: PrismaService) {}
 
   async findAll(id_organizacji: number) {
     return this.prisma.extendedClient.uzytkownik.findMany({
@@ -17,22 +17,15 @@ export class UzytkownicyService {
   async findOne(id: number, id_organizacji: number) {
     const user = await this.prisma.extendedClient.uzytkownik.findFirst({
       where: { id, id_organizacji, aktywny: true },
-      include: { role: true },
+      include: { role: { include: { rola: true } } },
     });
-    if (!user) throw new NotFoundException('Użytkownik nie istnieje');
-    // Bezpieczeństwo: wykluczamy hasło i tokeny z odpowiedzi API
-    const { haslo, token_resetu_hasla, data_waznosci_tokenu, ...safeUser } = user;
-    return safeUser;
+    if (!user) throw new NotFoundException('Nie znaleziono użytkownika');
+    return user;
   }
 
   async create(dto: any, id_organizacji: number) {
-    const existing = await this.prisma.extendedClient.uzytkownik.findFirst({ where: { email: dto.email, id_organizacji } });
-    if (existing) throw new BadRequestException('Konto z tym e-mailem już istnieje w organizacji.');
-
-    // Bezpieczne, domyślne hasło tymczasowe, jeśli nie podano
-    const hashedPassword = await bcrypt.hash(dto.haslo || 'EventFlow123!', 10);
-
     return this.prisma.extendedClient.$transaction(async (tx) => {
+      const hashedPassword = await bcrypt.hash(dto.haslo || 'EventFlow123!', 10);
       const user = await tx.uzytkownik.create({
         data: {
           id_organizacji,
@@ -40,19 +33,20 @@ export class UzytkownicyService {
           nazwisko: dto.nazwisko,
           email: dto.email,
           telefon: dto.telefon || null,
-          haslo: hashedPassword,
           stanowisko: dto.stanowisko || null,
           umiejetnosci: dto.umiejetnosci || null,
-        }
+          haslo: hashedPassword,
+          zablokowane_uprawnienia: Array.isArray(dto.zablokowane_uprawnienia) ? dto.zablokowane_uprawnienia : [],
+        },
       });
 
       if (dto.roleIds && Array.isArray(dto.roleIds)) {
         await tx.uzytkownikRola.createMany({
-          data: dto.roleIds.map((id_roli: number | string) => ({
+          data: dto.roleIds.map((rId: string) => ({
             id_organizacji,
             id_uzytkownika: user.id,
-            id_roli: Number(id_roli)
-          }))
+            id_roli: Number(rId),
+          })),
         });
       }
       return user;
@@ -60,8 +54,6 @@ export class UzytkownicyService {
   }
 
   async update(id: number, dto: any, id_organizacji: number) {
-    await this.findOne(id, id_organizacji);
-
     return this.prisma.extendedClient.$transaction(async (tx) => {
       const dataToUpdate: any = {
         imie: dto.imie,
@@ -70,26 +62,29 @@ export class UzytkownicyService {
         telefon: dto.telefon || null,
         stanowisko: dto.stanowisko || null,
         umiejetnosci: dto.umiejetnosci || null,
+        // ZAPIS ZABLOKOWANYCH UPRAWNIEŃ Z FRONTU
+        zablokowane_uprawnienia: Array.isArray(dto.zablokowane_uprawnienia) ? dto.zablokowane_uprawnienia : [],
       };
 
-      if (dto.haslo) {
+      if (dto.haslo && dto.haslo.trim() !== '') {
         dataToUpdate.haslo = await bcrypt.hash(dto.haslo, 10);
       }
 
       const user = await tx.uzytkownik.update({
-        where: { id },
-        data: dataToUpdate
+        where: { id, id_organizacji },
+        data: dataToUpdate,
       });
 
+      // AKTUALIZACJA RÓL
       if (dto.roleIds && Array.isArray(dto.roleIds)) {
-        await tx.uzytkownikRola.deleteMany({ where: { id_uzytkownika: id } });
+        await tx.uzytkownikRola.deleteMany({ where: { id_uzytkownika: id, id_organizacji } });
         if (dto.roleIds.length > 0) {
           await tx.uzytkownikRola.createMany({
-            data: dto.roleIds.map((id_roli: number | string) => ({
+            data: dto.roleIds.map((rId: string) => ({
               id_organizacji,
               id_uzytkownika: id,
-              id_roli: Number(id_roli)
-            }))
+              id_roli: Number(rId),
+            })),
           });
         }
       }
@@ -99,8 +94,8 @@ export class UzytkownicyService {
 
   async remove(id: number, id_organizacji: number) {
     return this.prisma.extendedClient.uzytkownik.update({
-      where: { id },
-      data: { aktywny: false, data_usuniecia: new Date() }
+      where: { id, id_organizacji },
+      data: { aktywny: false, data_usuniecia: new Date() },
     });
   }
 }

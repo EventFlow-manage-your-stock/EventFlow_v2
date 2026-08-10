@@ -14,20 +14,17 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(payload: any) {
-    // Szukamy użytkownika po ID zapisanym w "sub"
-    const uzytkownik = await this.prisma.uzytkownik.findUnique({
-      where: { id: payload.sub },
-    });
-
-    if (!uzytkownik) {
-      throw new UnauthorizedException();
+      const uzytkownik = await this.prisma.extendedClient.uzytkownik.findUnique({
+        where: { id: payload.sub },
+      });
+      if (!uzytkownik) {
+        throw new UnauthorizedException();
+      }
+      return { 
+         id: uzytkownik.id, 
+         email: uzytkownik.email, 
+         id_organizacji: uzytkownik.id_organizacji,
+         permissions: payload.permissions || [] // <-- DODANE
+       };
     }
-
-    // Zwracamy obiekt, który NestJS automatycznie przypisze do obiektu Request (req.user)
-    return { 
-      id: uzytkownik.id, 
-      email: uzytkownik.email, 
-      id_organizacji: uzytkownik.id_organizacji 
-    };
-  }
 }

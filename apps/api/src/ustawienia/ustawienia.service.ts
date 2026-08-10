@@ -13,4 +13,22 @@ export class UstawieniaService {
   async getStatusyWydarzen(id_organizacji: number) { return this.prisma.extendedClient.statusWydarzenia.findMany({ where: { id_organizacji, aktywny: true }, orderBy: { kolejnosc: 'asc' } }); }
   async createStatusWydarzenia(dto: any, id_organizacji: number) { return this.prisma.extendedClient.statusWydarzenia.create({ data: { id_organizacji, nazwa: dto.nazwa, kolor: dto.kolor || '#64748B', ikona: dto.ikona || '●', kolejnosc: Number(dto.kolejnosc || 0) } }); }
   async updateStatusWydarzenia(id: number, dto: any, id_organizacji: number) { return this.prisma.extendedClient.statusWydarzenia.update({ where: { id }, data: { nazwa: dto.nazwa, kolor: dto.kolor, ikona: dto.ikona, kolejnosc: Number(dto.kolejnosc || 0), aktywny: dto.aktywny ?? true } }); }
+  async updateRole(id: number, dto: any, id_organizacji: number) {
+    return this.prisma.extendedClient.rola.update({
+      where: { id, id_organizacji },
+      data: {
+        nazwa: dto.nazwa,
+        opis: dto.opis || null,
+        kolejnosc: dto.kolejnosc ? Number(dto.kolejnosc) : undefined,
+        uprawnienia: dto.uprawnienia // Tablica stringów w formacie JSON
+      }
+    });
+  }
+
+  async deleteRole(id: number, id_organizacji: number) {
+    return this.prisma.extendedClient.rola.update({
+      where: { id, id_organizacji },
+      data: { aktywny: false, data_usuniecia: new Date() }
+    });
+  }
 }

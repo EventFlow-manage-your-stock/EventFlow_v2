@@ -91,6 +91,7 @@ model Rola {
   nazwa             String    @db.VarChar(100)
   opis              String?   @db.Text
   kolejnosc         Int       @default(0)
+  uprawnienia       Json?     @default("[]")
   aktywny           Boolean   @default(true)
   data_utworzenia   DateTime  @default(now())
   data_aktualizacji DateTime  @updatedAt
@@ -112,6 +113,7 @@ model Uzytkownik {
   telefon                   String?   @db.VarChar(30)
   haslo                     String    @db.VarChar(255)
   avatar                    String?   @db.VarChar(500)
+  zablokowane_uprawnienia   Json?     @default("[]")
   stanowisko                String?   @db.VarChar(150)
   umiejetnosci              String?   @db.Text
   token_resetu_hasla        String?   @db.VarChar(255)

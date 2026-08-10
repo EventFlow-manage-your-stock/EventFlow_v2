@@ -26,11 +26,13 @@ export class AuthService {
   }
 
   async login(email: string, passwordRaw: string) {
-    const uzytkownik = await this.prisma.uzytkownik.findFirst({
+    const uzytkownik = await this.prisma.extendedClient.uzytkownik.findFirst({
       where: { email },
       include: { 
         organizacja: true,
-        role: { include: { rola: true } }
+        role: {
+          include: { rola: true }
+        }
       },
     });
 
@@ -47,11 +49,28 @@ export class AuthService {
       throw new UnauthorizedException('Konto lub organizacja są nieaktywne');
     }
 
-    const payload = { 
-      sub: uzytkownik.id, 
+    // 1. Zbieranie uprawnień ze wszystkich ról użytkownika
+    const rolePermissions = new Set<string>();
+    for (const userRole of uzytkownik.role) {
+      const upr = userRole.rola.uprawnienia;
+      if (Array.isArray(upr)) {
+        upr.forEach((p: string) => rolePermissions.add(p));
+      }
+    }
+
+    // 2. Odejmowanie uprawnień z czarnej listy (Zablokowane dla tego użytkownika)
+    const blocked = Array.isArray(uzytkownik.zablokowane_uprawnienia) ? uzytkownik.zablokowane_uprawnienia : [];
+    blocked.forEach((p: string) => rolePermissions.delete(p));
+
+    const permissions = Array.from(rolePermissions);
+
+    // 3. Budowa payloadu dla tokena JWT i stanu Frontendowego
+    const payload = {
+      sub: uzytkownik.id,
       email: uzytkownik.email,
       orgId: uzytkownik.id_organizacji,
-      role: uzytkownik.role[0]?.rola.nazwa || 'Użytkownik'
+      role: uzytkownik.role[0]?.rola.nazwa || 'Użytkownik',
+      permissions
     };
 
     return {
@@ -62,7 +81,8 @@ export class AuthService {
         imie: uzytkownik.imie,
         nazwisko: uzytkownik.nazwisko,
         organizacja: uzytkownik.organizacja.nazwa,
-        role: payload.role
+        role: payload.role,
+        permissions: payload.permissions
       }
     };
   }
