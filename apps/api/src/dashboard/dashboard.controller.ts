@@ -19,4 +19,5 @@ export class DashboardController {
     const user = req.user as any;
     return this.dashboardService.savePreferences(Number(user.id), body.layout);
   }
+  
 }

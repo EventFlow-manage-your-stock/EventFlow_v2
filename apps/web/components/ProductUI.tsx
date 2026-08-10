@@ -26,13 +26,23 @@ export function Card({ children, className = '', onClick, ...props }: { children
   );
 }
 
-export function Button({ children, onClick, variant = 'primary', type = 'button', disabled = false }: { children: React.ReactNode; onClick?: () => void; variant?: 'primary' | 'secondary' | 'danger'; type?: 'button' | 'submit'; disabled?: boolean }) {
+export function Button({ children, onClick, variant = 'primary', type = 'button', disabled = false, className = '' }: { children: React.ReactNode; onClick?: () => void; variant?: 'primary' | 'secondary' | 'danger'; type?: 'button' | 'submit'; disabled?: boolean; className?: string }) {
   const cls = variant === 'primary'
-    ? 'bg-[#0891B2] text-white hover:bg-[#0E7490]'
+    ? 'bg-gradient-to-r from-[#04e0ff] to-blue-600 text-white shadow-md shadow-[#04e0ff]/20 hover:shadow-lg hover:shadow-[#04e0ff]/40 hover:scale-[1.02] border-0'
     : variant === 'danger'
-      ? 'border border-red-200 bg-red-50 text-red-600 hover:bg-red-100'
-      : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:bg-slate-900 dark:text-slate-200';
-  return <button type={type} disabled={disabled} onClick={onClick} className={`rounded-xl px-4 py-2 text-sm font-black transition disabled:opacity-50 ${cls}`}>{children}</button>;
+      ? 'border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-500/10 dark:border-red-500/20 dark:hover:bg-red-500/20'
+      : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:bg-[#08151a] dark:text-slate-200 dark:hover:bg-white/5';
+      
+  return (
+    <button 
+      type={type} 
+      disabled={disabled} 
+      onClick={onClick} 
+      className={`rounded-xl px-5 py-2.5 text-sm font-black transition-all duration-300 disabled:opacity-50 disabled:pointer-events-none ${cls} ${className}`}
+    >
+      {children}
+    </button>
+  );
 }
 
 export function Field({ label, children }: { label: string; children: React.ReactNode }) {
