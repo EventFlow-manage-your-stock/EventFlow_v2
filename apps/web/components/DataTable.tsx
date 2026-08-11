@@ -107,7 +107,7 @@ export function DataTable<T extends { id?: number | string }>({
         <Search size={16} className="absolute left-3 top-3 text-slate-400" />
         <input className={`${inputClass} pl-9`} value={query} onChange={(e) => setQuery(e.target.value)} placeholder={searchPlaceholder} />
       </div>
-      <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white dark:border-white/10 dark:bg-slate-900">
+      <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white dark:border-white/10 dark:bg-[#08151a]">
         <table className="w-full min-w-[900px] text-left text-sm">
           <thead className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500 dark:bg-slate-950/70">
             <tr>

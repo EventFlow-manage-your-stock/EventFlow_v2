@@ -6,7 +6,8 @@ import { useParams, useRouter } from 'next/navigation';
 import {
   ArrowLeft, Box, CheckSquare, ChevronDown, ChevronRight, Copy, DollarSign,
   FileArchive, FileText, History, Loader2, MapPin, MessageSquare, Plus, Save,
-  Search, Trash2, Truck, Users, Wrench, Calendar, Send, Download, Paperclip, Phone, CheckCircle2, Flag, Car, User, UserPlus, UserMinus, UserCheck, UserX, X, Edit2, Clock
+  Search, Trash2, Truck, Users, Wrench, Calendar, Send, Download, Paperclip, 
+  Phone, CheckCircle2, Flag, Car, X, Clock, Layers, RotateCcw
 } from 'lucide-react';
 import { api } from '../../../../lib/api';
 import { Button, Card, Field, inputClass, SearchableSelect} from '../../../../components/ProductUI';
@@ -17,17 +18,17 @@ import { SimpleModal } from '../../../../components/SimpleModal';
 import { useAuthStore } from '../../../../store/auth.store';
 
 // ============================================================================
-// GLOBALNE HELPERY
+// GLOBALNE HELPERY WMS & UI
 // ============================================================================
 
 const TABS = [
-  { id: 'chat', label: 'Chat Grupowy', icon: MessageSquare },
-  { id: 'zadania', label: 'Zadania', icon: CheckSquare },
+  { id: 'sprzet', label: 'Sprzęt (Wydania/Zwroty)', icon: Box },
+  { id: 'oferty', label: 'Oferty', icon: DollarSign },
   { id: 'ekipa', label: 'Ekipa', icon: Users },
   { id: 'flota', label: 'Flota', icon: Truck },
-  { id: 'sprzet', label: 'Sprzęt (Wydania/Zwroty)', icon: Box },
+  { id: 'zadania', label: 'Zadania', icon: CheckSquare },
+  { id: 'chat', label: 'Chat Grupowy', icon: MessageSquare },
   { id: 'zalaczniki', label: 'Załączniki', icon: FileArchive },
-  { id: 'oferty', label: 'Oferty', icon: DollarSign },
   { id: 'historia', label: 'Historia Zmian', icon: History },
 ];
 
@@ -100,7 +101,7 @@ function categoryPath(categoryId: string, byId: Map<string, any>) {
 }
 
 // ============================================================================
-// WMS CORE HELPERS - SPRZĘT / WYDANIA / PRZYJĘCIA
+// WMS CORE HELPERS - INTELIGENTNY SKANER & KONTENERY
 // ============================================================================
 
 function normalizeCode(v: any) {
@@ -127,43 +128,43 @@ function getEquipmentText(row: any): string {
   ].filter(Boolean).map((v) => String(v).toLowerCase()).join(' ');
 }
 
-function isZestaw(row: any): boolean {
-  const txt = getEquipmentText(row);
-  return txt.includes('zestaw') || txt.includes('rack') || txt.includes('racki') || txt.includes('szafa rack') || row?.rowType === 'zestaw' || row?.czy_zestaw === true;
-}
-
-function isQuantityModel(model: any): boolean {
-  const txt = getEquipmentText(model);
+function isQuantityOnly(row: any): boolean {
+  if (!row) return false;
+  const model = row?.model || row?.egzemplarz?.model || row;
+  const txt = [model?.typ, model?.rodzaj, model?.tryb_ewidencji, model?.typ_sprzetu].join(' ').toLowerCase();
   return Boolean(
-    model?.rowType === 'ilosciowy_model' || model?.quantityOnly === true ||
-    model?.sprzet_ilosciowy === true || model?.czy_ilosciowy === true ||
-    model?.tryb_ewidencji === 'ilosciowe' || model?.tryb_ewidencji === 'ilościowe' ||
-    model?.typ_ewidencji === 'ilosciowe' || model?.rodzaj_ewidencji === 'ilosciowe' ||
-    txt.includes('ilosciow') || txt.includes('ilościow') ||
-    model?.ilosc_magazynowa !== undefined || model?.ilość_magazynowa !== undefined
+    row.rowType === 'ilosciowy_model' || row.quantityOnly === true ||
+    model?.tryb_ewidencji === 'ilosciowe' || model?.typ_sprzetu === 'ilosciowe' ||
+    txt.includes('ilosciow') || model?.ilosc_magazynowa !== undefined
   );
 }
 
-function isQuantityOnly(row: any): boolean {
-  if (!row) return false;
-  return Boolean(row.rowType === 'ilosciowy_model' || row.quantityOnly === true || isQuantityModel(row));
+// Sprawdza czy sprzęt to Zestaw (Rack, Szafa Rack) - nierozerwalna całość na wyjeździe
+function isZestawRow(row: any): boolean {
+  const modelType = String(row?.model?.typ_sprzetu || row?.egzemplarz?.model?.typ_sprzetu || row?.typ_sprzetu || '').toLowerCase();
+  const txt = getEquipmentText(row);
+  return Boolean(
+    modelType === 'zestaw' || row?.rowType === 'zestaw' || row?.czy_zestaw === true || row?.isZestaw === true ||
+    txt.includes('zestaw') || txt.includes('rack')
+  );
 }
 
-function isCase(row: any): boolean {
-  if (!row || isZestaw(row)) return false;
+// Sprawdza czy sprzęt to Opakowanie (Case, Skrzynia) - rozpakowuje się z automatu
+function isCaseRow(row: any): boolean {
+  if (isZestawRow(row)) return false; // PRIORYTET: Zestaw absolutnie nie jest case'm!
+  const modelType = String(row?.model?.typ_sprzetu || row?.egzemplarz?.model?.typ_sprzetu || row?.typ_sprzetu || '').toLowerCase();
   const txt = getEquipmentText(row);
-  const codes = getEquipmentCodes(row);
-  return (
-    row?.isCase === true || row?.rowType === 'case' || row?.czy_case === true ||
-    codes.some((c) => c.startsWith('01')) ||
+  return Boolean(
+    modelType === 'opakowanie' || row?.isCase === true || row?.czy_case === true || row?.rowType === 'case' ||
     txt.includes('case') || txt.includes('opakowan') || txt.includes('skrzyn')
   );
 }
 
 function isEquipmentInstance(row: any): boolean {
-  const modelType = row?.model?.typ_sprzetu || row?.egzemplarz?.model?.typ_sprzetu || row?.typ_sprzetu;
   const hasInstance = Boolean(row?.id_egzemplarza || row?.egzemplarz || row?.id);
-  return hasInstance && !isQuantityModel(row) && (isZestaw(row) || (modelType !== 'opakowanie' && !isCase(row)));
+  // Jeśli to zwykły sprzęt albo Zestaw to może wejść na dokument. 
+  // Odrzucamy sprzęt ilościowy (inna logika) i bezpośrednie puste case'y.
+  return hasInstance && !isQuantityOnly(row) && !isCaseRow(row);
 }
 
 function modelIdOf(row: any) { return row?.id_modelu || row?.model?.id || row?.egzemplarz?.id_modelu || row?.egzemplarz?.model?.id || null; }
@@ -181,7 +182,7 @@ export default function EventDetailsPage() {
   const router = useRouter();
   const isNew = params.id === 'new';
   
-  const [activeTab, setActiveTab] = useState('chat');
+  const [activeTab, setActiveTab] = useState('sprzet');
   const [tabSearchQuery, setTabSearchQuery] = useState('');
   
   const [eventData, setEventData] = useState<any>(null);
@@ -335,7 +336,7 @@ export default function EventDetailsPage() {
     setCrmModalMode(null);
   }
 
-  if (loading) return <div className="flex h-96 items-center justify-center"><Loader2 className="animate-spin text-[#04e0ff]" /> <span className="ml-3 font-bold text-slate-500">Ładowanie danych wydarzenia...</span></div>;
+  if (loading) return <div className="flex h-96 items-center justify-center"><Loader2 className="animate-spin text-[#04e0ff] w-10 h-10" /> <span className="ml-4 font-bold text-slate-500">Ładowanie danych wydarzenia...</span></div>;
 
   const offers = eventData?.oferty || [];
   const maps = googleMapsDirectionsUrl(form.adres_reczny);
@@ -504,7 +505,8 @@ export default function EventDetailsPage() {
               </div>
             </div>
           </Card>
-
+        </div>
+        <div className="flex flex-col gap-6">
           <Card className="flex-1 flex flex-col">
             <div className="mb-4 flex items-center justify-between gap-3">
               <div>
@@ -752,6 +754,7 @@ function EventTasksPanel({ eventId, zadania, dict, reloadEvent, tabQuery = '' }:
   const [form, setForm] = useState<any>({});
   const [adding, setAdding] = useState(false);
   const me = useAuthStore((s) => s.user);
+  const [savingTask, setSavingTask] = useState(false);
 
   const filteredTasks = useMemo(() => {
     if (!tabQuery) return zadania;
@@ -767,15 +770,22 @@ function EventTasksPanel({ eventId, zadania, dict, reloadEvent, tabQuery = '' }:
 
   async function saveTask(e: any) {
     e.preventDefault();
-    await api.post(`/api/zadania`, {
-      id_wydarzenia: eventId,
-      tytul: form.tytul,
-      przypisani: [String(form.uzytkownik || me?.id)],
-      data_start: form.data_start ? new Date(form.data_start).toISOString() : null,
-      data_koniec: form.data_koniec ? new Date(form.data_koniec).toISOString() : null,
-      typ_zadania: form.typ || 'inne'
-    });
-    setForm({}); setAdding(false); reloadEvent();
+    setSavingTask(true);
+    try {
+      await api.post(`/api/zadania`, {
+        id_wydarzenia: eventId,
+        tytul: form.tytul,
+        przypisani: [String(form.uzytkownik || me?.id)],
+        data_start: form.data_start ? new Date(form.data_start).toISOString() : null,
+        data_koniec: form.data_koniec ? new Date(form.data_koniec).toISOString() : null,
+        typ_zadania: form.typ || 'inne'
+      });
+      setForm({}); setAdding(false); reloadEvent();
+    } catch(err) {
+      alert("Błąd zapisu zadania");
+    } finally {
+      setSavingTask(false);
+    }
   }
 
   return <div className="space-y-4">
@@ -788,7 +798,7 @@ function EventTasksPanel({ eventId, zadania, dict, reloadEvent, tabQuery = '' }:
       <form onSubmit={saveTask} className="grid md:grid-cols-[1fr_220px_auto] gap-4 items-end">
         <Field label="Treść zadania"><input required className={inputClass} value={form.tytul || ''} onChange={e => setForm({...form, tytul: e.target.value})} placeholder="np. Przygotować kable zasilające..."/></Field>
         <Field label="Przypisz do"><select className={inputClass} value={form.uzytkownik || ''} onChange={e => setForm({...form, uzytkownik: e.target.value})}><option value={me?.id}>Przypisz sobie</option>{dict.uzytkownicy.map((u:any)=><option key={u.id} value={u.id}>{u.imie} {u.nazwisko}</option>)}</select></Field>
-        <div className="flex gap-2"><Button variant="secondary" type="button" onClick={()=>setAdding(false)}>Anuluj</Button><Button type="submit">Zapisz</Button></div>
+        <div className="flex gap-2"><Button variant="secondary" type="button" onClick={()=>setAdding(false)}>Anuluj</Button><Button type="submit" disabled={savingTask}>{savingTask ? '...' : 'Zapisz'}</Button></div>
       </form>
     </Card>}
 
@@ -1037,7 +1047,7 @@ function HistoryPanel({ history, tabQuery = '' }: { history: any[], tabQuery?: s
 }
 
 // -------------------------------------------------------------
-// SPRZĘT (Przywrócony EquipmentPanel - Kompatybilny z WMS i Motywami)
+// SPRZĘT (EquipmentPanel - Odbudowany na ścisłych typach dla WMS)
 // -------------------------------------------------------------
 function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: string }) {
   const router = useRouter();
@@ -1045,25 +1055,36 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
   const [items, setItems] = useState<any[]>([]);
   const [models, setModels] = useState<any[]>([]);
   const [equipmentCategories, setEquipmentCategories] = useState<any[]>([]);
+  const [bundles, setBundles] = useState<any[]>([]);
+  
   const [mode, setMode] = useState<'plan' | 'wydanie' | 'przyjecie'>('plan');
   const [showEditor, setShowEditor] = useState(false);
+  const [showBundlePicker, setShowBundlePicker] = useState(false);
+  
   const [activeRoot, setActiveRoot] = useState<string>('all');
   const [activeSub, setActiveSub] = useState<string>('');
   const [query, setQuery] = useState('');
+  
   const [planQty, setPlanQty] = useState<Record<string, string>>({});
+  const [bundleForm, setBundleForm] = useState({ id_pakietu: '', mnoznik: 1 });
+  
   const [scanCode, setScanCode] = useState('');
   const scanInputRef = useRef<HTMLInputElement | null>(null);
+  
   const [docItems, setDocItems] = useState<any[]>([]);
   const [docForm, setDocForm] = useState<any>({ osoba_odbierajaca: '', podpis_odbierajacego: '', uwagi: '' });
+  
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [savingDocs, setSavingDocs] = useState(false);
 
   async function load() {
-    const [gear, i, m, k] = await Promise.all([
+    const [gear, i, m, k, b] = await Promise.all([
       api.get(`/api/magazyn/wydarzenia/${eventId}/sprzet`).catch(() => ({ data: { planowane: [], pozycje_dokumentow: [], kategorie: [], dokumenty: [], podsumowanie: {} } })),
       api.get('/api/magazyn/wszystkie-egzemplarze').catch(() => ({ data: [] })),
       api.get('/api/magazyn/modele').catch(() => ({ data: [] })),
       api.get('/api/magazyn/kategorie').catch(() => ({ data: [] })),
+      api.get('/api/pakiety').catch(() => ({ data: [] })),
     ]);
 
     const gearData = gear.data || { planowane: [], pozycje_dokumentow: [], kategorie: [], dokumenty: [], podsumowanie: {} };
@@ -1071,6 +1092,7 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
     setItems(i.data || []);
     setModels(m.data || []);
     setEquipmentCategories(k.data || gearData.kategorie || []);
+    setBundles(b.data || []);
 
     const nextQty: Record<string, string> = {};
     (gearData.planowane || []).forEach((p: any) => {
@@ -1093,7 +1115,7 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
 
   const modelCountByCategory = useMemo(() => {
     const map = new Map<string, number>();
-    models.filter((m: any) => m.typ_sprzetu !== 'opakowanie' && !isCase(m)).forEach((m: any) => {
+    models.filter((m: any) => m.typ_sprzetu !== 'opakowanie').forEach((m: any) => {
       const id = modelCategoryId(m);
       if (!id) return;
       map.set(id, (map.get(id) || 0) + 1);
@@ -1143,7 +1165,7 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
       const row = map.get(key);
       row.plan += Number(p.ilosc || p.planowana_ilosc || 0);
       const sourceModel = p.model || modelById.get(String(id)) || p;
-      if (isQuantityModel(p) || isQuantityModel(sourceModel)) {
+      if (isQuantityOnly(p) || isQuantityOnly(sourceModel)) {
         row.quantityOnly = true;
         row.kod = p.kod || p.kod_kreskowy || sourceModel?.kod_kreskowy || sourceModel?.kod || row.kod || '';
         row.jednostka = p.jednostka || sourceModel?.jednostka || row.jednostka || 'szt.';
@@ -1209,7 +1231,7 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
 
     return Array.from(map.values()).map((row: any) => {
       const model = modelById.get(String(row.id_modelu));
-      const quantityOnly = row.quantityOnly || isQuantityModel(model);
+      const quantityOnly = row.quantityOnly || isQuantityOnly(model);
       return {
         ...row,
         quantityOnly,
@@ -1244,7 +1266,7 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
   const visibleModels = useMemo(() => {
     const q = query.trim().toLowerCase();
     return models
-      .filter((m: any) => m.typ_sprzetu !== 'opakowanie' && !isCase(m))
+      .filter((m: any) => !isCaseRow(m))
       .map((m: any) => {
         const catId = modelCategoryId(m);
         const path = catId ? categoryPath(catId, equipmentCategoryById) : '';
@@ -1258,21 +1280,14 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
   function findQuantityModelByCode(code: string) {
     const normalized = normalizeCode(code);
     return (models || []).find((m: any) =>
-      isQuantityModel(m) && getEquipmentCodes(m).includes(normalized)
-    );
-  }
-
-  function findInstanceByCode(code: string) {
-    const normalized = normalizeCode(code);
-    return (items || []).find((x: any) =>
-      getEquipmentCodes(x).includes(normalized)
+      isQuantityOnly(m) && getEquipmentCodes(m).includes(normalized)
     );
   }
 
   const visibleInstances = useMemo(() => {
     const q = query.trim().toLowerCase();
     return items
-      .filter((x: any) => isEquipmentInstance(x) && !isCase(x))
+      .filter((x: any) => isEquipmentInstance(x) || isZestawRow(x))
       .map((x: any) => ({
         ...x,
         rowType: 'egzemplarz',
@@ -1294,6 +1309,24 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
     changeQty(model, String(Math.max(0, current + delta)));
   }
 
+  async function handleAddBundle(e: any) {
+    e.preventDefault();
+    const bundle = bundles.find(b => String(b.id) === String(bundleForm.id_pakietu));
+    if (!bundle) return;
+    const mult = Number(bundleForm.mnoznik) || 1;
+    const newPlanQty = { ...planQty };
+    (bundle.pozycje || []).forEach((p: any) => {
+       const modelId = p.id_modelu;
+       const current = Number(newPlanQty[String(modelId)] || 0);
+       newPlanQty[String(modelId)] = String(current + Number(p.ilosc || 1) * mult);
+    });
+    setPlanQty(newPlanQty);
+    setShowBundlePicker(false);
+    setBundleForm({ id_pakietu: '', mnoznik: 1 });
+    setShowEditor(true);
+    setNotice(`Dodano pakiet "${bundle.nazwa}" x${mult} do koszyka planu. Pamiętaj, aby na dole zapisać cały plan!`);
+  }
+
   async function savePlan() {
     setError('');
     setNotice('');
@@ -1303,7 +1336,7 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
         .filter((p) => p.id_modelu && p.ilosc > 0);
       await api.post(`/api/magazyn/wydarzenia/${eventId}/sprzet`, { replace: true, pozycje });
       setShowEditor(false);
-      setNotice('Zapisano plan sprzętu wydarzenia. Wydanie robisz później przez skanowanie egzemplarzy/case albo kodu sprzętu ilościowego.');
+      setNotice('Zapisano plan sprzętu wydarzenia. Wydanie robisz później przez skanowanie konkretnych egzemplarzy i kontenerów.');
       await load();
     } catch (e: any) {
       setError(e?.response?.data?.message || e?.message || 'Nie udało się zapisać planu sprzętu.');
@@ -1312,11 +1345,11 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
 
   function caseScanMeta(row: any) {
     if (!row) return null;
-    return { id: row.id || row.id_egzemplarza, nazwa: row.nazwa || row.nazwa_modelu || 'Case', kod: getEquipmentCodes(row)[0] || '' };
+    return { id: row.id || row.id_egzemplarza, nazwa: row.nazwa || row.nazwa_modelu || 'Case/Zestaw', kod: getEquipmentCodes(row)[0] || '' };
   }
 
   function normalizeDocumentItem(row: any, source: 'scan' | 'manual' = 'manual') {
-    if (isQuantityModel(row)) {
+    if (isQuantityOnly(row)) {
       return {
         source,
         rowType: 'ilosciowy_model',
@@ -1339,26 +1372,24 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
     const baseName = model?.nazwa || row.nazwa_modelu || egz.model?.nazwa || row.nazwa || 'Sprzęt';
     return {
       source,
-      rowType: isZestaw(row) ? 'zestaw' : 'egzemplarz',
-      zestaw: isZestaw(row),
+      rowType: 'egzemplarz',
       id_modelu: row.id_modelu || model?.id || egz.id_modelu,
       id_egzemplarza: row.id_egzemplarza || egz.id,
-      nazwa: [isZestaw(row) ? `[ZESTAW] ${baseName}` : baseName, egz.nazwa && egz.nazwa !== model?.nazwa ? egz.nazwa : null, instanceNo ? `nr ${instanceNo}` : null].filter(Boolean).join(' · '),
+      nazwa: [isZestawRow(row) ? `[ZESTAW] ${baseName}` : baseName, egz.nazwa && egz.nazwa !== model?.nazwa ? egz.nazwa : null, instanceNo ? `nr ${instanceNo}` : null].filter(Boolean).join(' · '),
       nazwa_modelu: baseName,
       numer_egzemplarza: instanceNo,
       kategoria: categoryOf(row),
       kod: row.kod || egz.kod_kreskowy || egz.zewnetrzny_kod_kreskowy || egz.zewnetrzny_qr_kod || egz.qr_kod || egz.sn || '',
       ilosc: 1,
-      uwagi: row.uwagi || (isZestaw(row) ? 'Zestaw wydany jako jedna pozycja bez rozwijania zawartości.' : ''),
+      uwagi: row.uwagi || '',
     };
   }
 
-  function addDocumentItemsBulk(rows: any[], source: 'scan' | 'manual' = 'manual', sourceLabel = '', scannedCase: any = null) {
+  function addDocumentItemsBulk(rows: any[], source: 'scan' | 'manual' = 'manual', sourceLabel = '', scannedContainer: any = null) {
     const normalized = rows
-      .filter((row: any) => isEquipmentInstance(row) && !isCase(row) && !isQuantityModel(row))
       .map((row: any) => {
         const item = normalizeDocumentItem(row, source);
-        const meta = scannedCase || row.system_case_scan || row.case_scan || null;
+        const meta = scannedContainer || row.system_case_scan || row.case_scan || null;
         return meta ? { ...item, system_case_scan: meta, id_zeskanowanego_case: meta.id, nazwa_zeskanowanego_case: meta.nazwa } : item;
       })
       .filter((item: any) => item.id_egzemplarza && item.id_modelu);
@@ -1379,11 +1410,10 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
       }
       const skipped = normalized.length - toAdd.length;
       if (!toAdd.length) {
-        setNotice(sourceLabel ? `${sourceLabel}: wszystkie pozycje z tego skanu są już na aktualnym dokumencie.` : 'Ten sprzęt jest już zeskanowany na aktualnym dokumencie.');
+        setNotice(sourceLabel ? `${sourceLabel}: wszystkie pozycje ze środka są już w koszyku.` : 'Ten sprzęt jest już w koszyku dokumentu.');
         return prev;
       }
-      const zestawCount = toAdd.filter((x: any) => x.zestaw || x.rowType === 'zestaw').length;
-      setNotice(sourceLabel ? `${sourceLabel}: dodano ${toAdd.length} poz.${zestawCount ? ' Zestaw jako jedna pozycja.' : ' Case nie trafia na dokument.'}` : `Dodano ${toAdd.length} poz.${skipped ? `, pominięto duplikaty: ${skipped}` : ''}.`);
+      setNotice(sourceLabel ? `${sourceLabel}` : `Dodano ${toAdd.length} elementów${skipped ? `, pominięto duplikaty: ${skipped}` : ''}.`);
       return [...prev, ...toAdd];
     });
   }
@@ -1410,7 +1440,7 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
     }
     const item = normalizeDocumentItem({ ...row, rowType: 'ilosciowy_model', quantityOnly: true, id_modelu: modelId, id: modelId, ilosc: suggested, jednostka: unit }, source);
     setDocItems((prev) => {
-      const idx = prev.findIndex((p: any) => isQuantityModel(p) && Number(p.id_modelu) === modelId);
+      const idx = prev.findIndex((p: any) => isQuantityOnly(p) && Number(p.id_modelu) === modelId);
       if (idx >= 0) {
         const next = [...prev];
         next[idx] = { ...next[idx], ilosc: Number(next[idx].ilosc || 0) + suggested };
@@ -1424,7 +1454,7 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
   function quantityRowSelected(row: any) { 
     const modelId = Number(row?.id_modelu); 
     if (!modelId) return false; 
-    return docItems.some((p: any) => isQuantityModel(p) && Number(p.id_modelu) === modelId); 
+    return docItems.some((p: any) => isQuantityOnly(p) && Number(p.id_modelu) === modelId); 
   }
 
   function toggleQuantityRowWithoutScan(row: any, checked: boolean) {
@@ -1433,7 +1463,7 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
     const modelId = Number(row?.id_modelu);
     if (!modelId) { setError('Nie udało się rozpoznać modelu ilościowego.'); return; }
     if (!checked) {
-      setDocItems((prev) => prev.filter((p: any) => !(isQuantityModel(p) && Number(p.id_modelu) === modelId)));
+      setDocItems((prev) => prev.filter((p: any) => !(isQuantityOnly(p) && Number(p.id_modelu) === modelId)));
       setNotice(`Usunięto ${row.nazwa || 'sprzęt ilościowy'} z aktualnego dokumentu.`);
       return;
     }
@@ -1443,7 +1473,7 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
     const unit = row.jednostka || model.jednostka || 'szt.';
     const item = normalizeDocumentItem({ ...model, rowType: 'ilosciowy_model', quantityOnly: true, id: modelId, id_modelu: modelId, nazwa: row.nazwa || model.nazwa, nazwa_modelu: row.nazwa || model.nazwa, kategoria: row.kategoria, kod: row.kod || model.kod_kreskowy || model.kod || '', ilosc: amount, jednostka: unit, uwagi: `${mode === 'wydanie' ? 'Wydanie' : 'Przyjęcie'} sprzętu ilościowego bez skanowania`, }, 'manual');
     setDocItems((prev) => {
-      const withoutThisModel = prev.filter((p: any) => !(isQuantityModel(p) && Number(p.id_modelu) === modelId));
+      const withoutThisModel = prev.filter((p: any) => !(isQuantityOnly(p) && Number(p.id_modelu) === modelId));
       return [...withoutThisModel, { ...item, source: 'checkbox' }];
     });
     setNotice(`${mode === 'wydanie' ? 'Dodano do wydania' : 'Dodano do przyjęcia'} ${amount} ${unit} · ${row.nazwa || model.nazwa || 'sprzęt ilościowy'}.`);
@@ -1452,17 +1482,38 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
   function addDocumentItem(row: any, source: 'scan' | 'manual' = 'manual') {
     setError('');
     setNotice('');
-    if (isQuantityModel(row)) { addQuantityDocumentItem(row, source); return; }
-    if (isZestaw(row)) { addDocumentItemsBulk([row], source, 'Zeskanowano zestaw'); return; }
-    if (isCase(row)) {
-      const contents = (row.contents || row.zawartosc_case || [])
-        .filter((child: any) => !isCase(child) && !isQuantityModel(child) && isEquipmentInstance(child));
-      if (!contents.length) { setError('Ten case jest pusty albo nie ma aktywnych egzemplarzy sprzętu w środku. Case nie trafia na dokument.'); return; }
-      const label = row.nazwa || row.nazwa_modelu || row.kod || getEquipmentCodes(row)[0] || `case #${row.id || row.id_egzemplarza || ''}`;
-      addDocumentItemsBulk(contents, 'scan', `Zeskanowano case ${label}`, caseScanMeta(row));
+    
+    // Jeśli skan jest czysto ilościowy
+    if (isQuantityOnly(row)) { 
+      addQuantityDocumentItem(row, source); 
+      return; 
+    }
+    
+    // ZESTAWY (RACKI) - Wchodzą do koszyka WZ/PZ jako jedna zwarta pozycja!
+    // Nawet jeśli z backendu dostaniemy rozpakowany content, my traktujemy ZESTAW nierozerwalnie.
+    if (isZestawRow(row)) {
+      addDocumentItemsBulk([row], source, 'Zeskanowano zestaw jako jedną pozycję');
       return;
     }
-    if (!isEquipmentInstance(row)) { setError('Wydanie/przyjęcie działa na egzemplarzach, zestaw jest jedną pozycją, case rozwija zawartość, a sprzęt ilościowy zapisujemy jako model + ilość.'); return; }
+
+    // CASE / OPAKOWANIA - Rozpakowujemy i wrzucamy pojedyncze sztuki do koszyka WZ/PZ
+    if (isCaseRow(row)) {
+      const contents = (row.zawartosc_case || row.contents || []).filter((child: any) => !isCaseRow(child) && !isZestawRow(child) && isEquipmentInstance(child));
+      if (!contents.length) { 
+        setError('Ten case jest pusty albo nie ma w nim aktywnych pojedynczych egzemplarzy sprzętu. Do dokumentów WZ/PZ trafia tylko zawartość.'); 
+        return; 
+      }
+      const label = row.nazwa || row.nazwa_modelu || row.kod || `kontener #${row.id || row.id_egzemplarza || ''}`;
+      addDocumentItemsBulk(contents, source, `Rozpakowano zawartość case'a: ${label}`, caseScanMeta(row));
+      return;
+    }
+
+    // Skoro to nie kontener i nie sprzęt ilościowy, to musi być fizyczny, pojedynczy egzemplarz
+    if (!isEquipmentInstance(row)) { 
+      setError('Wydanie/przyjęcie działa na egzemplarzach. Upewnij się, że wpisany kod wskazuje na konkretne urządzenie z bazy.'); 
+      return; 
+    }
+    
     addDocumentItemsBulk([row], source);
   }
 
@@ -1483,6 +1534,7 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
     setError('');
     setNotice('');
 
+    // Fast-path dla sprzętu ilościowego po etykiecie modelu
     const quantityModel = findQuantityModelByCode(code);
     if (quantityModel) {
       addQuantityDocumentItem({
@@ -1501,49 +1553,11 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
       return;
     }
 
-    const localInstance = findInstanceByCode(code);
-    if (localInstance && isZestaw(localInstance)) {
-      addDocumentItemsBulk([{
-        ...localInstance,
-        rowType: 'egzemplarz',
-        isZestaw: true,
-        isCase: false,
-        contents: [],
-        zawartosc_case: [],
-      }], 'scan', 'Zeskanowano zestaw jako jedną pozycję');
-
-      setScanCode('');
-      setTimeout(focusScanInput, 0);
-      return;
-    }
-
     try {
       const response = await api.get(`/api/magazyn/skan?kod=${encodeURIComponent(code)}`);
       const row = response.data;
-
-      if (isQuantityModel(row)) {
-        addQuantityDocumentItem({
-          ...row,
-          rowType: 'ilosciowy_model',
-          quantityOnly: true,
-          id_modelu: row.id_modelu || row.id || row.model?.id,
-          nazwa_modelu: row.nazwa_modelu || row.nazwa || row.model?.nazwa,
-          kod: row.kod || row.kod_kreskowy || code,
-          jednostka: row.jednostka || row.model?.jednostka || 'szt.',
-        }, 'scan');
-      } else if (isZestaw(row)) {
-        addDocumentItemsBulk([{
-          ...row,
-          rowType: 'egzemplarz',
-          isZestaw: true,
-          isCase: false,
-          contents: [],
-          zawartosc_case: [],
-        }], 'scan', 'Zeskanowano zestaw jako jedną pozycję');
-      } else {
-        addDocumentItem(row, 'scan');
-      }
-
+      addDocumentItem(row, 'scan');
+      
       setScanCode('');
       setTimeout(focusScanInput, 0);
     } catch (e: any) {
@@ -1553,18 +1567,12 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
   }
 
   async function createDocument(type: 'wydanie' | 'przyjecie') {
-    const validDocItems = docItems.filter((p: any) => {
-      if (!p) return false;
-      if (isCase(p)) return false; 
-      if (isQuantityModel(p)) return !!(p.id_modelu || p.id); 
-      return !!p.id_egzemplarza; 
-    });
-
-    if (!validDocItems.length) {
-      return alert('WZ/PZ może zawierać konkretne egzemplarze albo sprzęt ilościowy. Dla zwykłego sprzętu zeskanuj egzemplarz albo case.');
+    if (!docItems.length) {
+      return alert('Koszyk WZ/PZ jest pusty. Zeskanuj egzemplarze, skrzynie(zestawy) albo sprzęt ilościowy.');
     }
 
     setError('');
+    setSavingDocs(true);
     try {
       const response = await api.post('/api/magazyn/dokumenty', {
         typ: type,
@@ -1572,7 +1580,7 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
         osoba_odbierajaca: docForm.osoba_odbierajaca,
         podpis_odbierajacego: docForm.podpis_odbierajacego,
         uwagi: docForm.uwagi || `Dokument ${type === 'wydanie' ? 'wydania' : 'przyjęcia'} dla wydarzenia: ${eventName}`,
-        pozycje: validDocItems.map((p) => ({ 
+        pozycje: docItems.map((p) => ({ 
           ...p, 
           ilosc: Number(p.ilosc || 1), 
           status: type === 'wydanie' ? 'wydany' : 'przyjety' 
@@ -1584,6 +1592,8 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
       router.push(`/dashboard/warehouse/documents/${response.data.id}`);
     } catch (e: any) {
       setError(e?.response?.data?.message || e?.message || 'Nie udało się wygenerować dokumentu.');
+    } finally {
+      setSavingDocs(false);
     }
   }
 
@@ -1603,7 +1613,7 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
         <div>
           <p className="text-[10px] font-black uppercase tracking-[0.25em] text-[#04e0ff]">Sprzęt wydarzenia</p>
           <h3 className="mt-1 text-2xl font-black text-slate-900 dark:text-white">Plan sprzętu, wydanie i przyjęcie</h3>
-          <p className="mt-1.5 max-w-3xl text-sm font-bold text-slate-500 dark:text-slate-400 leading-relaxed">Plan edytujesz po modelach i ilościach. Case/opakowania są ukryte. Wydanie/przyjęcie pokazuje konkretne egzemplarze, a sprzęt ilościowy dodajesz skanem kodu modelu.</p>
+          <p className="mt-1.5 max-w-3xl text-sm font-bold text-slate-500 dark:text-slate-400 leading-relaxed">Plan edytujesz po modelach i ilościach. Wydanie oraz przyjęcie działa na konkretnych egzemplarzach po skanie.</p>
         </div>
         <div className="grid grid-cols-3 gap-3 sm:min-w-[420px]">
           <Metric label="Plan" value={`${plannedTotal} szt.`} />
@@ -1620,7 +1630,12 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
             ['przyjecie', 'Przyjmij PZ'],
           ] as const).map(([m, label]) => <button key={m} type="button" onClick={() => { setMode(m); setQuery(''); setError(''); setNotice(''); setDocItems([]); }} className={`rounded-xl px-5 py-3 text-sm font-black transition-all shadow-sm ${mode === m ? 'bg-gradient-to-r from-[#04e0ff] to-blue-600 text-white shadow-cyan-600/20' : 'border border-slate-200 dark:border-white/10 bg-white dark:bg-[#08151a] text-slate-600 dark:text-slate-300 hover:border-cyan-300 dark:hover:border-cyan-700/50 hover:bg-cyan-50 dark:hover:bg-cyan-500/10'}`}>{label}</button>)}
         </div>
-        {mode === 'plan' && <Button onClick={() => setShowEditor((v) => !v)} className="shadow-md shadow-cyan-600/20"><Plus size={16} className="inline mr-1" /> {showEditor ? 'Zamknij dodawanie' : 'Dodaj / zmień plan'}</Button>}
+        {mode === 'plan' && (
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={() => setShowBundlePicker(true)} className="shadow-sm"><Layers size={16} className="inline mr-1" /> Dodaj Pakiet</Button>
+            <Button onClick={() => setShowEditor((v) => !v)} className="shadow-md shadow-cyan-600/20"><Plus size={16} className="inline mr-1" /> {showEditor ? 'Zamknij dodawanie' : 'Dodaj / zmień plan'}</Button>
+          </div>
+        )}
       </div>
 
       {mode === 'plan' && <div className="grid gap-0 xl:grid-cols-[1fr_520px]">
@@ -1716,7 +1731,7 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
       {mode !== 'plan' && <div className="grid gap-0 xl:grid-cols-[1.15fr_.85fr]">
         <div className="p-6">
           <div className="mb-6 rounded-2xl border border-cyan-200 dark:border-cyan-500/20 bg-cyan-50 dark:bg-cyan-500/10 p-5 shadow-sm">
-            <p className="text-sm font-bold leading-relaxed text-cyan-900 dark:text-cyan-100">{mode === 'wydanie' ? 'Skanuj egzemplarze aby je wydać (WZ). Sprzęt ilościowy możesz zaznaczyć checkboxem by pobrać brakującą ilość sztuk bez ręcznego wpisywania w skaner.' : 'Skanuj zwracane egzemplarze (PZ). Sprzęt ilościowy możesz zaznaczyć checkboxem by zwrócić brakującą na magazynie ilość sztuk bez skanera.'}</p>
+            <p className="text-sm font-bold leading-relaxed text-cyan-900 dark:text-cyan-100">{mode === 'wydanie' ? 'Skanuj egzemplarze albo kody kontenerów aby je wydać (WZ). Sprzęt ilościowy możesz zaznaczyć checkboxem by pobrać brakującą ilość sztuk bez ręcznego wpisywania w skaner.' : 'Skanuj zwracane egzemplarze i kontenery (PZ). Sprzęt ilościowy możesz zaznaczyć checkboxem by zwrócić brakującą na magazynie ilość sztuk bez skanera.'}</p>
           </div>
           <div className="space-y-5">
             {plannedGroups.map((group: any) => <div key={group.nazwa} className="overflow-hidden rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#08151a] shadow-sm">
@@ -1763,7 +1778,7 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
                    <Button onClick={scan} className="px-6 shadow-md shadow-cyan-600/20">{scanCode.trim() ? 'Dodaj skan' : 'Skanuj'}</Button>
                  </div>
               </Field>
-              <p className="mt-3 text-xs font-bold text-slate-400 leading-relaxed">Case to wygodny skrót logistyczny — na dokument WZ/PZ system zawsze automatycznie dodaje konkretne egzemplarze ze środka opakowania. Sprzęt ilościowy dodasz skanem lub checkboxem po lewej.</p>
+              <p className="mt-3 text-xs font-bold text-slate-400 leading-relaxed">Zeskanowanie kontenera (Opakowanie/Case) automatycznie rozpakuje go i doda na listę ukryty w nim sprzęt. Zeskanowanie Zestawu(Racka) doda go jako spójną całość. Sprzęt ilościowy dodasz skanem modelu lub checkboxem po lewej.</p>
             </div>
             
             <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#08151a] p-5 shadow-sm">
@@ -1772,9 +1787,13 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
                 {docItems.map((p, idx) => <div key={`${p.id_egzemplarza || p.id_modelu}-${idx}`} className="rounded-xl border border-slate-100 dark:border-white/5 bg-slate-50 dark:bg-white/5 p-3 flex justify-between gap-3 group transition-colors hover:border-cyan-300 dark:hover:border-cyan-700">
                   <div className="min-w-0">
                      <b className="text-[13px] text-slate-900 dark:text-white block truncate">{p.nazwa}</b>
-                     <p className="text-[11px] font-bold text-slate-400 mt-1 truncate">{p.kategoria} · {isQuantityModel(p) ? <span className="text-[#04e0ff]">{p.ilosc || 1} {p.jednostka || 'szt.'}</span> : `${isZestaw(p) ? 'zestaw · ' : ''}${p.kod || '-'}` } {p.kod && isQuantityModel(p) ? ` · kod ${p.kod}` : ''}</p>
+                     <p className="text-[11px] font-bold text-slate-400 mt-1 truncate">
+                        {p.kategoria} · {isQuantityOnly(p) ? <span className="text-[#04e0ff]">{p.ilosc || 1} {p.jednostka || 'szt.'}</span> : `${p.nazwa_zeskanowanego_case ? `w: ${p.nazwa_zeskanowanego_case} · ` : ''}${p.kod || '-'}` } {p.kod && isQuantityOnly(p) ? ` · kod ${p.kod}` : ''}
+                     </p>
                   </div>
-                  <button onClick={() => setDocItems((s) => s.filter((_, i) => i !== idx))} className="font-black text-slate-300 hover:text-red-500 bg-white dark:bg-transparent rounded-lg p-1.5 h-fit shadow-sm border border-slate-200 dark:border-transparent transition opacity-0 group-hover:opacity-100" title="Usuń z koszyka"><Trash2 size={16}/></button>
+                  <button onClick={() => setDocItems((s) => s.filter((_, i) => i !== idx))} className="font-black text-slate-400 hover:text-red-500 bg-white dark:bg-transparent rounded-lg px-2.5 py-1.5 h-fit shadow-sm border border-slate-200 dark:border-transparent transition flex items-center gap-1.5 opacity-0 group-hover:opacity-100" title="Cofnij skan">
+                    <RotateCcw size={14}/> Cofnij
+                  </button>
                 </div>)}
                 {!docItems.length && <div className="rounded-2xl border border-dashed border-slate-200 dark:border-white/10 p-8 text-center text-sm font-bold text-slate-400 bg-white dark:bg-transparent">Rozpocznij skanowanie fizycznego sprzętu albo zaznacz checkbox przy sprzęcie ilościowym — ta lista zaktualizuje się automatycznie.</div>}
               </div>
@@ -1792,8 +1811,8 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
                 Dokument magazynowy podpisze automatycznie w systemie aktualnie zalogowany użytkownik. Na wygenerowanym potwierdzeniu PDF będzie widoczny cyfrowy ślad audytowy transakcji.
               </div>
               <Field label="Dodatkowe uwagi dla magazyniera do wpisania na dokument WZ/PZ"><textarea className={`${inputClass} resize-none min-h-[80px]`} value={docForm.uwagi || ''} onChange={(e) => setDocForm({ ...docForm, uwagi: e.target.value })} placeholder="opcjonalne uwagi..."/></Field>
-              <button type="button" disabled={!docItems.length || saving} onClick={() => createDocument(mode)} className={`mt-4 w-full rounded-xl px-5 py-3.5 text-sm font-black text-white disabled:opacity-50 transition shadow-lg ${mode === 'wydanie' ? 'bg-gradient-to-r from-emerald-500 to-emerald-600 shadow-emerald-500/30 hover:opacity-90' : 'bg-gradient-to-r from-[#04e0ff] to-blue-600 shadow-[#04e0ff]/30 hover:opacity-90'} flex items-center justify-center gap-2`}>
-                {saving ? <Loader2 size={18} className="animate-spin"/> : <FileText size={18} />} {saving ? 'Generowanie...' : mode === 'wydanie' ? 'Zatwierdź i Wystaw WZ' : 'Zatwierdź i Wystaw PZ'}
+              <button type="button" disabled={!docItems.length || savingDocs} onClick={() => createDocument(mode)} className={`mt-4 w-full rounded-xl px-5 py-3.5 text-sm font-black text-white disabled:opacity-50 transition shadow-lg ${mode === 'wydanie' ? 'bg-gradient-to-r from-emerald-500 to-emerald-600 shadow-emerald-500/30 hover:opacity-90' : 'bg-gradient-to-r from-[#04e0ff] to-blue-600 shadow-[#04e0ff]/30 hover:opacity-90'} flex items-center justify-center gap-2`}>
+                {savingDocs ? <Loader2 size={18} className="animate-spin"/> : <FileText size={18} />} {savingDocs ? 'Generowanie...' : mode === 'wydanie' ? 'Zatwierdź i Wystaw WZ' : 'Zatwierdź i Wystaw PZ'}
               </button>
             </div>
           </div>
@@ -1815,5 +1834,27 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
         {!data.dokumenty?.length && <div className="col-span-full p-10 border border-dashed border-slate-200 dark:border-white/10 rounded-2xl text-center font-bold text-slate-400 bg-slate-50/50 dark:bg-transparent">Brak wystawionych dokumentów logistycznych w systemie. Zeskanuj i wydaj pierwszy sprzęt!</div>}
       </div>
     </div>
+    
+    {/* MODAL PAKIETÓW */}
+    {showBundlePicker && (
+      <SimpleModal title="Dodaj gotowy pakiet do planu" onClose={() => setShowBundlePicker(false)}>
+        <form onSubmit={handleAddBundle} className="space-y-4">
+           <Field label="Wybierz pakiet z szablonów systemowych">
+             <select className={inputClass} value={bundleForm.id_pakietu} onChange={e => setBundleForm({...bundleForm, id_pakietu: e.target.value})} required>
+                <option value="">Wybierz zdefiniowany pakiet...</option>
+                {bundles.map(b => <option key={b.id} value={b.id}>{b.nazwa} ({b._count?.pozycje || 0} elementów)</option>)}
+             </select>
+           </Field>
+           <Field label="Mnożnik (Ile pakietów dodać?)">
+             <input type="number" min="1" step="1" className={inputClass} value={bundleForm.mnoznik} onChange={e => setBundleForm({...bundleForm, mnoznik: Number(e.target.value)})} required />
+           </Field>
+           <p className="text-xs font-bold text-slate-500 bg-slate-50 dark:bg-white/5 p-4 rounded-xl">Wszystkie pozycje znajdujące się w szablonie wybranego pakietu zostaną automatycznie rozwinięte i dodane jako indywidualne linie sprzętowe do Twojego koszyka planu wydarzenia, pomnożone przez wskazany mnożnik.</p>
+           <div className="flex justify-end gap-2 pt-4 border-t border-slate-100 dark:border-white/10">
+             <Button variant="secondary" type="button" onClick={() => setShowBundlePicker(false)}>Anuluj</Button>
+             <Button type="submit"><Layers size={16} className="inline mr-1.5"/> Dodaj do planu</Button>
+           </div>
+        </form>
+      </SimpleModal>
+    )}
   </div>;
 }

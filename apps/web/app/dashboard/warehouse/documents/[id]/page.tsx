@@ -114,20 +114,20 @@ export default function WarehouseDocumentSuccessPage() {
         <div className="flex items-center gap-3">
           <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700"><CheckCircle2 size={28} /></div>
           <div>
-            <p className="text-[11px] font-black uppercase tracking-[0.25em] text-cyan-700">Magazyn · dokument {doc.typ === 'przyjecie' ? 'PZ' : 'WZ'}</p>
+            <p className="text-[11px] font-black uppercase tracking-[0.25em] text-[#04e0ff]">Magazyn · dokument {doc.typ === 'przyjecie' ? 'PZ' : 'WZ'}</p>
             <h1 className="text-3xl font-black tracking-tight text-slate-900">{docTitle(doc)}</h1>
             <p className="mt-1 text-sm font-bold text-slate-500">Dokument <b>{doc.numer}</b> został zapisany. Poniżej masz czytelną listę sprzętu oraz PDF do druku dla klienta.</p>
           </div>
         </div>
       </div>
       <div className="flex flex-wrap gap-2">
-        <Link href={`/dashboard/warehouse/documents/${doc.id}/pdf`} target="_blank" className="inline-flex items-center gap-2 rounded-xl bg-cyan-600 px-4 py-2 text-sm font-black text-white hover:bg-cyan-700"><Download size={16} /> PDF do druku</Link>
+        <Link href={`/dashboard/warehouse/documents/${doc.id}/pdf`} target="_blank" className="inline-flex items-center gap-2 rounded-xl bg-[#04e0ff] px-4 py-2 text-sm font-black text-white hover:bg-cyan-700"><Download size={16} /> PDF do druku</Link>
         <Button variant="secondary" onClick={() => window.open(`/dashboard/warehouse/documents/${doc.id}/pdf?drukuj=1`, '_blank')}><Printer size={16} className="inline" /> Drukuj</Button>
       </div>
     </div>
 
     <div className="grid gap-4 md:grid-cols-5">
-      <Card><p className="text-xs font-black uppercase text-slate-400">Numer</p><p className="mt-1 text-xl font-black">{doc.numer}</p></Card>
+      <Card><p className="text-xs font-black uppercase text-slate-400">Numer</p><p className="mt-1 text-lg font-black">{doc.numer}</p></Card>
       <Card><p className="text-xs font-black uppercase text-slate-400">Data</p><p className="mt-1 text-lg font-black">{d(doc.data_operacji)}</p></Card>
       <Card><p className="text-xs font-black uppercase text-slate-400">Łącznie</p><p className="mt-1 text-xl font-black">{qty(totalQty)} szt.</p></Card>
       <Card><p className="text-xs font-black uppercase text-slate-400">Waga</p><p className="mt-1 text-xl font-black">{kg(weightSummary.totalKg)} kg</p><p className="mt-1 text-[11px] font-bold text-slate-400">sprzęt + case</p></Card>

@@ -18,7 +18,7 @@ export function Card({ children, className = '', onClick, ...props }: { children
   return (
     <div 
       onClick={onClick} 
-      className={`rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-slate-900 ${className}`} 
+      className={`rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-[#08151a] ${className}`} 
       {...props}
     >
       {children}
@@ -104,8 +104,8 @@ export function SearchableSelect({
       </button>
 
       {isOpen && (
-        <div className="absolute z-50 mt-1 max-h-60 w-full min-w-0 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 shadow-xl dark:border-white/10 dark:bg-slate-900 custom-scrollbar">
-          <div className="sticky top-0 mb-1 bg-white pb-1 dark:bg-slate-900">
+        <div className="absolute z-50 mt-1 max-h-60 w-full min-w-0 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 shadow-xl dark:border-white/10 dark:bg-[#08151a] custom-scrollbar">
+          <div className="sticky top-0 mb-1 bg-white pb-1 dark:bg-[#08151a]">
             <div className="relative">
               <Search size={14} className="absolute left-3 top-3 text-slate-400" />
               <input

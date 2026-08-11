@@ -186,15 +186,14 @@ export default function ModelDetailsPage() {
           </div>
 
           <form onSubmit={saveModel} className="space-y-5">
-            <div className="grid gap-5 lg:grid-cols-[240px_1fr]">
-              <div className="space-y-3">
+            <div className="space-y-3">
                 <div className="aspect-[4/3] overflow-hidden rounded-2xl border bg-slate-50 shadow-inner">
-                  {form.zdjecie ? <img src={form.zdjecie} alt={form.nazwa} className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center text-slate-300"><ImageIcon size={54} /></div>}
+                  {form.zdjecie ? <img src={form.zdjecie} alt={form.nazwa} className="object-cover" style={{width: '80% !important', height: '100%'}} /> : <div className="flex h-full items-center justify-center text-slate-300"><ImageIcon size={54} /></div>}
                 </div>
                 {edit ? <input type="file" accept="image/*" onChange={e => onPhoto(e.target.files?.[0])} className="block w-full text-xs font-bold text-slate-500 file:mr-3 file:rounded-xl file:border-0 file:bg-cyan-600 file:px-3 file:py-2 file:font-black file:text-white" /> : null}
                 {edit && form.zdjecie ? <button type="button" onClick={() => setForm({ ...form, zdjecie: '' })} className="text-xs font-black text-red-500">Usuń zdjęcie</button> : null}
               </div>
-
+            <div className="grid gap-5 lg:grid-cols-[540px_1fr]">
               <div className="grid gap-4 md:grid-cols-2">
                 <Field label="Nazwa modelu"><input disabled={!edit} className={inputClass} value={form.nazwa || ''} onChange={e => setForm({ ...form, nazwa: e.target.value })} /></Field>
                 <Field label="Kategoria"><select disabled={!edit} className={inputClass} value={form.id_kategorii || ''} onChange={e => setForm({ ...form, id_kategorii: e.target.value })}><option value="">Brak</option>{categories.map((k: any) => <option key={k.id} value={k.id}>{k.nazwa}</option>)}</select></Field>

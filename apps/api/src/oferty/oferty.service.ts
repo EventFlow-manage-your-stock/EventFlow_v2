@@ -78,7 +78,7 @@ export class OfertyService {
       const wersja = await tx.wersjaOferty.create({
         data: { id_organizacji, id_oferty: oferta.id, numer_wersji: 1, nazwa: oferta.nazwa, id_uzytkownika_utworzyl: id_uzytkownika },
       });
-      await tx.sekcjaOferty.create({ data: { id_organizacji, id_wersji_oferty: wersja.id, nazwa: 'Sala główna', kolejnosc: 1 } });
+      await tx.sekcjaOferty.create({ data: { id_organizacji, id_wersji_oferty: wersja.id, nazwa: 'Grupa główna', kolejnosc: 1 } });
       return oferta;
     });
   }
