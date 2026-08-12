@@ -7,10 +7,11 @@ import Image from 'next/image';
 import { 
   Calendar, CheckSquare, Home, Users, Box, Wrench, Truck, Settings, FileText, 
   ChevronDown, LogOut, Star, Phone, Tags, Shield, Car, Palmtree, Palette, 
-  ShieldAlert, Menu, Bell, Search, Sun, Moon, PanelLeftClose, PanelLeftOpen, Plus, Layers
+  ShieldAlert, Menu, Bell, Search, Sun, Moon, PanelLeftClose, PanelLeftOpen, Plus, Layers, Loader2, ArrowRight
 } from 'lucide-react';
 import { useAuthStore } from '../../store/auth.store';
 import { Button } from '../../components/ProductUI';
+import { api } from '../../lib/api';
 
 type MenuItem = {
   icon: any;
@@ -53,6 +54,7 @@ const menuConfig: MenuItem[] = [
     { label: 'Pojazdy', href: '/dashboard/fleet', icon: Car },
   ]},
   { icon: FileText, label: 'Oferty', requiredPermission: 'offers:view', href: '/dashboard/offers' },
+  { icon: FileText, label: 'Zapytanie ofertowe', requiredPermission: 'offers:view', href: '/dashboard/zapytania' },
   { icon: Settings, label: 'Ustawienia', requiredPermission: 'settings:view', children: [
     { label: 'Personalizacja systemu', href: '/dashboard/settings', icon: Settings },
     { label: 'Typy wydarzeń', href: '/dashboard/settings/event-types', icon: Palette },
@@ -66,17 +68,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [openMenus, setOpenMenus] = useState<Record<string, boolean>>({ Magazyn: true, Wydarzenia: true });
   const [isMounted, setIsMounted] = useState(false);
   
-  // Stany UI dla nowego wyglądu
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
   
-  // Stany interaktywnych paneli w TopBarze
+  // WYSZUKIWARKA I POWIADOMIENIA
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [dbSearchResults, setDbSearchResults] = useState<any[]>([]);
+  const [isSearchingDb, setIsSearchingDb] = useState(false);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [hasUnreadNotif, setHasUnreadNotif] = useState(false);
 
-  // Stany dla TopBar (Ukrywanie przy scrollowaniu)
+  // TOP BAR (Ukrywanie)
   const [isTopBarVisible, setIsTopBarVisible] = useState(true);
   const lastScrollY = useRef(0);
   
@@ -85,7 +90,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const router = useRouter();
   const pathname = usePathname();
-  
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
 
@@ -99,7 +103,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     return u.rola?.nazwa || u.role || u.rola || u.role_name || 'Użytkownik';
   }, [user]);
 
-  // Inicjalizacja motywu i uwierzytelniania
   useEffect(() => { 
     setIsMounted(true); 
     if (!user) {
@@ -107,11 +110,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       return;
     }
     
-    // Auto-detekcja preferencji systemowych
     if (typeof window !== 'undefined') {
       const storedTheme = localStorage.getItem('ef-theme');
       const isSystemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      
       if (storedTheme === 'dark' || (!storedTheme && isSystemDark)) {
         setTheme('dark');
         document.documentElement.classList.add('dark');
@@ -120,34 +121,50 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         document.documentElement.classList.remove('dark');
       }
     }
+
+    // Pobranie powiadomień startowych
+    api.get('/api/dashboard/notifications').then(res => {
+      setNotifications(res.data || []);
+      if (res.data?.length > 0) setHasUnreadNotif(true);
+    }).catch(console.error);
+
   }, [user, router]);
 
-  // Nasłuchiwanie scrolla do ukrywania górnego paska
+  // Wyszukiwarka bazy (Zastosowano Debounce by nie przeciążać bazy na każdą literę)
+  useEffect(() => {
+    if (searchQuery.trim().length < 2) {
+      setDbSearchResults([]);
+      setIsSearchingDb(false);
+      return;
+    }
+    setIsSearchingDb(true);
+    const timeoutId = setTimeout(() => {
+      api.get(`/api/dashboard/search?q=${encodeURIComponent(searchQuery.trim())}`)
+        .then(res => setDbSearchResults(res.data || []))
+        .catch(console.error)
+        .finally(() => setIsSearchingDb(false));
+    }, 400); // 400ms opóźnienia
+    
+    return () => clearTimeout(timeoutId);
+  }, [searchQuery]);
+
   useEffect(() => {
     if (typeof window === 'undefined') return;
-
     const handleScroll = () => {
       const currentScrollY = window.scrollY;
-
-      // Tolerancja 60px od góry, gdzie pasek jest zawsze widoczny
       if (currentScrollY < 60) {
         setIsTopBarVisible(true);
       } else if (currentScrollY > lastScrollY.current && isTopBarVisible) {
-        // Scroll w dół - chowamy
         setIsTopBarVisible(false);
       } else if (currentScrollY < lastScrollY.current && !isTopBarVisible) {
-        // Scroll w górę - pokazujemy
         setIsTopBarVisible(true);
       }
-
       lastScrollY.current = currentScrollY;
     };
-
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
   }, [isTopBarVisible]);
 
-  // Zamykanie modali po kliknięciu poza obszar
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (notifRef.current && !notifRef.current.contains(event.target as Node)) setIsNotifOpen(false);
@@ -165,15 +182,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     else document.documentElement.classList.remove('dark');
   };
 
-  // GLOBALNY SYSTEM KONTROLI DOSTĘPU (ACL GUARD)
   const userPermissions = user?.permissions || [];
-  
   const hasPermission = (reqPerm?: string) => {
-    if (!reqPerm) return true; // Brak wymagań = dostępny dla każdego
+    if (!reqPerm) return true;
     return userPermissions.includes(reqPerm);
   };
 
-  // 1. Dynamiczne filtrowanie zakładek w Menu
   const visibleMenu = useMemo(() => menuConfig
     .map((item) => {
       if (item.children) {
@@ -188,8 +202,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       return true;
     }), [userPermissions]);
 
-  // 2. Wyszukiwarka lokalna w menu
-  const searchResults = useMemo(() => {
+  // Lokalne filtrowanie nawigacji dla wyszukiwarki
+  const menuSearchResults = useMemo(() => {
     if (searchQuery.length < 2) return [];
     const results: { label: string; href: string; icon: any }[] = [];
     const q = searchQuery.toLowerCase();
@@ -202,12 +216,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     return results;
   }, [searchQuery, visibleMenu]);
 
-  // 3. Blokada routingu (Tarcza)
   const getRequiredPermissionForPath = (path: string) => {
     if (path.startsWith('/dashboard/settings/permissions')) return 'users:manage';
     if (path.startsWith('/dashboard/service/statuses')) return 'settings:view';
     if (path.startsWith('/dashboard/warehouse/pricing')) return 'warehouse:manage';
-
     if (path.startsWith('/dashboard/events') || path.startsWith('/dashboard/rentals') || path.startsWith('/dashboard/leaves')) return 'events:view';
     if (path.startsWith('/dashboard/crm')) return 'crm:view';
     if (path.startsWith('/dashboard/warehouse')) return 'warehouse:view';
@@ -216,7 +228,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     if (path.startsWith('/dashboard/offers')) return 'offers:view';
     if (path.startsWith('/dashboard/settings')) return 'settings:view';
     if (path.startsWith('/dashboard/users')) return 'users:manage';
-    
     return null; 
   };
 
@@ -230,6 +241,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       router.push(item.href!);
       setIsMobileOpen(false);
     }
+  };
+
+  const getTimeAgo = (dateStr: string) => {
+    const diff = Date.now() - new Date(dateStr).getTime();
+    const minutes = Math.floor(diff / 60000);
+    if (minutes < 60) return `${minutes} min temu`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours} godz. temu`;
+    return `${Math.floor(hours / 24)} dni temu`;
   };
 
   if (!isMounted || !user) return <div className="h-screen bg-slate-50 dark:bg-[#02080a]" />;
@@ -246,11 +266,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       {/* SIDEBAR WYSPA */}
       <aside 
-        className={`fixed inset-y-4 left-4 z-50 flex flex-col bg-white dark:bg-[#08151a] border border-slate-200 dark:border-white/5 rounded-[32px] shadow-xl lg:shadow-sm transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${isCollapsed ? 'w-[88px]' : 'w-[280px]'} ${isMobileOpen ? 'translate-x-0' : '-translate-x-[150%] lg:translate-x-0'}`}
+        className={`fixed inset-y-4 left-4 z-50 flex flex-col bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-[32px] shadow-xl lg:shadow-sm transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${isCollapsed ? 'w-[88px]' : 'w-[280px]'} ${isMobileOpen ? 'translate-x-0' : '-translate-x-[150%] lg:translate-x-0'}`}
       >
         <div className={`flex items-center justify-between h-24 shrink-0 ${isCollapsed ? 'px-0 justify-center' : 'px-7'}`}>
           {!isCollapsed && <Image src={theme === 'dark' ? "/eve_nt_primary_with_symbol_reverse_transparent.png" : "/eve_nt_with_symbol_transparent.png"} alt="EventFlow" width={160} height={38} priority />}
-          {isCollapsed && <Image src="/symbol_turquoise_transparent.png" alt="EF" width={140} height={140} priority />}
+          {isCollapsed && <Image src="/symbol_turquoise_transparent.png" alt="EF" width={40} height={40} priority />}
           
           {!isCollapsed && (
              <button onClick={() => setIsCollapsed(true)} className="hidden lg:flex p-2 rounded-xl text-slate-400 hover:text-[#04e0ff] hover:bg-slate-50 dark:hover:bg-white/5 transition-colors">
@@ -331,7 +351,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <div className={`flex flex-col flex-1 min-w-0 transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${isCollapsed ? 'lg:ml-[112px]' : 'lg:ml-[312px]'}`}>
         
         {/* TOP BAR WYSPA - CHOWAJĄCA SIĘ PRZY SCROLLU */}
-        <header className={`sticky z-30 mx-4 lg:mx-8 mb-8 flex h-16 shrink-0 items-center justify-between rounded-2xl border border-slate-200 bg-white/80 px-4 backdrop-blur-xl dark:border-white/5 dark:bg-[#08151a]/80 sm:px-6 shadow-sm transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] ${isTopBarVisible ? 'top-4 translate-y-0 opacity-100' : 'top-4 -translate-y-[150%] opacity-0 pointer-events-none'}`}>
+        <header className={`sticky z-30 mx-4 lg:mx-8 mb-8 flex h-16 shrink-0 items-center justify-between rounded-2xl border border-slate-200 bg-white/80 px-4 backdrop-blur-xl dark:border-white/5 dark:bg-slate-900/80 sm:px-6 shadow-sm transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] ${isTopBarVisible ? 'top-4 translate-y-0 opacity-100' : 'top-4 -translate-y-[150%] opacity-0 pointer-events-none'}`}>
           <div className="flex items-center gap-4">
             {/* Przycisk Menu Mobilnego */}
             <button className="lg:hidden p-2 rounded-xl text-slate-500 hover:bg-slate-100 dark:hover:bg-white/5 transition" onClick={() => setIsMobileOpen(true)}>
@@ -340,7 +360,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
 
           <div className="flex items-center gap-2 sm:gap-4">
-            {/* Wyszukiwarka */}
+            
+            {/* GLOBALNA WYSZUKIWARKA */}
             <div className="hidden sm:flex items-center relative group" ref={searchRef}>
               <Search size={16} className="absolute left-4 text-slate-400 group-focus-within:text-[#04e0ff] transition-colors" />
               <input 
@@ -348,24 +369,57 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onFocus={() => setIsSearchFocused(true)}
-                placeholder="Szukaj w systemie..." 
-                className="pl-11 pr-4 py-2.5 bg-slate-100 dark:bg-[#02080a] border border-transparent rounded-full text-sm font-semibold outline-none focus:bg-white focus:border-[#04e0ff]/50 focus:ring-4 focus:ring-[#04e0ff]/10 dark:focus:bg-[#02080a] dark:focus:border-[#04e0ff]/30 transition-all w-48 xl:w-72" 
+                placeholder="Szukaj danych w systemie..." 
+                className="pl-11 pr-4 py-2.5 bg-slate-100 dark:bg-[#02080a] border border-transparent rounded-full text-sm font-semibold outline-none focus:bg-white focus:border-[#04e0ff]/50 focus:ring-4 focus:ring-[#04e0ff]/10 dark:focus:bg-[#02080a] dark:focus:border-[#04e0ff]/30 transition-all w-48 xl:w-[360px]" 
               />
               
-              {/* Wyniki Wyszukiwania */}
-              {isSearchFocused && searchResults.length > 0 && (
-                <div className="absolute top-full right-0 lg:left-0 mt-3 w-72 bg-white dark:bg-[#08151a] border border-slate-200 dark:border-white/10 rounded-2xl shadow-xl overflow-hidden py-2 z-50 animate-fade-in-up">
-                  {searchResults.map((r, i) => (
-                    <Link 
-                      key={i} 
-                      href={r.href} 
-                      onClick={() => { setIsSearchFocused(false); setSearchQuery(''); }} 
-                      className="flex items-center gap-3 px-4 py-2.5 hover:bg-cyan-50 dark:hover:bg-white/5 transition text-sm font-bold text-slate-700 dark:text-slate-300 group"
-                    >
-                      <r.icon size={16} className="text-slate-400 group-hover:text-[#04e0ff] transition-colors"/> 
-                      {r.label}
-                    </Link>
-                  ))}
+              {/* Otwarty panel z wynikami */}
+              {isSearchFocused && searchQuery.length >= 2 && (
+                <div className="absolute top-full right-0 lg:left-0 mt-3 w-[400px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-3xl shadow-2xl overflow-hidden py-3 z-50 animate-fade-in-up flex flex-col max-h-[70vh]">
+                  
+                  {isSearchingDb && <div className="flex justify-center p-3"><Loader2 className="w-5 h-5 animate-spin text-[#04e0ff]"/></div>}
+                  
+                  <div className="flex-1 overflow-y-auto custom-scrollbar px-2">
+                    
+                    {/* Wyniki Nawigacyjne */}
+                    {menuSearchResults.length > 0 && (
+                      <div className="mb-4">
+                        <p className="px-3 mb-1 text-[10px] font-black uppercase text-slate-400 tracking-wider">Zakładki Systemowe</p>
+                        {menuSearchResults.map((r, i) => (
+                          <Link key={i} href={r.href} onClick={() => { setIsSearchFocused(false); setSearchQuery(''); }} className="flex items-center gap-3 px-3 py-2 hover:bg-cyan-50 dark:hover:bg-white/5 rounded-xl transition text-sm font-bold text-slate-700 dark:text-slate-300 group">
+                            <r.icon size={16} className="text-slate-400 group-hover:text-[#04e0ff] transition-colors"/> {r.label}
+                          </Link>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Wyniki z Bazy Danych */}
+                    {dbSearchResults.length > 0 && (
+                      <div>
+                        <p className="px-3 mb-1 text-[10px] font-black uppercase text-slate-400 tracking-wider">Wyniki z bazy</p>
+                        {dbSearchResults.map((res: any) => (
+                          <Link key={res.id} href={res.url} onClick={() => { setIsSearchFocused(false); setSearchQuery(''); }} className="flex items-center gap-3 px-3 py-2.5 hover:bg-cyan-50 dark:hover:bg-white/5 rounded-xl transition group">
+                            <div className="w-9 h-9 rounded-full bg-slate-100 dark:bg-black/30 flex items-center justify-center shrink-0 border border-slate-200 dark:border-white/5 group-hover:border-[#04e0ff]/50 transition-colors">
+                              {res.group === 'Wydarzenia' && <Calendar size={14} className="text-blue-500" />}
+                              {res.group === 'Oferty' && <FileText size={14} className="text-purple-500" />}
+                              {res.group === 'Wynajmy' && <Truck size={14} className="text-orange-500" />}
+                              {res.group === 'Modele' && <Box size={14} className="text-cyan-500" />}
+                              {res.group === 'Egzemplarze' && <Search size={14} className="text-teal-500" />}
+                              {res.group === 'Kontrahenci' && <Users size={14} className="text-rose-500" />}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-sm font-black text-slate-800 dark:text-slate-200 truncate group-hover:text-[#04e0ff] transition-colors">{res.title}</p>
+                              <p className="text-[11px] font-bold text-slate-500 truncate">{res.group} · {res.subtitle}</p>
+                            </div>
+                          </Link>
+                        ))}
+                      </div>
+                    )}
+
+                    {!isSearchingDb && menuSearchResults.length === 0 && dbSearchResults.length === 0 && (
+                       <p className="p-6 text-center text-sm font-bold text-slate-400 border border-dashed border-slate-200 dark:border-white/10 rounded-2xl mx-2">Brak wyników w systemie.</p>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -379,47 +433,40 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
             {/* Powiadomienia Dropdown */}
             <div className="relative" ref={notifRef}>
-              <button onClick={() => setIsNotifOpen(!isNotifOpen)} className={`relative p-2.5 transition-colors rounded-full ${isNotifOpen ? 'bg-cyan-50 text-[#04e0ff] dark:bg-white/5' : 'text-slate-500 hover:text-[#04e0ff] hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-white/5 dark:hover:text-white'}`}>
+              <button onClick={() => { setIsNotifOpen(!isNotifOpen); setHasUnreadNotif(false); }} className={`relative p-2.5 transition-colors rounded-full ${isNotifOpen ? 'bg-cyan-50 text-[#04e0ff] dark:bg-white/5' : 'text-slate-500 hover:text-[#04e0ff] hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-white/5 dark:hover:text-white'}`}>
                 <Bell size={20} />
-                <span className="absolute top-2.5 right-3 w-2.5 h-2.5 rounded-full bg-rose-500 border-2 border-white dark:border-[#08151a]"></span>
+                {hasUnreadNotif && <span className="absolute top-2.5 right-3 w-2.5 h-2.5 rounded-full bg-rose-500 border-2 border-white dark:border-slate-900"></span>}
               </button>
               
               {isNotifOpen && (
-                <div className="absolute right-0 top-full mt-3 w-80 bg-white dark:bg-[#08151a] border border-slate-200 dark:border-white/10 rounded-[24px] shadow-2xl overflow-hidden z-50 animate-fade-in-up origin-top-right">
+                <div className="absolute right-0 top-full mt-3 w-[360px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-3xl shadow-2xl overflow-hidden z-50 animate-fade-in-up origin-top-right">
                   <div className="p-5 border-b border-slate-100 dark:border-white/5 flex justify-between items-center bg-slate-50/50 dark:bg-transparent">
-                    <h3 className="font-black text-slate-900 dark:text-white text-base">Powiadomienia</h3>
-                    <button className="text-[11px] font-black uppercase tracking-wider text-[#04e0ff] hover:text-cyan-700 transition-colors">Oznacz jako przeczytane</button>
+                    <h3 className="font-black text-slate-900 dark:text-white text-base">Powiadomienia operacyjne</h3>
                   </div>
-                  <div className="p-2 max-h-[350px] overflow-y-auto custom-scrollbar">
-                    <div className="p-4 rounded-2xl hover:bg-cyan-50 dark:hover:bg-white/5 transition cursor-pointer mb-1">
-                      <div className="flex items-start gap-3">
-                        <div className="w-2 h-2 rounded-full bg-[#04e0ff] mt-1.5 shrink-0 shadow-[0_0_8px_#04e0ff]"></div>
-                        <div>
-                          <p className="text-sm font-black text-slate-800 dark:text-slate-200 leading-snug">Nowa oferta gotowa do akceptacji</p>
-                          <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">Klient GOK Sezam oczekuje na wycenę sprzętu do wynajmu.</p>
-                          <p className="text-[10px] font-black text-slate-400 mt-2 uppercase tracking-wider">10 min temu</p>
+                  <div className="p-2 max-h-[400px] overflow-y-auto custom-scrollbar">
+                    {notifications.length > 0 ? notifications.map((n: any) => (
+                      <div key={n.id} onClick={() => { router.push(n.url); setIsNotifOpen(false); }} className="p-4 rounded-2xl hover:bg-cyan-50 dark:hover:bg-white/5 transition cursor-pointer mb-1 group">
+                        <div className="flex items-start gap-3">
+                          <div className={`w-2.5 h-2.5 rounded-full mt-1.5 shrink-0 ${n.type === 'alert' ? 'bg-rose-500 shadow-[0_0_8px_#f43f5e]' : 'bg-[#04e0ff] shadow-[0_0_8px_#04e0ff]'}`}></div>
+                          <div>
+                            <p className="text-sm font-black text-slate-800 dark:text-slate-200 leading-snug group-hover:text-cyan-600 transition-colors">{n.title}</p>
+                            <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">{n.message}</p>
+                            <p className="text-[10px] font-black text-slate-400 mt-2 uppercase tracking-wider">{getTimeAgo(n.time)}</p>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                    <div className="p-4 rounded-2xl hover:bg-cyan-50 dark:hover:bg-white/5 transition cursor-pointer">
-                      <div className="flex items-start gap-3">
-                        <div className="w-2 h-2 rounded-full bg-rose-500 mt-1.5 shrink-0"></div>
-                        <div>
-                          <p className="text-sm font-black text-slate-800 dark:text-slate-200 leading-snug">Alert serwisowy</p>
-                          <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">System zgłasza 3 urządzenia wymagające pilnego przeglądu.</p>
-                          <p className="text-[10px] font-black text-slate-400 mt-2 uppercase tracking-wider">2 godz. temu</p>
-                        </div>
+                    )) : (
+                      <div className="p-8 text-center">
+                        <CheckCircle2 size={32} className="mx-auto text-emerald-400 mb-3" />
+                        <p className="text-sm font-bold text-slate-500">Brak nowych powiadomień. Możesz spokojnie pracować!</p>
                       </div>
-                    </div>
-                  </div>
-                  <div className="p-3 border-t border-slate-100 dark:border-white/5 text-center">
-                    <button className="text-xs font-black text-slate-500 hover:text-slate-800 dark:hover:text-white transition-colors">Zobacz wszystkie</button>
+                    )}
                   </div>
                 </div>
               )}
             </div>
 
-            {/* Szybki Wpis */}
+            {/* Szybki Wpis do Kalendarza */}
             <Button className="hidden sm:flex ml-1 shadow-md shadow-[#04e0ff]/20" onClick={() => router.push('/dashboard/calendar')}>
               <Plus size={16} className="mr-1 inline" /> Szybki wpis
             </Button>

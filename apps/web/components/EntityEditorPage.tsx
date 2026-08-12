@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useParams, useRouter } from 'next/navigation';
 import { ArrowLeft, History, Loader2, Save, Trash2, FileText, Users, Box, Truck, Wrench, CalendarDays, ImageIcon } from 'lucide-react';
 import { api } from '../lib/api';
@@ -90,13 +91,19 @@ export function EntityEditorPage({ config }: { config: EntityEditorConfig }) {
   const params = useParams();
   const router = useRouter();
   const id = String(params.id);
+
+  // 1. Najpierw określamy dostępne zakładki (z konfiguracji lub domyślne)
+  const tabs = config.tabs?.length ? config.tabs : DEFAULT_TABS;
+
   const [record, setRecord] = useState<any>(null);
   const [form, setForm] = useState<any>({});
   const [dict, setDict] = useState<Record<string, any[]>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [activeTab, setActiveTab] = useState('szczegoly');
+  
+  // 2. Domyślnie ustawiamy ID pierwszej dostępnej zakładki dla danej podstrony
+  const [activeTab, setActiveTab] = useState(tabs[0]?.id || 'szczegoly');
 
   async function load() {
     setLoading(true);
@@ -152,7 +159,6 @@ export function EntityEditorPage({ config }: { config: EntityEditorConfig }) {
     router.push(config.listHref);
   }
 
-  const tabs = config.tabs?.length ? config.tabs : DEFAULT_TABS;
   const title = record ? (config.titleFromRecord?.(record) || record.nazwa || record.tytul || record.numer || `#${record.id}`) : config.title;
   const subtitle = record ? (config.subtitleFromRecord?.(record) || `ID ${record.id}`) : '';
 
@@ -253,7 +259,8 @@ export function EntityEditorPage({ config }: { config: EntityEditorConfig }) {
           <div className="grid gap-3">
             <Info label="ID rekordu" value={`#${record?.id}`} />
             <Info label="Aktywny" value={record?.aktywny === false ? 'Nie' : 'Tak'} />
-            <Info label="Źródło" value="Panel EventFlow" />
+            <InfoImage label="Źródło" value={<Image src="/eve_nt_primary_transparent.png" alt="EVE-nt" width={160} height={60} className="mt-2" priority/>} />
+            
           </div>
         </Card>
       </form>
@@ -281,6 +288,9 @@ function Metric({ label, value }: { label: string; value: any }) {
 function Info({ label, value }: { label: string; value: any }) {
   return <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3"><p className="text-[11px] font-black uppercase tracking-wider text-slate-400">{label}</p><p className="mt-1 text-sm font-black text-slate-800">{formatValue(value)}</p></div>;
 }
+function InfoImage({ label, value }: { label: string; value: any }) {
+  return <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3"><p className="text-[11px] font-black uppercase tracking-wider text-slate-400">{label}</p><p className="mt-1 text-sm font-black text-slate-800">{value}</p></div>;
+}
 
 function DefaultTab({ id, record }: { id: string; record: any }) {
   if (id === 'historia') return <p className="font-bold text-slate-500">Historia zmian będzie rozwijana w kolejnym kroku. Rekord: #{record?.id}</p>;
@@ -290,17 +300,14 @@ function DefaultTab({ id, record }: { id: string; record: any }) {
 
 export const defaultTabs = {
   service: [
-    { id: 'szczegoly', label: 'Szczegóły', icon: Wrench },
     { id: 'sprzet', label: 'Sprzęt', icon: Box },
     { id: 'historia', label: 'Historia', icon: History },
   ],
   fleet: [
-    { id: 'szczegoly', label: 'Szczegóły', icon: Truck },
     { id: 'kalendarz', label: 'Kalendarz', icon: CalendarDays },
     { id: 'historia', label: 'Historia', icon: History },
   ],
   crm: [
-    { id: 'szczegoly', label: 'Szczegóły', icon: FileText },
     { id: 'kontakty', label: 'Kontakty / powiązania', icon: Users },
     { id: 'historia', label: 'Historia', icon: History },
   ],

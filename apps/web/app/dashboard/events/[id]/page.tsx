@@ -510,7 +510,7 @@ export default function EventDetailsPage() {
             </div>
             <div className="space-y-3 flex-1 overflow-y-auto pr-1 custom-scrollbar">
               {(eventData?.etapy || []).map((etap: any) => (
-                <div key={etap.id} className="rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#08151a] p-4 shadow-sm flex justify-between items-center group transition-colors hover:border-cyan-300 dark:hover:border-cyan-500/50">
+                <div key={etap.id} className="rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 p-4 shadow-sm flex justify-between items-center group transition-colors hover:border-cyan-300 dark:hover:border-cyan-500/50">
                   <div className="min-w-0 pr-4">
                     <p className="font-black text-slate-900 dark:text-white truncate">{etap.nazwa}</p>
                     <p className="text-[11px] font-bold text-[#04e0ff] mt-1">{dateTime(etap.data_start)} → {dateTime(etap.data_koniec)}</p>
@@ -539,7 +539,7 @@ export default function EventDetailsPage() {
       </form>
 
       <Card className="!p-0 border-transparent shadow-none bg-transparent mt-8">
-        <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-slate-200 dark:border-white/10 bg-white dark:bg-[#08151a] rounded-t-3xl shadow-sm px-3 pt-3 pb-0">
+        <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 rounded-t-3xl shadow-sm px-3 pt-3 pb-0">
           <div className="flex overflow-x-auto custom-scrollbar">
             {TABS.map((tab) => {
               const Icon = tab.icon;
@@ -576,7 +576,7 @@ export default function EventDetailsPage() {
           )}
         </div>
         
-        <div className="p-6 bg-white dark:bg-[#08151a] border border-slate-200 dark:border-white/10 border-t-0 rounded-b-3xl shadow-sm min-h-[500px]">
+        <div className="p-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 border-t-0 rounded-b-3xl shadow-sm min-h-[500px]">
           {activeTab === 'chat' && <EventChatPanel eventId={Number(params.id)} historia={eventData?.historia || []} reloadEvent={loadEvent} />}
           {activeTab === 'zadania' && <EventTasksPanel eventId={Number(params.id)} zadania={eventData?.zadania || []} dict={dict} reloadEvent={loadEvent} tabQuery={tabSearchQuery} />}
           {activeTab === 'ekipa' && <EventCrewPanel eventId={Number(params.id)} ekipa={eventData?.ekipa || []} dict={dict} tabQuery={tabSearchQuery} reloadEvent={loadEvent} />}
@@ -625,7 +625,7 @@ export default function EventDetailsPage() {
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl border border-slate-200 dark:border-white/5 bg-white dark:bg-[#08151a] p-5 shadow-sm hover:shadow-md transition">
+    <div className="rounded-2xl border border-slate-200 dark:border-white/5 bg-white dark:bg-slate-900 p-5 shadow-sm hover:shadow-md transition">
       <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">{label}</p>
       <p className="mt-2 truncate text-xl font-black text-slate-900 dark:text-white tracking-tight">{value}</p>
     </div>
@@ -721,7 +721,7 @@ function EventChatPanel({ eventId, historia, reloadEvent }: any) {
           <div key={m.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
              <div className="flex items-end gap-3 max-w-[80%]">
                 {!isMe && <div className="w-9 h-9 rounded-2xl bg-gradient-to-br from-slate-200 to-slate-300 dark:from-slate-700 dark:to-slate-800 flex items-center justify-center text-[11px] font-black shrink-0 text-slate-600 dark:text-white shadow-sm border border-slate-300 dark:border-white/10">{initials(m.uzytkownik)}</div>}
-                <div className={`px-5 py-3 rounded-[20px] text-sm font-semibold leading-relaxed shadow-sm ${isMe ? 'bg-gradient-to-r from-[#04e0ff] to-blue-600 text-white rounded-br-sm' : 'bg-white dark:bg-[#08151a] border border-slate-200 dark:border-white/10 text-slate-800 dark:text-slate-200 rounded-bl-sm'}`}>
+                <div className={`px-5 py-3 rounded-[20px] text-sm font-semibold leading-relaxed shadow-sm ${isMe ? 'bg-gradient-to-r from-[#04e0ff] to-blue-600 text-white rounded-br-sm' : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 text-slate-800 dark:text-slate-200 rounded-bl-sm'}`}>
                   {m.nowa_wartosc}
                 </div>
              </div>
@@ -733,7 +733,7 @@ function EventChatPanel({ eventId, historia, reloadEvent }: any) {
       })}
       {messages.length === 0 && <div className="h-full flex flex-col items-center justify-center text-slate-400 font-bold opacity-60"><MessageSquare size={48} className="mb-4 text-[#04e0ff]"/><p>Brak wiadomości. Rozpocznij dyskusję z zespołem!</p></div>}
     </div>
-    <form onSubmit={send} className="p-4 bg-white dark:bg-[#08151a] border-t border-slate-200 dark:border-white/5 flex items-center gap-3">
+    <form onSubmit={send} className="p-4 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-white/5 flex items-center gap-3">
       <input value={msg} onChange={e => setMsg(e.target.value)} placeholder="Napisz wiadomość do zespołu..." className="flex-1 bg-slate-100 dark:bg-black/40 border border-transparent rounded-full px-5 py-3.5 text-sm font-semibold outline-none focus:bg-white dark:focus:bg-[#02080a] focus:border-[#04e0ff]/50 focus:ring-2 focus:ring-[#04e0ff]/20 transition-all dark:text-white" />
       <button type="submit" disabled={sending || !msg.trim()} className="w-12 h-12 rounded-full bg-gradient-to-r from-[#04e0ff] to-blue-600 text-white flex items-center justify-center shrink-0 hover:scale-105 disabled:opacity-50 disabled:hover:scale-100 transition shadow-md shadow-[#04e0ff]/20"><Send size={18} className="ml-1 pl-0.5"/></button>
     </form>
@@ -798,7 +798,7 @@ function EventTasksPanel({ eventId, zadania, dict, reloadEvent, tabQuery = '' }:
     <div className="space-y-3">
       {filteredTasks.map((t: any) => {
         const isDone = t.status === 'zakończone';
-        return <div key={t.id} className={`flex items-center gap-5 p-5 border rounded-[20px] transition-all duration-300 ${isDone ? 'bg-slate-50 dark:bg-black/20 border-slate-100 dark:border-white/5 opacity-70' : 'bg-white dark:bg-[#08151a] border-slate-200 dark:border-white/10 shadow-sm hover:border-[#04e0ff]/50'}`}>
+        return <div key={t.id} className={`flex items-center gap-5 p-5 border rounded-[20px] transition-all duration-300 ${isDone ? 'bg-slate-50 dark:bg-black/20 border-slate-100 dark:border-white/5 opacity-70' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-white/10 shadow-sm hover:border-[#04e0ff]/50'}`}>
           <button onClick={() => toggleStatus(t)} className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 transition-colors ${isDone ? 'bg-emerald-500 text-white' : 'border-2 border-slate-300 dark:border-slate-600 text-transparent hover:border-[#04e0ff]'}`}>
              <CheckCircle2 size={18} />
           </button>
@@ -874,7 +874,7 @@ function EventCrewPanel({ eventId, ekipa, dict, tabQuery = '', reloadEvent }: an
     </SimpleModal>}
 
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-      {filtered.map((p: any) => <div key={p.id} className="rounded-[20px] border border-slate-200 dark:border-white/10 p-5 bg-white dark:bg-[#08151a] shadow-sm hover:shadow-md transition-shadow flex items-center justify-between group">
+      {filtered.map((p: any) => <div key={p.id} className="rounded-[20px] border border-slate-200 dark:border-white/10 p-5 bg-white dark:bg-slate-900 shadow-sm hover:shadow-md transition-shadow flex items-center justify-between group">
          <div className="flex items-center gap-4">
            <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-white/5 flex items-center justify-center font-black text-slate-500 dark:text-slate-300 text-lg border border-slate-200 dark:border-white/10">
              {initials(p.uzytkownik)}
@@ -930,7 +930,7 @@ function EventFleetPanel({ eventId, pojazdy, dict, tabQuery = '', reloadEvent }:
     </SimpleModal>}
 
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-      {filtered.map((v: any) => <div key={v.id} className="rounded-[20px] border border-slate-200 dark:border-white/10 p-5 bg-white dark:bg-[#08151a] shadow-sm flex items-center justify-between group hover:shadow-md transition">
+      {filtered.map((v: any) => <div key={v.id} className="rounded-[20px] border border-slate-200 dark:border-white/10 p-5 bg-white dark:bg-slate-900 shadow-sm flex items-center justify-between group hover:shadow-md transition">
         <div>
            <p className="font-black text-slate-900 dark:text-white text-[15px] flex items-center gap-2 mb-2"><Car size={16} className="text-[#04e0ff]"/> {v.pojazd?.nazwa || 'Pojazd'}</p>
            <p className="text-xs font-bold text-slate-500 dark:text-slate-400 flex items-center"><span className="text-slate-800 dark:text-slate-200 bg-slate-100 dark:bg-white/10 px-2 py-1 rounded-md uppercase tracking-widest text-[10px] mr-2">{v.pojazd?.nr_rejestracyjny || '-'}</span> {v.rola_pojazdu || 'Rezerwacja'}</p>
@@ -983,7 +983,7 @@ function AttachmentsPanel({ eventId, zalaczniki, tabQuery = '', reloadEvent }: a
     </Card>}
 
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-       {filtered.map((z: any) => <div key={z.id} className="rounded-[20px] border border-slate-200 dark:border-white/10 p-5 bg-white dark:bg-[#08151a] shadow-sm flex items-center justify-between group hover:border-cyan-300 dark:hover:border-cyan-500/50 transition-colors">
+       {filtered.map((z: any) => <div key={z.id} className="rounded-[20px] border border-slate-200 dark:border-white/10 p-5 bg-white dark:bg-slate-900 shadow-sm flex items-center justify-between group hover:border-cyan-300 dark:hover:border-cyan-500/50 transition-colors">
           <div className="flex items-center gap-4 min-w-0">
              <div className="w-12 h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-500/10 text-indigo-500 flex items-center justify-center shrink-0 border border-indigo-100 dark:border-indigo-500/20"><FileText size={24} strokeWidth={1.5}/></div>
              <div className="min-w-0 pr-2">
@@ -1021,7 +1021,7 @@ function HistoryPanel({ history, tabQuery = '' }: { history: any[], tabQuery?: s
     <div className="relative border-l-2 border-slate-200 dark:border-slate-800 ml-4 space-y-8 pb-4">
       {filtered.map((h: any) => (
          <div key={h.id} className="relative pl-8 group hover:opacity-100 transition-opacity">
-           <div className="absolute -left-[11px] top-1 w-5 h-5 rounded-full bg-slate-200 dark:bg-slate-700 border-4 border-white dark:border-[#08151a] group-hover:bg-[#04e0ff] transition-colors"></div>
+           <div className="absolute -left-[11px] top-1 w-5 h-5 rounded-full bg-slate-200 dark:bg-slate-700 border-4 border-white dark:border-slate-900 group-hover:bg-[#04e0ff] transition-colors"></div>
            <p className="font-black text-[15px] text-slate-900 dark:text-white">{h.akcja.replace(/_/g, ' ')}</p>
            <p className="text-xs font-bold text-slate-500 mt-1.5 flex items-center gap-2">
              <span className="text-[#04e0ff] bg-cyan-50 dark:bg-[#04e0ff]/10 px-2 py-0.5 rounded-md uppercase tracking-wider">{h.uzytkownik ? `${h.uzytkownik.imie} ${h.uzytkownik.nazwisko}` : 'Z Automatu (System)'}</span>
@@ -1604,7 +1604,7 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
     {error && <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-black text-red-700">{error}</div>}
     {notice && <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-black text-emerald-700">{notice}</div>}
 
-    <section className="rounded-3xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#08151a] shadow-sm overflow-hidden">
+    <section className="rounded-3xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 shadow-sm overflow-hidden">
       <div className="flex flex-col gap-4 border-b border-slate-100 dark:border-white/5 p-6 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <p className="text-[10px] font-black uppercase tracking-[0.25em] text-[#04e0ff]">Sprzęt wydarzenia</p>
@@ -1624,7 +1624,7 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
             ['plan', 'Lista sprzętu (Plan)'],
             ['wydanie', 'Wydaj WZ'],
             ['przyjecie', 'Przyjmij PZ'],
-          ] as const).map(([m, label]) => <button key={m} type="button" onClick={() => { setMode(m); setQuery(''); setError(''); setNotice(''); setDocItems([]); }} className={`rounded-xl px-5 py-3 text-sm font-black transition-all shadow-sm ${mode === m ? 'bg-gradient-to-r from-[#04e0ff] to-blue-600 text-white shadow-cyan-600/20' : 'border border-slate-200 dark:border-white/10 bg-white dark:bg-[#08151a] text-slate-600 dark:text-slate-300 hover:border-cyan-300 dark:hover:border-cyan-700/50 hover:bg-cyan-50 dark:hover:bg-cyan-500/10'}`}>{label}</button>)}
+          ] as const).map(([m, label]) => <button key={m} type="button" onClick={() => { setMode(m); setQuery(''); setError(''); setNotice(''); setDocItems([]); }} className={`rounded-xl px-5 py-3 text-sm font-black transition-all shadow-sm ${mode === m ? 'bg-gradient-to-r from-[#04e0ff] to-blue-600 text-white shadow-cyan-600/20' : 'border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:border-cyan-300 dark:hover:border-cyan-700/50 hover:bg-cyan-50 dark:hover:bg-cyan-500/10'}`}>{label}</button>)}
         </div>
         {mode === 'plan' && (
           <div className="flex gap-2">
@@ -1643,7 +1643,7 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
             </div>
           </div>
           <div className="space-y-5">
-            {plannedGroups.map((group: any) => <div key={group.nazwa} className="overflow-hidden rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#08151a] shadow-sm">
+            {plannedGroups.map((group: any) => <div key={group.nazwa} className="overflow-hidden rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 shadow-sm">
               <div className="flex items-center justify-between border-b border-slate-100 dark:border-white/5 bg-slate-50 dark:bg-white/5 px-5 py-3.5">
                 <div><p className="text-base font-black text-slate-900 dark:text-white">{group.nazwa}</p><p className="text-xs font-bold text-slate-400 dark:text-slate-500">{group.rows.length} modeli</p></div>
                 <span className="rounded-xl bg-white dark:bg-white/10 border border-slate-200 dark:border-white/5 px-3 py-1.5 text-xs font-black text-slate-500 dark:text-slate-300 shadow-sm">plan {group.plan} · WZ {group.wydane} · PZ {group.przyjete}</span>
@@ -1661,7 +1661,7 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
 
         {showEditor && <aside className="border-l border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-black/20 p-6 shadow-inner">
           <div className="sticky top-4 space-y-5">
-            <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#08151a] p-5 shadow-sm">
+            <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 p-5 shadow-sm">
               <div className="mb-5 flex items-start justify-between gap-3 border-b border-slate-100 dark:border-white/5 pb-4">
                 <div><h4 className="text-lg font-black text-slate-900 dark:text-white">Dodaj / zmień sprzęt w planie</h4><p className="text-xs font-bold text-slate-500 mt-1">Wybierz kategorię główną, potem podkategorię i wpisz ilość przy modelu.</p></div>
                 <button type="button" onClick={() => setShowEditor(false)} className="rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 px-3 py-2 text-xs font-black text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/10 transition shadow-sm">Zamknij</button>
@@ -1672,16 +1672,16 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
               <div className="mt-5 rounded-2xl bg-slate-50 dark:bg-white/5 border border-slate-100 dark:border-transparent p-4">
                 <p className="mb-3 text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">Filtry / Kategorie główne</p>
                 <div className="flex max-h-[140px] flex-wrap gap-2 overflow-y-auto pr-1 custom-scrollbar">
-                  <button type="button" onClick={() => { setActiveRoot('all'); setActiveSub(''); }} className={`rounded-xl px-3 py-2 text-xs font-black transition shadow-sm ${activeRoot === 'all' ? 'bg-[#04e0ff] text-slate-900' : 'bg-white dark:bg-[#08151a] border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 hover:border-cyan-300'}`}>Wszystkie</button>
-                  {equipmentCategoryRoots.map((root: any) => <button key={root.id} type="button" onClick={() => { setActiveRoot(String(root.id)); setActiveSub(''); }} className={`rounded-xl px-3 py-2 text-xs font-black transition shadow-sm ${activeRoot === String(root.id) ? 'bg-[#04e0ff] text-slate-900' : 'bg-white dark:bg-[#08151a] border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 hover:border-cyan-300'}`}>{root.nazwa} <span className="opacity-60 font-bold ml-1">{totalForEquipmentCategory(String(root.id))}</span></button>)}
+                  <button type="button" onClick={() => { setActiveRoot('all'); setActiveSub(''); }} className={`rounded-xl px-3 py-2 text-xs font-black transition shadow-sm ${activeRoot === 'all' ? 'bg-[#04e0ff] text-slate-900' : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 hover:border-cyan-300'}`}>Wszystkie</button>
+                  {equipmentCategoryRoots.map((root: any) => <button key={root.id} type="button" onClick={() => { setActiveRoot(String(root.id)); setActiveSub(''); }} className={`rounded-xl px-3 py-2 text-xs font-black transition shadow-sm ${activeRoot === String(root.id) ? 'bg-[#04e0ff] text-slate-900' : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 hover:border-cyan-300'}`}>{root.nazwa} <span className="opacity-60 font-bold ml-1">{totalForEquipmentCategory(String(root.id))}</span></button>)}
                 </div>
               </div>
 
               {activeRootObj?.dzieci?.length > 0 && <div className="mt-3 rounded-2xl bg-slate-50 dark:bg-white/5 border border-slate-100 dark:border-transparent p-4 animate-fade-in-up">
                 <p className="mb-3 text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">Podkategorie ({activeRootObj.nazwa})</p>
                 <div className="flex max-h-[160px] flex-wrap gap-2 overflow-y-auto pr-1 custom-scrollbar">
-                  <button type="button" onClick={() => setActiveSub('')} className={`rounded-xl px-3 py-2 text-xs font-black transition shadow-sm ${!activeSub ? 'bg-slate-900 dark:bg-slate-200 text-white dark:text-slate-900' : 'bg-white dark:bg-[#08151a] border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 hover:border-cyan-300'}`}>Wszystkie w dziale</button>
-                  {activeRootObj.dzieci.map((child: any) => <button key={child.id} type="button" onClick={() => setActiveSub(String(child.id))} className={`rounded-xl px-3 py-2 text-xs font-black transition shadow-sm ${activeSub === String(child.id) ? 'bg-slate-900 dark:bg-slate-200 text-white dark:text-slate-900' : 'bg-white dark:bg-[#08151a] border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 hover:border-cyan-300'}`}>{child.nazwa} <span className="opacity-60 font-bold ml-1">{totalForEquipmentCategory(String(child.id))}</span></button>)}
+                  <button type="button" onClick={() => setActiveSub('')} className={`rounded-xl px-3 py-2 text-xs font-black transition shadow-sm ${!activeSub ? 'bg-slate-900 dark:bg-slate-200 text-white dark:text-slate-900' : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 hover:border-cyan-300'}`}>Wszystkie w dziale</button>
+                  {activeRootObj.dzieci.map((child: any) => <button key={child.id} type="button" onClick={() => setActiveSub(String(child.id))} className={`rounded-xl px-3 py-2 text-xs font-black transition shadow-sm ${activeSub === String(child.id) ? 'bg-slate-900 dark:bg-slate-200 text-white dark:text-slate-900' : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 hover:border-cyan-300'}`}>{child.nazwa} <span className="opacity-60 font-bold ml-1">{totalForEquipmentCategory(String(child.id))}</span></button>)}
                 </div>
               </div>}
             </div>
@@ -1689,7 +1689,7 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
             <div className="max-h-[500px] space-y-3 overflow-y-auto pr-2 custom-scrollbar">
               {visibleModels.map((model: any) => {
                 const qty = Number(planQty[String(model.id)] || 0) || 0;
-                return <div key={model.id} className={`rounded-2xl border bg-white dark:bg-[#08151a] p-4 shadow-sm transition-all duration-300 ${qty > 0 ? 'border-[#04e0ff] ring-1 ring-[#04e0ff]/30 shadow-md' : 'border-slate-200 dark:border-white/10 hover:border-cyan-300 dark:hover:border-cyan-700'}`}>
+                return <div key={model.id} className={`rounded-2xl border bg-white dark:bg-slate-900 p-4 shadow-sm transition-all duration-300 ${qty > 0 ? 'border-[#04e0ff] ring-1 ring-[#04e0ff]/30 shadow-md' : 'border-slate-200 dark:border-white/10 hover:border-cyan-300 dark:hover:border-cyan-700'}`}>
                   <div className="flex gap-4">
                     <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-slate-100 dark:bg-white/5 text-xs font-black text-slate-400 border border-slate-200 dark:border-white/10">
                       {model.zdjecie ? <img src={model.zdjecie} alt="" className="h-full w-full object-cover" /> : <Box size={22} className="opacity-50" />}
@@ -1707,10 +1707,10 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
                   </div>
                 </div>;
               })}
-              {!visibleModels.length && <p className="rounded-2xl border border-dashed border-slate-200 dark:border-white/10 p-8 text-center text-sm font-bold text-slate-400 bg-white dark:bg-[#08151a]">Brak modeli w tej kategorii. Wyszukaj ponownie.</p>}
+              {!visibleModels.length && <p className="rounded-2xl border border-dashed border-slate-200 dark:border-white/10 p-8 text-center text-sm font-bold text-slate-400 bg-white dark:bg-slate-900">Brak modeli w tej kategorii. Wyszukaj ponownie.</p>}
             </div>
 
-            <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#08151a] p-5 shadow-sm">
+            <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 p-5 shadow-sm">
               <div className="mb-4 flex items-center justify-between"><p className="font-black text-slate-900 dark:text-white">Koszyk Planu</p><span className="rounded-full bg-cyan-100 dark:bg-cyan-500/10 px-3 py-1 text-[11px] font-black text-cyan-700 dark:text-cyan-400 border border-cyan-200 dark:border-cyan-500/20">{Object.values(planQty).filter((v) => Number(v) > 0).length} modeli wybrano</span></div>
               <div className="max-h-[180px] space-y-2 overflow-y-auto pr-2 custom-scrollbar">
                 {Object.entries(planQty).filter(([, qty]) => Number(qty) > 0).map(([id, qty]) => {
@@ -1730,7 +1730,7 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
             <p className="text-sm font-bold leading-relaxed text-cyan-900 dark:text-cyan-100">{mode === 'wydanie' ? 'Skanuj egzemplarze albo kody kontenerów aby je wydać (WZ). Sprzęt ilościowy możesz zaznaczyć checkboxem by pobrać brakującą ilość sztuk bez ręcznego wpisywania w skaner.' : 'Skanuj zwracane egzemplarze i kontenery (PZ). Sprzęt ilościowy możesz zaznaczyć checkboxem by zwrócić brakującą na magazynie ilość sztuk bez skanera.'}</p>
           </div>
           <div className="space-y-5 min-w-0">
-            {plannedGroups.map((group: any) => <div key={group.nazwa} className="overflow-hidden rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#08151a] shadow-sm min-w-0">
+            {plannedGroups.map((group: any) => <div key={group.nazwa} className="overflow-hidden rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 shadow-sm min-w-0">
               <div className="bg-slate-50 dark:bg-white/5 border-b border-slate-100 dark:border-white/5 px-5 py-3.5"><b className="text-slate-900 dark:text-white">{group.nazwa}</b></div>
               <div className="divide-y divide-slate-100 dark:divide-white/5">
                 {group.rows.map((row: any) => {
@@ -1768,7 +1768,7 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
   
   <div className="border-l border-slate-200 dark:border-white/10 bg-slate-50/70 dark:bg-black/20 p-6 shadow-inner min-w-0 flex flex-col">
     <div className="sticky top-4 space-y-5 min-w-0">
-      <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#08151a] p-5 shadow-sm min-w-0">
+      <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 p-5 shadow-sm min-w-0">
         <Field label="Skanuj kod kreskowy / QR / SN / Case z Naklejki">
            <div className="flex gap-2">
              <input ref={scanInputRef} className={`${inputClass} py-3 text-lg font-bold shadow-inner min-w-0`} autoFocus value={scanCode} onFocus={(e) => e.currentTarget.select()} onChange={(e) => setScanCode(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); scan(); } }} placeholder="Kliknij Skanuj, skanuj kod i wciśnij Enter..."/>
@@ -1778,7 +1778,7 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
         <p className="mt-3 text-xs font-bold text-slate-400 leading-relaxed">Zeskanowanie kontenera (Opakowanie/Case) automatycznie rozpakuje go i doda na listę ukryty w nim sprzęt. Zeskanowanie Zestawu(Racka) doda go jako spójną całość. Sprzęt ilościowy dodasz skanem modelu lub checkboxem po lewej.</p>
       </div>
       
-      <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#08151a] p-5 shadow-sm min-w-0">
+      <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 p-5 shadow-sm min-w-0">
         <div className="mb-4 flex items-center justify-between min-w-0"><h4 className="text-lg font-black text-slate-900 dark:text-white truncate pr-2">Koszyk Skanera (Teraz)</h4><span className="rounded-full bg-cyan-100 dark:bg-cyan-500/10 px-3 py-1 text-xs font-black text-cyan-700 dark:text-[#04e0ff] border border-cyan-200 dark:border-cyan-500/20 shrink-0">{docItems.reduce((s: number, p: any) => s + Number(p.ilosc || 1), 0)} szt.</span></div>
         <div className="max-h-[260px] space-y-2 overflow-y-auto pr-1 custom-scrollbar min-w-0">
           {docItems.map((p, idx) => <div key={`${p.id_egzemplarza || p.id_modelu}-${idx}`} className="rounded-xl border border-slate-100 dark:border-white/5 bg-slate-50 dark:bg-white/5 p-3 flex justify-between gap-3 group transition-colors hover:border-cyan-300 dark:hover:border-cyan-700 min-w-0">
@@ -1796,7 +1796,7 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
         </div>
       </div>
       
-      <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#08151a] p-5 shadow-sm min-w-0">
+      <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 p-5 shadow-sm min-w-0">
         <Field label="Wyszukaj i dodaj egzemplarz ręcznie (Awaryjnie)"><div className="relative min-w-0"><Search className="absolute left-3 top-3 text-slate-400" size={16}/><input className={`${inputClass} pl-9 min-w-0`} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="nazwa, numer boczny, kod kreskowy..." /></div></Field>
         <div className="mt-4 max-h-[220px] space-y-2 overflow-y-auto pr-1 custom-scrollbar min-w-0">
           {visibleInstances.map((r: any) => <button key={r.id} type="button" onClick={() => addDocumentItem(r, 'manual')} className="w-full rounded-xl border border-slate-100 dark:border-white/5 bg-slate-50 dark:bg-white/5 p-3 text-left hover:border-cyan-300 dark:hover:border-cyan-700 transition shadow-sm min-w-0">
@@ -1806,7 +1806,7 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
         </div>
       </div>
       
-      <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#08151a] p-5 shadow-sm min-w-0">
+      <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 p-5 shadow-sm min-w-0">
         <div className="rounded-xl border border-cyan-100 dark:border-cyan-500/20 bg-cyan-50 dark:bg-cyan-500/10 p-3.5 text-xs font-bold text-cyan-900 dark:text-cyan-100 mb-4 leading-relaxed">
           Dokument magazynowy podpisze automatycznie w systemie aktualnie zalogowany użytkownik. Na wygenerowanym potwierdzeniu PDF będzie widoczny cyfrowy ślad audytowy transakcji.
         </div>
@@ -1820,7 +1820,7 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
 </div>}
     </section>
 
-    <div className="rounded-3xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#08151a] p-6 shadow-sm mt-8">
+    <div className="rounded-3xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 p-6 shadow-sm mt-8">
       <h3 className="mb-4 text-xl font-black text-slate-900 dark:text-white border-b border-slate-100 dark:border-white/5 pb-4">Wygenerowane dokumenty magazynowe dla tego wydarzenia</h3>
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {(data.dokumenty || []).map((d: any) => <a key={d.id} href={`/dashboard/warehouse/documents/${d.id}`} className="rounded-2xl border border-slate-200 dark:border-white/10 p-5 bg-slate-50 dark:bg-white/5 hover:border-[#04e0ff] hover:bg-white dark:hover:bg-white/10 transition shadow-sm group">

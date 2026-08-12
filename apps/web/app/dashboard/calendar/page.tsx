@@ -268,10 +268,10 @@ function CalendarContent() {
 
   const title = cursor.toLocaleDateString('pl-PL', { month: 'long', year: 'numeric', day: view === 'dzień' ? 'numeric' : undefined });
 
-  if (!isInitialized) return <div className="flex h-80 items-center justify-center"><Loader2 className="animate-spin text-cyan-600 w-8 h-8" /></div>;
+  if (!isInitialized) return <div className="flex h-80 items-center justify-center"><Loader2 className="animate-spin text-[#04e0ff] w-8 h-8" /></div>;
 
   return (
-    <div className="mx-auto max-w-[1800px] space-y-4 relative">
+    <div className="mx-auto max-w-[1800px] space-y-4 relative animate-fade-in-up">
       <PageTitle
         eyebrow="Kalendarz"
         title=""
@@ -283,10 +283,10 @@ function CalendarContent() {
         }
       />
 
-      <Card className="!p-4 border-slate-200 shadow-sm">
+      <Card className="!p-4 border-slate-200 dark:border-white/10 shadow-sm bg-white dark:bg-slate-900">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <button onClick={() => move(-1)} className="rounded-xl border p-2 hover:bg-slate-50 transition-colors"><ChevronLeft size={18} /></button>
+            <button onClick={() => move(-1)} className="rounded-xl border border-slate-200 dark:border-white/10 p-2 hover:bg-slate-50 dark:hover:bg-white/5 transition-colors text-slate-600 dark:text-slate-300"><ChevronLeft size={18} /></button>
             
             <div 
               className="relative flex items-center justify-center min-w-[240px] group cursor-pointer"
@@ -300,8 +300,8 @@ function CalendarContent() {
                 }
               }}
             >
-              <p className="text-center text-2xl font-medium uppercase tracking-tight text-slate-800 group-hover:text-cyan-600 transition-colors flex items-center gap-2">
-                {title} <Calendar size={20} className="text-slate-400 group-hover:text-cyan-600 transition-colors" />
+              <p className="text-center text-2xl font-medium uppercase tracking-tight text-slate-800 dark:text-white group-hover:text-[#04e0ff] transition-colors flex items-center gap-2">
+                {title} <Calendar size={20} className="text-slate-400 group-hover:text-[#04e0ff] transition-colors" />
               </p>
               <input
                 ref={dateInputRef}
@@ -317,11 +317,11 @@ function CalendarContent() {
               />
             </div>
 
-            <button onClick={() => move(1)} className="rounded-xl border p-2 hover:bg-slate-50 transition-colors"><ChevronRight size={18} /></button>
+            <button onClick={() => move(1)} className="rounded-xl border border-slate-200 dark:border-white/10 p-2 hover:bg-slate-50 dark:hover:bg-white/5 transition-colors text-slate-600 dark:text-slate-300"><ChevronRight size={18} /></button>
             <Button variant="secondary" onClick={() => setCursor(new Date())}>Dzisiaj</Button>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {views.map((v) => <button key={v} onClick={() => setView(v)} className={`rounded-xl px-4 py-2 text-sm font-semibold capitalize transition-all ${view === v ? 'bg-cyan-600 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>{v}</button>)}
+            {views.map((v) => <button key={v} onClick={() => setView(v)} className={`rounded-xl px-4 py-2 text-sm font-semibold capitalize transition-all ${view === v ? 'bg-gradient-to-r from-[#04e0ff] to-blue-600 text-white shadow-sm' : 'bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-white/10'}`}>{v}</button>)}
           </div>
         </div>
         <div className="mt-4 flex flex-wrap items-center gap-2">
@@ -329,29 +329,29 @@ function CalendarContent() {
             <button
               key={type}
               onClick={() => toggleType(type)}
-              className={`rounded-xl px-4 py-2 text-sm font-medium transition-all shadow-sm ${activeTypes.includes(type) ? 'text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+              className={`rounded-xl px-4 py-2 text-sm font-medium transition-all shadow-sm ${activeTypes.includes(type) ? 'text-white' : 'bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-white/10'}`}
               style={activeTypes.includes(type) ? { backgroundColor: typeFallbackColor[type] } : undefined}
             >
               {label}
             </button>
           ))}
-          <button onClick={() => setActiveTypes(Object.keys(typeLabels))} className="rounded-xl bg-slate-800 hover:bg-slate-900 transition-colors px-4 py-2 text-sm font-medium text-white shadow-sm">Wszystkie</button>
-          <div className="ml-auto flex min-w-[260px] items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm focus-within:border-cyan-500 focus-within:ring-1 focus-within:ring-cyan-500 transition-all">
+          <button onClick={() => setActiveTypes(Object.keys(typeLabels))} className="rounded-xl bg-slate-800 dark:bg-slate-200 hover:bg-slate-900 dark:hover:bg-white transition-colors px-4 py-2 text-sm font-medium text-white dark:text-slate-900 shadow-sm">Wszystkie</button>
+          <div className="ml-auto flex min-w-[260px] items-center gap-2 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#02080a] px-3 py-2 shadow-sm focus-within:border-[#04e0ff] focus-within:ring-1 focus-within:ring-[#04e0ff] transition-all">
             <Search size={16} className="text-slate-400" />
-            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Szukaj..." className="w-full bg-transparent text-sm font-medium outline-none text-slate-700" />
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Szukaj..." className="w-full bg-transparent text-sm font-medium outline-none text-slate-700 dark:text-slate-200" />
           </div>
         </div>
       </Card>
 
-      {error && <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-700">{error}</div>}
+      {error && <div className="rounded-2xl border border-red-200 bg-red-50 dark:bg-red-500/10 dark:border-red-500/20 p-4 text-sm font-medium text-red-700 dark:text-red-400">{error}</div>}
       
       {loading ? (
-        <div className="flex h-80 items-center justify-center"><Loader2 className="animate-spin text-cyan-600 w-8 h-8" /></div>
+        <div className="flex h-80 items-center justify-center"><Loader2 className="animate-spin text-[#04e0ff] w-8 h-8" /></div>
       ) : view === 'lista' ? (
         <List items={filteredItems} />
       ) : (
         <div className="animate-fade-in-up">
-          {view !== 'dzień' && <div className="mb-2 grid grid-cols-7 gap-2 px-2 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">{['PON','WT','ŚR','CZW','PT','SOB','NDZ'].map((d) => <span key={d}>{d}</span>)}</div>}
+          {view !== 'dzień' && <div className="mb-2 grid grid-cols-7 gap-2 px-2 text-center text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">{['PON','WT','ŚR','CZW','PT','SOB','NDZ'].map((d) => <span key={d}>{d}</span>)}</div>}
           <div className="space-y-2">
             {weeks.map((week) => (
               <WeekStrip
@@ -371,28 +371,28 @@ function CalendarContent() {
 
       {/* LEGENDA POD KALENDARZEM */}
       <div className="grid gap-6 md:grid-cols-2 mt-6 animate-fade-in-up delay-75">
-        <Card className="shadow-sm border-slate-200 bg-white">
+        <Card className="shadow-sm border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900">
           <h3 className="mb-4 text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-2">
             <Info size={15} /> Typy wydarzeń (Kolory Pasków)
           </h3>
           <div className="flex flex-wrap gap-2.5">
             {dict.typy?.length > 0 ? dict.typy.map((t: any) => (
-              <div key={t.id} className="flex items-center gap-2 rounded-full border border-slate-100 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-600 shadow-sm transition-colors hover:bg-white">
-                <span className="h-3 w-3 rounded-full shadow-sm border border-black/5" style={{ backgroundColor: t.kolor || typeFallbackColor[t.nazwa] || '#0891B2' }} />
+              <div key={t.id} className="flex items-center gap-2 rounded-full border border-slate-100 dark:border-white/5 bg-slate-50 dark:bg-white/5 px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 shadow-sm transition-colors hover:bg-white dark:hover:bg-white/10">
+                <span className="h-3 w-3 rounded-full shadow-sm border border-black/5 dark:border-black/20" style={{ backgroundColor: t.kolor || typeFallbackColor[t.nazwa] || '#0891B2' }} />
                 {t.nazwa}
               </div>
             )) : <p className="text-xs text-slate-400 font-medium">Brak zdefiniowanych typów w ustawieniach.</p>}
           </div>
         </Card>
 
-        <Card className="shadow-sm border-slate-200 bg-white">
+        <Card className="shadow-sm border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900">
           <h3 className="mb-4 text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-2">
             <Info size={15} /> Statusy operacyjne (Ikony na paskach)
           </h3>
           <div className="flex flex-wrap gap-2.5">
             {dict.statusy?.length > 0 ? dict.statusy.map((s: any) => (
-              <div key={s.id} className="flex items-center gap-2 rounded-full border border-slate-100 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-600 shadow-sm transition-colors hover:bg-white">
-                <span className="flex h-5 w-5 items-center justify-center rounded bg-white shadow-sm text-sm" style={{ color: s.kolor || '#64748B' }}>
+              <div key={s.id} className="flex items-center gap-2 rounded-full border border-slate-100 dark:border-white/5 bg-slate-50 dark:bg-white/5 px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 shadow-sm transition-colors hover:bg-white dark:hover:bg-white/10">
+                <span className="flex h-5 w-5 items-center justify-center rounded bg-white dark:bg-slate-800 shadow-sm text-sm" style={{ color: s.kolor || '#64748B' }}>
                   {s.ikona || '•'}
                 </span>
                 {s.nazwa}
@@ -410,23 +410,23 @@ function CalendarContent() {
           className="fixed z-[100] w-[320px] -translate-x-1/2 -translate-y-full pb-3 pointer-events-none animate-in fade-in zoom-in-95 duration-200"
           style={{ left: tooltip.x, top: tooltip.y }}
         >
-          <div className="rounded-2xl border border-slate-200 bg-white/95 p-4 shadow-2xl backdrop-blur-xl">
+          <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white/95 dark:bg-slate-900/95 p-4 shadow-2xl backdrop-blur-xl">
             
             {/* Header: Ikona + Tytuł */}
-            <div className="mb-3 border-b border-slate-100 pb-3 flex items-start gap-2.5">
+            <div className="mb-3 border-b border-slate-100 dark:border-white/10 pb-3 flex items-start gap-2.5">
               <span 
                 className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs text-white shadow-sm" 
                 style={{ backgroundColor: tooltip.item.kolor || '#0891B2' }}
               >
                 {tooltip.item.ikona || '•'}
               </span>
-              <p className="min-w-0 flex-1 font-black text-slate-900 leading-tight">
+              <p className="min-w-0 flex-1 font-black text-slate-900 dark:text-white leading-tight">
                 {tooltip.item.tytul}
               </p>
             </div>
 
             {/* Informacje czas/miejsce */}
-            <div className="space-y-2.5 text-xs font-bold text-slate-500 mb-4">
+            <div className="space-y-2.5 text-xs font-bold text-slate-500 dark:text-slate-400 mb-4">
               <div className="flex items-start gap-2">
                 <Clock size={14} className="text-slate-400 mt-0.5 shrink-0" />
                 <span>
@@ -448,17 +448,17 @@ function CalendarContent() {
             {/* Statusy poboczne */}
             <div className="flex flex-wrap gap-1.5">
               {tooltip.item.status && (
-                <span className="rounded-md bg-slate-100 px-2 py-1 text-[10px] font-black uppercase tracking-wider text-slate-600">
+                <span className="rounded-md bg-slate-100 dark:bg-white/10 px-2 py-1 text-[10px] font-black uppercase tracking-wider text-slate-600 dark:text-slate-300">
                   {tooltip.item.status}
                 </span>
               )}
               {tooltip.item.statusMagazynowy && (
-                <span className="rounded-md bg-orange-50 px-2 py-1 text-[10px] font-black uppercase tracking-wider text-orange-600">
+                <span className="rounded-md bg-orange-50 dark:bg-orange-500/10 px-2 py-1 text-[10px] font-black uppercase tracking-wider text-orange-600 dark:text-orange-400">
                   {tooltip.item.ikonaMagazynowa || '📦'} {tooltip.item.statusMagazynowy}
                 </span>
               )}
               {tooltip.item.statusKsiegowy && (
-                <span className="rounded-md bg-emerald-50 px-2 py-1 text-[10px] font-black uppercase tracking-wider text-emerald-600">
+                <span className="rounded-md bg-emerald-50 dark:bg-emerald-500/10 px-2 py-1 text-[10px] font-black uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
                   {tooltip.item.ikonaKsiegowa || '💰'} {tooltip.item.statusKsiegowy}
                 </span>
               )}
@@ -482,7 +482,7 @@ function WeekStrip({ week, cursor, view, items, onDayClick, onBarEnter, onBarLea
 
   return (
     <div
-      className={`relative grid ${isDay ? 'grid-cols-1' : 'grid-cols-7'} gap-x-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition-all hover:border-slate-300`}
+      className={`relative grid ${isDay ? 'grid-cols-1' : 'grid-cols-7'} gap-x-0 overflow-hidden rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 shadow-sm transition-all hover:border-slate-300 dark:hover:border-white/20`}
       style={{ minHeight: `${weekMinHeight}px` }}
     >
       {week.map((day) => {
@@ -492,16 +492,46 @@ function WeekStrip({ week, cursor, view, items, onDayClick, onBarEnter, onBarLea
           <div
             key={day.toISOString()}
             onClick={() => onDayClick(day)}
-            className={`group relative min-h-[172px] border-r border-slate-100 p-2 transition-colors cursor-pointer ${today ? 'bg-cyan-50/40 ring-1 ring-inset ring-cyan-200 hover:bg-cyan-100/50' : outsideMonth ? 'bg-slate-50/80 hover:bg-slate-100' : 'bg-white hover:bg-slate-50'}`}
+            className={`group relative min-h-[172px] border-r border-slate-100 dark:border-white/5 p-2 transition-colors cursor-pointer ${
+              today 
+                ? 'bg-cyan-50/30 dark:bg-[#0891b2]/10' // Subtelne podświetlenie całego dzisiejszego dnia
+                : outsideMonth 
+                ? 'bg-slate-50/80 dark:bg-black/20 hover:bg-slate-100 dark:hover:bg-white/5' 
+                : 'bg-white dark:bg-transparent hover:bg-slate-50 dark:hover:bg-white/5'
+            }`}
             style={{ minHeight: `${weekMinHeight}px`, paddingTop: `${CALENDAR_BAR_TOP + maxRow * (CALENDAR_BAR_ROW_HEIGHT + CALENDAR_BAR_ROW_GAP)}px` }}
           >
-            <div className="absolute right-2 top-2 z-10 opacity-0 transition-all duration-300 group-hover:opacity-100 text-cyan-600 bg-cyan-100 rounded-md p-1 shadow-sm">
-              <CalendarPlus size={14} />
-            </div>
+            {/* --- RENDEROWANIE GÓRNEJ BELKI DLA AKTUALNEGO DNIA --- */}
+            {today ? (
+              <>
+                {/* Niebieski pasek na górze */}
+                <div className="absolute top-0 left-0 right-0 h-[48px] bg-gradient-to-r from-[#04e0ff] to-blue-600 z-0" style={{borderRadius: '8px 8px 0 0'}}/>
+                
+                {/* Skrócona nazwa dnia tygodnia (np. CZW.) */}
+                <p className="absolute left-3 top-2.5 z-10 text-[12px] font-black uppercase tracking-widest text-white drop-shadow-sm">
+                  {day.toLocaleDateString('pl-PL', { weekday: 'short' })}
+                </p>
+                
+                {/* Wystające kółko z numerem dnia */}
+                <div className="absolute left-1/2 top-[24px] z-10 flex h-[52px] w-[52px] -translate-x-1/2 items-center justify-center rounded-full border-[2px] border-white bg-gradient-to-r from-[#04e0ff] to-blue-600 text-[24px] font-semibold text-white shadow-[0_5px_15px_rgba(8,145,178,0.4)] dark:border-[#08151a]">
+                  {day.getDate()}
+                </div>
+              </>
+            ) : (
+              /* --- STANDARDOWY WYGLĄD DLA POZOSTAŁYCH DNI --- */
+              <div className="absolute left-3 top-3 pointer-events-none">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                  {day.toLocaleDateString('pl-PL', { weekday: 'short' })}
+                </p>
+                <p className="leading-none mt-1 text-3xl font-medium text-slate-400 group-hover:text-[#04e0ff] transition-all">
+                  {day.getDate()}
+                </p>
+              </div>
+            )}
 
-            <div className="absolute left-3 top-3 pointer-events-none">
-              <p className={`text-[11px] font-semibold uppercase tracking-wide ${today ? 'text-cyan-700' : 'text-slate-400'}`}>{day.toLocaleDateString('pl-PL', { weekday: 'short' })}</p>
-              <p className={`leading-none mt-1 transition-all ${today ? 'inline-flex items-center justify-center min-w-[32px] h-8 rounded-xl bg-cyan-600 text-xl font-medium text-white shadow-md px-2' : 'text-3xl font-medium text-slate-400 group-hover:text-cyan-600'}`}>{day.getDate()}</p>
+            {/* Ikona dodawania (+), przesunięta niżej dla dzisiejszego dnia, aby nie nakładać się na niebieski pasek */}
+            <div className={`absolute right-2 ${today ? 'top-14' : 'top-2'} z-10 opacity-0 transition-all duration-300 group-hover:opacity-100 text-[#04e0ff] bg-cyan-50 dark:bg-cyan-500/10 rounded-md p-1 shadow-sm`}>
+              <CalendarPlus size={14} />
             </div>
           </div>
         );
@@ -534,7 +564,6 @@ function buildBars(items: CalendarItem[], weekStart: Date, weekEnd: Date, column
     const baseColor = item.kolor || typeFallbackColor[item.typ] || '#0891B2';
     const parts: any[] = [];
 
-    // Wydarzenie zakończone przed dzisiaj — cały widoczny fragment wyszarzony.
     if (end < today) {
       parts.push({
         item,
@@ -544,8 +573,6 @@ function buildBars(items: CalendarItem[], weekStart: Date, weekEnd: Date, column
         past: true,
       });
     }
-    // Wydarzenie rozpoczęło się wcześniej i nadal trwa — część miniona
-    // jest wyszarzona, a dzisiejsza i przyszła zachowuje właściwy kolor.
     else if (start < today && end >= today) {
       const pastEnd = addDays(today, -1);
 
@@ -569,7 +596,6 @@ function buildBars(items: CalendarItem[], weekStart: Date, weekEnd: Date, column
         });
       }
     }
-    // Wydarzenie dzisiejsze lub przyszłe — normalny kolor.
     else {
       parts.push({
         item,
@@ -630,7 +656,7 @@ function CalendarBar({ bar, onMouseEnter, onMouseLeave }: { bar: any, onMouseEnt
 }
 
 function List({ items }: { items: CalendarItem[] }) {
-  return <Card className="border-slate-200 shadow-sm"><div className="space-y-3">{items.map((i) => <Link href={itemUrl(i)} key={`${i.typ}-${i.id}`} className="flex items-center justify-between rounded-2xl border border-slate-100 p-4 transition-all hover:border-cyan-200 hover:bg-cyan-50/50 hover:shadow-sm"><div><p className="font-semibold text-slate-800"><span className="mr-2 opacity-80">{i.ikona || '•'}</span>{i.tytul}</p><p className="mt-1 text-sm font-medium text-slate-500">{typeLabels[i.typ] || i.typ} • {i.status}{i.statusMagazynowy ? ` • ${i.ikonaMagazynowa || '📦'} ${i.statusMagazynowy}` : ''}{i.statusKsiegowy ? ` • ${i.ikonaKsiegowa || '💰'} ${i.statusKsiegowy}` : ''}</p></div><p className="text-sm font-medium text-slate-500">{i.start ? new Date(i.start).toLocaleString('pl-PL') : '-'}</p></Link>)}{items.length === 0 && <p className="p-8 text-center font-medium text-slate-400">Brak wpisów w wybranym zakresie.</p>}</div></Card>;
+  return <Card className="border-slate-200 dark:border-white/10 shadow-sm bg-white dark:bg-slate-900"><div className="space-y-3">{items.map((i) => <Link href={itemUrl(i)} key={`${i.typ}-${i.id}`} className="flex items-center justify-between rounded-2xl border border-slate-100 dark:border-white/5 p-4 transition-all hover:border-cyan-200 dark:hover:border-cyan-500/50 hover:bg-cyan-50/50 dark:hover:bg-white/5 hover:shadow-sm"><div><p className="font-semibold text-slate-800 dark:text-white"><span className="mr-2 opacity-80">{i.ikona || '•'}</span>{i.tytul}</p><p className="mt-1 text-sm font-medium text-slate-500 dark:text-slate-400">{typeLabels[i.typ] || i.typ} • {i.status}{i.statusMagazynowy ? ` • ${i.ikonaMagazynowa || '📦'} ${i.statusMagazynowy}` : ''}{i.statusKsiegowy ? ` • ${i.ikonaKsiegowa || '💰'} ${i.statusKsiegowy}` : ''}</p></div><p className="text-sm font-medium text-slate-500 dark:text-slate-400">{i.start ? new Date(i.start).toLocaleString('pl-PL') : '-'}</p></Link>)}{items.length === 0 && <p className="p-8 text-center font-medium text-slate-400">Brak wpisów w wybranym zakresie.</p>}</div></Card>;
 }
 
 // ==========================================
@@ -638,7 +664,7 @@ function List({ items }: { items: CalendarItem[] }) {
 // ==========================================
 export default function CalendarPage() {
   return (
-    <Suspense fallback={<div className="flex h-screen items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-cyan-600" /></div>}>
+    <Suspense fallback={<div className="flex h-screen items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-[#04e0ff]" /></div>}>
       <CalendarContent />
     </Suspense>
   );

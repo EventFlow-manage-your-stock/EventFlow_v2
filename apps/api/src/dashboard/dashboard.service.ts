@@ -178,4 +178,71 @@ export class DashboardService {
       data: { preferencje_kokpitu: { layout } }
     });
   }
+  async globalSearch(id_organizacji: number, query: string) {
+    if (!query || query.length < 2) return [];
+    
+    const q = { contains: query, mode: 'insensitive' as const };
+    
+    // Równoległe, limitowane zapytania do najważniejszych tabel
+    const [wydarzenia, oferty, wynajmy, modele, egzemplarze, kontrahenci] = await Promise.all([
+      this.prisma.extendedClient.wydarzenie.findMany({ where: { id_organizacji, aktywny: true, OR: [{ nazwa: q }, { numer: q }] }, take: 4 }),
+      this.prisma.extendedClient.oferta.findMany({ where: { id_organizacji, aktywny: true, OR: [{ nazwa: q }, { numer: q }] }, take: 4 }),
+      this.prisma.extendedClient.wynajem.findMany({ where: { id_organizacji, aktywny: true, OR: [{ numer: q }] }, take: 4 }),
+      this.prisma.extendedClient.modelSprzetu.findMany({ where: { id_organizacji, aktywny: true, OR: [{ nazwa: q }, { kod_kreskowy: q }, { producent: q }] }, take: 4 }),
+      this.prisma.extendedClient.egzemplarz.findMany({ where: { id_organizacji, aktywny: true, OR: [{ nazwa: q }, { sn: q }, { kod_kreskowy: q }, { zewnetrzny_kod_kreskowy: q }, { numer_egzemplarza: q }] }, include: { model: true }, take: 4 }),
+      this.prisma.extendedClient.kontrahent.findMany({ where: { id_organizacji, aktywny: true, OR: [{ nazwa: q }, { nip: q }] }, take: 4 }),
+    ]);
+
+    const results: any[] = [];
+
+    wydarzenia.forEach(w => results.push({ id: `ev-${w.id}`, group: 'Wydarzenia', title: w.nazwa, subtitle: w.numer || 'Wydarzenie', url: `/dashboard/events/${w.id}` }));
+    oferty.forEach(o => results.push({ id: `of-${o.id}`, group: 'Oferty', title: o.nazwa, subtitle: o.numer || 'Oferta', url: `/dashboard/offers/${o.id}` }));
+    wynajmy.forEach(w => results.push({ id: `wy-${w.id}`, group: 'Wynajmy', title: w.numer || `Wynajem #${w.id}`, subtitle: 'Wypożyczenie', url: `/dashboard/rentals/${w.id}` }));
+    modele.forEach(m => results.push({ id: `mo-${m.id}`, group: 'Modele', title: m.nazwa, subtitle: m.producent || 'Model sprzętu', url: `/dashboard/warehouse/models/${m.id}` }));
+    egzemplarze.forEach(e => results.push({ id: `eg-${e.id}`, group: 'Egzemplarze', title: e.nazwa || e.model?.nazwa || 'Sprzęt', subtitle: `S/N: ${e.sn || e.kod_kreskowy || e.zewnetrzny_kod_kreskowy || '-'}`, url: `/dashboard/warehouse/items/${e.id}` }));
+    kontrahenci.forEach(k => results.push({ id: `ko-${k.id}`, group: 'Kontrahenci', title: k.nazwa, subtitle: k.nip ? `NIP: ${k.nip}` : 'Klient', url: `/dashboard/crm/${k.id}` }));
+
+    return results;
+  }
+
+  async getNotifications(id_organizacji: number, id_uzytkownika: number) {
+    const [zadania, serwis] = await Promise.all([
+      // Pobieramy nowe zadania przypisane do użytkownika
+      this.prisma.extendedClient.zadanie.findMany({
+        where: { id_organizacji, aktywny: true, status: 'nowe', przypisani_uzytkownicy: { some: { id_uzytkownika } } },
+        orderBy: { data_utworzenia: 'desc' },
+        take: 3
+      }),
+      // Pobieramy ostatnie awarie
+      this.prisma.extendedClient.serwisSprzetu.findMany({
+        where: { id_organizacji, aktywny: true, data_rozwiazania: null },
+        include: { egzemplarz: { include: { model: true } } },
+        orderBy: { data_zgloszenia: 'desc' },
+        take: 3
+      })
+    ]);
+
+    const notifications: any[] = [];
+
+    zadania.forEach(z => notifications.push({
+      id: `zad-${z.id}`,
+      title: 'Nowe zadanie',
+      message: z.tytul,
+      time: z.data_utworzenia,
+      type: 'task',
+      url: `/dashboard/tasks/${z.id}`
+    }));
+
+    serwis.forEach(s => notifications.push({
+      id: `ser-${s.id}`,
+      title: 'Awaria sprzętu',
+      message: `${s.egzemplarz?.model?.nazwa || 'Sprzęt'}: ${s.tytul}`,
+      time: s.data_zgloszenia,
+      type: 'alert',
+      url: `/dashboard/service/${s.id}`
+    }));
+
+    return notifications.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+  }
+
 }

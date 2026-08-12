@@ -30,14 +30,35 @@ export class WynajmyService {
       where: { id, id_organizacji, aktywny: true },
       include: {
         kontrahent: true,
+        kontakt: true,
+        manager: true,
+        miejsce: true,
         status: true,
+        status_magazynowy: true,
+        status_ksiegowy: true,
         oferta: true,
         oferty: { where: { aktywny: true }, include: { status: true, wersje: { take: 1, orderBy: { numer_wersji: 'desc' } } }, orderBy: { data_utworzenia: 'desc' } },
         pozycje: { include: { model: true, egzemplarz: true } },
+        ekipa: { where: { aktywny: true }, include: { uzytkownik: true } },
+        pojazdy: { where: { aktywny: true }, include: { pojazd: true } },
+        zadania: { where: { aktywny: true }, include: { przypisani_uzytkownicy: { include: { uzytkownik: true } } } },
       },
     });
     if (!item) throw new NotFoundException('Nie znaleziono wynajmu');
-    return item;
+
+    const historia = await this.prisma.extendedClient.logZmian.findMany({
+      where: { id_organizacji, typ_obiektu: 'Wynajem', id_obiektu: id },
+      orderBy: { data_utworzenia: 'desc' },
+      include: { uzytkownik: true },
+    });
+
+    const zalaczniki = await this.prisma.extendedClient.zalacznik.findMany({
+      where: { id_organizacji, typ_obiektu: 'Wynajem', id_obiektu: id, aktywny: true },
+      orderBy: { data_utworzenia: 'desc' },
+      include: { dodal: { select: { imie: true, nazwisko: true } } }
+    });
+
+    return { ...item, historia, zalaczniki };
   }
 
   async create(dto: any, id_organizacji: number) {
@@ -45,10 +66,18 @@ export class WynajmyService {
       data: {
         id_organizacji,
         numer: dto.numer || `W/${new Date().getFullYear()}/${Date.now().toString().slice(-5)}`,
-        // EVENTFLOW_PRODUCT_POLISH_V28: wynajem nie jest już przypinany do wydarzenia; to osobny byt.
+        nazwa: dto.nazwa || null,
         id_oferty: this.n(dto.id_oferty),
         id_kontrahenta: this.n(dto.id_kontrahenta),
+        id_kontaktu: this.n(dto.id_kontaktu),
+        id_managera: this.n(dto.id_managera),
+        id_miejsca: this.n(dto.id_miejsca),
         id_statusu_wynajmu: this.n(dto.id_statusu_wynajmu),
+        id_statusu_magazynowego: this.n(dto.id_statusu_magazynowego),
+        id_statusu_ksiegowego: this.n(dto.id_statusu_ksiegowego),
+        budzet_netto: dto.budzet_netto ? Number(dto.budzet_netto) : null,
+        miejsce_reczne: dto.miejsce_reczne || null,
+        adres_reczny: dto.adres_reczny || null,
         data_wydania: this.d(dto.data_wydania),
         data_zwrotu_planowana: this.d(dto.data_zwrotu_planowana),
         data_zwrotu_rzeczywista: this.d(dto.data_zwrotu_rzeczywista),
@@ -63,14 +92,22 @@ export class WynajmyService {
       where: { id },
       data: {
         numer: dto.numer || undefined,
-        // EVENTFLOW_PRODUCT_POLISH_V28: wynajem nie jest już przypinany do wydarzenia; to osobny byt.
-        id_oferty: this.n(dto.id_oferty),
-        id_kontrahenta: this.n(dto.id_kontrahenta),
-        id_statusu_wynajmu: this.n(dto.id_statusu_wynajmu),
-        data_wydania: this.d(dto.data_wydania),
-        data_zwrotu_planowana: this.d(dto.data_zwrotu_planowana),
-        data_zwrotu_rzeczywista: this.d(dto.data_zwrotu_rzeczywista),
-        notatki_wewnetrzne: dto.notatki_wewnetrzne || null,
+        nazwa: dto.nazwa !== undefined ? dto.nazwa : undefined,
+        id_oferty: dto.id_oferty !== undefined ? this.n(dto.id_oferty) : undefined,
+        id_kontrahenta: dto.id_kontrahenta !== undefined ? this.n(dto.id_kontrahenta) : undefined,
+        id_kontaktu: dto.id_kontaktu !== undefined ? this.n(dto.id_kontaktu) : undefined,
+        id_managera: dto.id_managera !== undefined ? this.n(dto.id_managera) : undefined,
+        id_miejsca: dto.id_miejsca !== undefined ? this.n(dto.id_miejsca) : undefined,
+        id_statusu_wynajmu: dto.id_statusu_wynajmu !== undefined ? this.n(dto.id_statusu_wynajmu) : undefined,
+        id_statusu_magazynowego: dto.id_statusu_magazynowego !== undefined ? this.n(dto.id_statusu_magazynowego) : undefined,
+        id_statusu_ksiegowego: dto.id_statusu_ksiegowego !== undefined ? this.n(dto.id_statusu_ksiegowego) : undefined,
+        budzet_netto: dto.budzet_netto !== undefined ? this.n(dto.budzet_netto) : undefined,
+        miejsce_reczne: dto.miejsce_reczne !== undefined ? dto.miejsce_reczne : undefined,
+        adres_reczny: dto.adres_reczny !== undefined ? dto.adres_reczny : undefined,
+        data_wydania: dto.data_wydania !== undefined ? this.d(dto.data_wydania) : undefined,
+        data_zwrotu_planowana: dto.data_zwrotu_planowana !== undefined ? this.d(dto.data_zwrotu_planowana) : undefined,
+        data_zwrotu_rzeczywista: dto.data_zwrotu_rzeczywista !== undefined ? this.d(dto.data_zwrotu_rzeczywista) : undefined,
+        notatki_wewnetrzne: dto.notatki_wewnetrzne !== undefined ? dto.notatki_wewnetrzne : undefined,
       },
     });
   }
@@ -269,6 +306,50 @@ export class WynajmyService {
       }
 
       return { success: true };
+    });
+  }
+  async addChat(id: number, dto: any, id_organizacji: number, id_uzytkownika: number) {
+    return this.prisma.extendedClient.logZmian.create({
+      data: { id_organizacji, id_uzytkownika, typ_obiektu: 'Wynajem', id_obiektu: id, akcja: 'CHAT', nowa_wartosc: dto.message }
+    });
+  }
+
+  async addCrew(id_wynajmu: number, dto: any, id_organizacji: number) {
+    return this.prisma.extendedClient.wynajemUzytkownik.create({
+      data: { id_organizacji, id_wynajmu, id_uzytkownika: Number(dto.id_uzytkownika), rola_w_wynajmie: dto.rola }
+    });
+  }
+
+  async removeCrew(id_wynajmu: number, id_ekipy: number, id_organizacji: number) {
+    return this.prisma.extendedClient.wynajemUzytkownik.updateMany({
+      where: { id: id_ekipy, id_wynajmu, id_organizacji },
+      data: { aktywny: false, data_usuniecia: new Date() }
+    });
+  }
+
+  async addFleet(id_wynajmu: number, dto: any, id_organizacji: number) {
+    return this.prisma.extendedClient.wynajemPojazd.create({
+      data: { id_organizacji, id_wynajmu, id_pojazdu: Number(dto.id_pojazdu), rola_pojazdu: dto.rola }
+    });
+  }
+
+  async removeFleet(id_wynajmu: number, id_floty: number, id_organizacji: number) {
+    return this.prisma.extendedClient.wynajemPojazd.updateMany({
+      where: { id: id_floty, id_wynajmu, id_organizacji },
+      data: { aktywny: false, data_usuniecia: new Date() }
+    });
+  }
+
+  async addAttachment(id: number, dto: any, id_organizacji: number, id_uzytkownika: number) {
+    return this.prisma.extendedClient.zalacznik.create({
+      data: { id_organizacji, typ_obiektu: 'Wynajem', id_obiektu: id, nazwa: dto.nazwa, nazwa_pliku: dto.nazwa_pliku, rozmiar_bajtow: dto.rozmiar, mime: dto.mime, id_uzytkownika_dodal: id_uzytkownika }
+    });
+  }
+
+  async removeAttachment(id: number, zalId: number, id_organizacji: number) {
+    return this.prisma.extendedClient.zalacznik.updateMany({
+      where: { id: zalId, id_obiektu: id, typ_obiektu: 'Wynajem', id_organizacji },
+      data: { aktywny: false, data_usuniecia: new Date() }
     });
   }
 }

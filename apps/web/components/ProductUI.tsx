@@ -18,7 +18,7 @@ export function Card({ children, className = '', onClick, ...props }: { children
   return (
     <div 
       onClick={onClick} 
-      className={`rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-[#08151a] ${className}`} 
+      className={`rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-slate-900 ${className}`} 
       {...props}
     >
       {children}
@@ -31,7 +31,7 @@ export function Button({ children, onClick, variant = 'primary', type = 'button'
     ? 'bg-gradient-to-r from-[#04e0ff] to-blue-600 text-white shadow-md shadow-[#04e0ff]/20 hover:shadow-lg hover:shadow-[#04e0ff]/40 hover:scale-[1.02] border-0'
     : variant === 'danger'
       ? 'border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-500/10 dark:border-red-500/20 dark:hover:bg-red-500/20'
-      : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:bg-[#08151a] dark:text-slate-200 dark:hover:bg-white/5';
+      : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-white/5';
       
   return (
     <button 
@@ -104,8 +104,8 @@ export function SearchableSelect({
       </button>
 
       {isOpen && (
-        <div className="absolute z-50 mt-1 max-h-60 w-full min-w-0 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 shadow-xl dark:border-white/10 dark:bg-[#08151a] custom-scrollbar">
-          <div className="sticky top-0 mb-1 bg-white pb-1 dark:bg-[#08151a]">
+        <div className="absolute z-50 mt-1 max-h-60 w-full min-w-0 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 shadow-xl dark:border-white/10 dark:bg-slate-900 custom-scrollbar">
+          <div className="sticky top-0 mb-1 bg-white pb-1 dark:bg-slate-900">
             <div className="relative">
               <Search size={14} className="absolute left-3 top-3 text-slate-400" />
               <input

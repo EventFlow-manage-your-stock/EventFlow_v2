@@ -161,4 +161,9 @@ export class SlownikiController {
   async getUzytkownicy(@Req() req: Request) {
     return this.slownikiService.getUzytkownicy(this.orgId(req));
   }
+
+  @Get('statusy-ofert')
+  async getStatusyOfert(@Req() req: Request) {
+    return this.slownikiService.getStatusyOfert(this.orgId(req));
+  }
 }

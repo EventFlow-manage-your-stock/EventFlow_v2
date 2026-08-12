@@ -206,4 +206,29 @@ export class SlownikiService {
     );
     return this.getTypyWydarzen(id_organizacji);
   }
+
+  async getStatusyOfert(id_organizacji: number) {
+    let statusy = await this.prisma.extendedClient.statusOferty.findMany({
+      where: { id_organizacji, aktywny: true },
+      orderBy: { kolejnosc: 'asc' }
+    });
+    
+    // Auto-seed podstawowych statusów jeśli są puste
+    if (statusy.length === 0) {
+       await this.prisma.extendedClient.statusOferty.createMany({
+         data: [
+           { id_organizacji, nazwa: 'Robocza', kolor: '#64748B', kolejnosc: 1 },
+           { id_organizacji, nazwa: 'Wysłana', kolor: '#3B82F6', kolejnosc: 2 },
+           { id_organizacji, nazwa: 'Zaakceptowana', kolor: '#10B981', kolejnosc: 3 },
+           { id_organizacji, nazwa: 'Odrzucona', kolor: '#EF4444', kolejnosc: 4 },
+         ]
+       });
+       statusy = await this.prisma.extendedClient.statusOferty.findMany({
+         where: { id_organizacji, aktywny: true },
+         orderBy: { kolejnosc: 'asc' }
+       });
+    }
+    
+    return statusy;
+  }
 }

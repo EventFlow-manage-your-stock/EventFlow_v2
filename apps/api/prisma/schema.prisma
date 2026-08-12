@@ -81,6 +81,8 @@ model Organizacja {
   pozycje_sprzetu_wydarzen   PozycjaSprzetuWydarzenia[]
   zapytania                  Zapytanie[]
   pakiety                    Pakiet[]
+  wynajmy_ekipa              WynajemUzytkownik[]
+  wynajmy_pojazdy            WynajemPojazd[]
 
   @@map("organizacje")
 }
@@ -141,7 +143,8 @@ model Uzytkownik {
   zlecone_zadania              Zadanie[]              @relation("ZlecajacyZadanie")
   wydania_magazynowe_utworzone WydanieMagazynowe[]    @relation("UtworzylWydanieMagazynowe")
   utworzone_zapytania          Zapytanie[]            @relation("TworcaZapytania")
-  zarzadzane_wynajmy Wynajem[] @relation("ManagerWynajmu")
+  zarzadzane_wynajmy           Wynajem[]              @relation("ManagerWynajmu")
+  wynajmy_ekipa                WynajemUzytkownik[]
 
   @@unique([id_organizacji, email])
   @@map("uzytkownicy")
@@ -388,15 +391,15 @@ model Egzemplarz {
   opis                    String?   @db.Text
   status_serwisowy        String    @default("Działa") @db.VarChar(50)
 
-  organizacja     Organizacja                  @relation(fields: [id_organizacji], references: [id])
-  model           ModelSprzetu                 @relation(fields: [id_modelu], references: [id])
-  magazyn         Magazyn?                     @relation(fields: [id_magazynu], references: [id])
-  case            Egzemplarz?                  @relation("CaseToEgzemplarz", fields: [id_case], references: [id])
-  zawartosc_case  Egzemplarz[]                 @relation("CaseToEgzemplarz")
-  pozycje_wynajmu PozycjaWynajmu[]
-  serwisy         SerwisSprzetu[]
-  zadania         Zadanie[] // Dodano relację odwrotną
-  pozycje_wydan   PozycjaWydaniaMagazynowego[]
+  organizacja      Organizacja                  @relation(fields: [id_organizacji], references: [id])
+  model            ModelSprzetu                 @relation(fields: [id_modelu], references: [id])
+  magazyn          Magazyn?                     @relation(fields: [id_magazynu], references: [id])
+  case             Egzemplarz?                  @relation("CaseToEgzemplarz", fields: [id_case], references: [id])
+  zawartosc_case   Egzemplarz[]                 @relation("CaseToEgzemplarz")
+  pozycje_wynajmu  PozycjaWynajmu[]
+  serwisy          SerwisSprzetu[]
+  zadania          Zadanie[] // Dodano relację odwrotną
+  pozycje_wydan    PozycjaWydaniaMagazynowego[]
   pozycje_pakietow PozycjaPakietu[]
 
   @@index([id_modelu])
@@ -576,7 +579,7 @@ model StatusMagazynowy {
 
   organizacja Organizacja  @relation(fields: [id_organizacji], references: [id])
   wydarzenia  Wydarzenie[]
-  wynajmy Wynajem[]
+  wynajmy     Wynajem[]
 
   @@map("statusy_magazynowe")
 }
@@ -595,7 +598,7 @@ model StatusKsiegowy {
 
   organizacja Organizacja  @relation(fields: [id_organizacji], references: [id])
   wydarzenia  Wydarzenie[]
-  wynajmy Wynajem[]
+  wynajmy     Wynajem[]
 
   @@map("statusy_ksiegowe")
 }
@@ -863,42 +866,85 @@ model StatusWynajmu {
 model Wynajem {
   id                      Int       @id @default(autoincrement())
   id_organizacji          Int
-  id_wydarzenia           Int? // DEPRECATED EVENTFLOW_PRODUCT_POLISH_V28: zostawione tylko do bezpiecznej migracji starych danych; system już tego nie używa.
+  id_wydarzenia           Int? // DEPRECATED
   id_oferty               Int?
   id_kontrahenta          Int?
-  id_statusu_wynajmu      Int?
   id_kontaktu             Int?
-  id_miejsca              Int?
   id_managera             Int?
+  id_miejsca              Int?
+  id_statusu_wynajmu      Int?
   id_statusu_magazynowego Int?
   id_statusu_ksiegowego   Int?
-  miejsce_reczne          String?   @db.VarChar(255)
-  adres_reczny            String?   @db.VarChar(255)
+  nazwa                   String?   @db.VarChar(255)
   numer                   String?   @db.VarChar(100)
   data_wydania            DateTime?
   data_zwrotu_planowana   DateTime?
   data_zwrotu_rzeczywista DateTime?
+  budzet_netto            Decimal?  @db.Decimal(12, 2)
+  miejsce_reczne          String?   @db.VarChar(255)
+  adres_reczny            String?   @db.VarChar(255)
   notatki_wewnetrzne      String?   @db.Text
   aktywny                 Boolean   @default(true)
   data_utworzenia         DateTime  @default(now())
   data_aktualizacji       DateTime  @updatedAt
   data_usuniecia          DateTime?
 
-  organizacja        Organizacja         @relation(fields: [id_organizacji], references: [id])
-  oferta             Oferta?             @relation("OfertaGlownaWynajmu", fields: [id_oferty], references: [id])
-  oferty             Oferta[]            @relation("OfertyWynajmu")
-  kontrahent         Kontrahent?         @relation(fields: [id_kontrahenta], references: [id])
-  status             StatusWynajmu?      @relation(fields: [id_statusu_wynajmu], references: [id])
-  kontakt           KontaktKontrahenta? @relation(fields: [id_kontaktu], references: [id])
-  miejsce           Miejsce?            @relation(fields: [id_miejsca], references: [id])
-  manager           Uzytkownik?         @relation("ManagerWynajmu", fields: [id_managera], references: [id])
+  organizacja       Organizacja         @relation(fields: [id_organizacji], references: [id])
+  oferta            Oferta?             @relation("OfertaGlownaWynajmu", fields: [id_oferty], references: [id])
+  oferty            Oferta[]            @relation("OfertyWynajmu")
+  kontrahent        Kontrahent?         @relation(fields: [id_kontrahenta], references: [id])
+  status            StatusWynajmu?      @relation(fields: [id_statusu_wynajmu], references: [id])
   status_magazynowy StatusMagazynowy?   @relation(fields: [id_statusu_magazynowego], references: [id])
   status_ksiegowy   StatusKsiegowy?     @relation(fields: [id_statusu_ksiegowego], references: [id])
+  manager           Uzytkownik?         @relation("ManagerWynajmu", fields: [id_managera], references: [id])
+  kontakt           KontaktKontrahenta? @relation(fields: [id_kontaktu], references: [id])
+  miejsce           Miejsce?            @relation(fields: [id_miejsca], references: [id])
+
   pozycje            PozycjaWynajmu[]
   wydania_magazynowe WydanieMagazynowe[]
-  // EVENTFLOW_PRODUCT_POLISH_V38: plan sprzętu wydarzenia należy do modelu Wydarzenie, nie Wynajem.
+  ekipa              WynajemUzytkownik[]
+  pojazdy            WynajemPojazd[]
+  zadania            Zadanie[]
 
   @@map("wynajmy")
+}
+
+model WynajemUzytkownik {
+  id                Int       @id @default(autoincrement())
+  id_organizacji    Int
+  id_wynajmu        Int
+  id_uzytkownika    Int
+  rola_w_wynajmie   String?   @db.VarChar(100)
+  aktywny           Boolean   @default(true)
+  data_utworzenia   DateTime  @default(now())
+  data_aktualizacji DateTime  @updatedAt
+  data_usuniecia    DateTime?
+
+  organizacja Organizacja @relation(fields: [id_organizacji], references: [id])
+  wynajem     Wynajem     @relation(fields: [id_wynajmu], references: [id])
+  uzytkownik  Uzytkownik  @relation(fields: [id_uzytkownika], references: [id])
+
+  @@unique([id_wynajmu, id_uzytkownika])
+  @@map("wynajmy_uzytkownicy")
+}
+
+model WynajemPojazd {
+  id                Int       @id @default(autoincrement())
+  id_organizacji    Int
+  id_wynajmu        Int
+  id_pojazdu        Int
+  rola_pojazdu      String?   @db.VarChar(100)
+  aktywny           Boolean   @default(true)
+  data_utworzenia   DateTime  @default(now())
+  data_aktualizacji DateTime  @updatedAt
+  data_usuniecia    DateTime?
+
+  organizacja Organizacja @relation(fields: [id_organizacji], references: [id])
+  wynajem     Wynajem     @relation(fields: [id_wynajmu], references: [id])
+  pojazd      Pojazd      @relation(fields: [id_pojazdu], references: [id])
+
+  @@unique([id_wynajmu, id_pojazdu])
+  @@map("wynajmy_pojazdy")
 }
 
 model PozycjaWynajmu {
@@ -1127,6 +1173,7 @@ model Pojazd {
   zadania           Zadanie[]
   serwisy_pojazdu   SerwisPojazdu[]
   przeglady_pojazdu PrzegladPojazdu[]
+  wynajmy_pojazdy   WynajemPojazd[]
 
   @@unique([id_organizacji, nr_rejestracyjny])
   @@index([vin])
@@ -1214,6 +1261,9 @@ model Zadanie {
   id_kontrahenta Int?
   id_egzemplarza Int?
   id_pojazdu     Int?
+  id_wynajmu     Int?
+
+  wynajem Wynajem? @relation(fields: [id_wynajmu], references: [id])
 
   aktywny           Boolean   @default(true)
   data_utworzenia   DateTime  @default(now())
@@ -1293,32 +1343,31 @@ model Zapytanie {
   @@map("zapytania")
 }
 
-
 model Pakiet {
-  id                Int       @id @default(autoincrement())
+  id                Int      @id @default(autoincrement())
   id_organizacji    Int
-  nazwa             String    @db.VarChar(255)
-  opis              String?   @db.Text
-  aktywny           Boolean   @default(true)
-  data_utworzenia   DateTime  @default(now())
-  data_aktualizacji DateTime  @updatedAt
+  nazwa             String   @db.VarChar(255)
+  opis              String?  @db.Text
+  aktywny           Boolean  @default(true)
+  data_utworzenia   DateTime @default(now())
+  data_aktualizacji DateTime @updatedAt
 
-  organizacja       Organizacja      @relation(fields: [id_organizacji], references: [id])
-  pozycje           PozycjaPakietu[]
+  organizacja Organizacja      @relation(fields: [id_organizacji], references: [id])
+  pozycje     PozycjaPakietu[]
 
   @@map("pakiety")
 }
 
 model PozycjaPakietu {
-  id                Int       @id @default(autoincrement())
-  id_pakietu        Int
-  id_modelu         Int?
-  id_egzemplarza    Int?
-  ilosc             Decimal   @default(1.00) @db.Decimal(10, 2)
-  
-  pakiet            Pakiet        @relation(fields: [id_pakietu], references: [id], onDelete: Cascade)
-  model             ModelSprzetu? @relation(fields: [id_modelu], references: [id])
-  egzemplarz        Egzemplarz?   @relation(fields: [id_egzemplarza], references: [id])
+  id             Int     @id @default(autoincrement())
+  id_pakietu     Int
+  id_modelu      Int?
+  id_egzemplarza Int?
+  ilosc          Decimal @default(1.00) @db.Decimal(10, 2)
+
+  pakiet     Pakiet        @relation(fields: [id_pakietu], references: [id], onDelete: Cascade)
+  model      ModelSprzetu? @relation(fields: [id_modelu], references: [id])
+  egzemplarz Egzemplarz?   @relation(fields: [id_egzemplarza], references: [id])
 
   @@map("pozycje_pakietow")
 }

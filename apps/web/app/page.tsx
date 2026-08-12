@@ -324,7 +324,7 @@ export default function LandingPage() {
             </div>
           </div>
           <div className="max-w-[1400px] mx-auto px-6 text-center text-xs text-slate-500 font-semibold pt-8 border-t border-slate-200 dark:text-slate-600 dark:border-white/5">
-            &copy; {new Date().getFullYear()} EventFlow. Wszelkie prawa zastrzeżone.
+            &copy; {new Date().getFullYear()} Evenement Systems. Wszelkie prawa zastrzeżone.
           </div>
         </footer>
       </div>

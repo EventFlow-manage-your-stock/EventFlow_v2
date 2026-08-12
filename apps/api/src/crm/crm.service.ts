@@ -122,12 +122,42 @@ export class CrmService {
   async getContactById(id: number, id_organizacji: number) {
     const contact = await this.prisma.extendedClient.kontaktKontrahenta.findFirst({
       where: { id, id_organizacji, aktywny: true },
-      include: { kontrahent: { select: { id: true, nazwa: true } } },
+      include: {
+        kontrahent: {
+          select: {
+            id: true,
+            nazwa: true,
+            nip: true,
+            email: true,
+            telefon: true,
+            // Pobieramy inne kontakty z tego samego kontrahenta (z wyłączeniem aktualnego)
+            kontakty: {
+              where: { aktywny: true, id: { not: id } },
+              orderBy: [{ glowny: 'desc' }, { nazwisko: 'asc' }],
+              select: { id: true, imie: true, nazwisko: true, stanowisko: true, glowny: true }
+            }
+          }
+        },
+        wydarzenia: {
+          where: { aktywny: true },
+          include: { status: true },
+          orderBy: { data_start: 'desc' }
+        }
+      },
     });
-    if (!contact) throw new NotFoundException('Nie znaleziono kontaktu');
-    return contact;
-  }
 
+    if (!contact) throw new NotFoundException('Nie znaleziono kontaktu');
+
+    // Niezależne, szybkie dociągnięcie wynajmów, do których przypisany jest ten kontakt
+    const wynajmy = await this.prisma.extendedClient.wynajem.findMany({
+      where: { id_kontaktu: id, id_organizacji, aktywny: true },
+      include: { status: true },
+      orderBy: { data_wydania: 'desc' }
+    });
+
+    return { ...contact, wynajmy };
+  }
+  
   async createContact(dto: any, id_organizacji: number) {
     return this.prisma.extendedClient.kontaktKontrahenta.create({
       data: {

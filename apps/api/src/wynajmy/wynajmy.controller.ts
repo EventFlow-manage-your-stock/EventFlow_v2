@@ -36,4 +36,38 @@ export class WynajmyController {
   updatePlanSprzetu(@Param('id', ParseIntPipe) id: number, @Body() dto: any, @Req() req: Request) {
     return this.service.updatePlanSprzetu(id, dto, Number((req.user as any).id_organizacji));
   }
+  @Post(':id/chat')
+  async addChat(@Param('id', ParseIntPipe) id: number, @Body() dto: any, @Req() req: Request) {
+    return this.service.addChat(id, dto, Number((req.user as any).id_organizacji), Number((req.user as any).id));
+  }
+
+  @Post(':id/ekipa')
+  async addCrew(@Param('id', ParseIntPipe) id: number, @Body() dto: any, @Req() req: Request) {
+    return this.service.addCrew(id, dto, Number((req.user as any).id_organizacji));
+  }
+
+  @Delete(':id/ekipa/:ekipaId')
+  async removeCrew(@Param('id', ParseIntPipe) id: number, @Param('ekipaId', ParseIntPipe) ekipaId: number, @Req() req: Request) {
+    return this.service.removeCrew(id, ekipaId, Number((req.user as any).id_organizacji));
+  }
+
+  @Post(':id/flota')
+  async addFleet(@Param('id', ParseIntPipe) id: number, @Body() dto: any, @Req() req: Request) {
+    return this.service.addFleet(id, dto, Number((req.user as any).id_organizacji));
+  }
+
+  @Delete(':id/flota/:flotaId')
+  async removeFleet(@Param('id', ParseIntPipe) id: number, @Param('flotaId', ParseIntPipe) flotaId: number, @Req() req: Request) {
+    return this.service.removeFleet(id, flotaId, Number((req.user as any).id_organizacji));
+  }
+
+  @Post(':id/zalaczniki')
+  async addAttachment(@Param('id', ParseIntPipe) id: number, @Body() dto: any, @Req() req: Request) {
+    return this.service.addAttachment(id, dto, Number((req.user as any).id_organizacji), Number((req.user as any).id));
+  }
+
+  @Delete(':id/zalaczniki/:zalId')
+  async removeAttachment(@Param('id', ParseIntPipe) id: number, @Param('zalId', ParseIntPipe) zalId: number, @Req() req: Request) {
+    return this.service.removeAttachment(id, zalId, Number((req.user as any).id_organizacji));
+  }
 }
