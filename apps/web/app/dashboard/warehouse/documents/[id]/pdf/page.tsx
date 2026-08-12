@@ -11,7 +11,17 @@ function kg(v: any) { return Number(v || 0).toLocaleString('pl-PL', { minimumFra
 function num(v: any) { const n = Number(v || 0); return Number.isFinite(n) ? n : 0; }
 function cat(p: any) { return p.model?.kategoria?.nazwa || p.egzemplarz?.model?.kategoria?.nazwa || 'Bez kategorii'; }
 function modelName(p: any) { return p.egzemplarz?.model?.nazwa || p.model?.nazwa || p.nazwa || 'Pozycja sprzętu'; }
-function isCasePosition(p: any) { return p.model?.typ_sprzetu === 'opakowanie' || p.egzemplarz?.model?.typ_sprzetu === 'opakowanie'; }
+function isCasePosition(p: any) {
+  const type = String(p.model?.typ_sprzetu || p.egzemplarz?.model?.typ_sprzetu || p.typ_sprzetu || '').toLowerCase();
+  const name = String(p.nazwa || p.model?.nazwa || p.egzemplarz?.model?.nazwa || '').toLowerCase();
+  
+  // Zestawy (nawet zbudowane technicznie z opakowań) idą w całości na dokument, nie są ukrywane!
+  if (type === 'zestaw' || type === 'rack' || name.includes('zestaw') || name.includes('rack')) {
+    return false;
+  }
+  
+  return type === 'opakowanie';
+}
 function code(p: any) { return p.egzemplarz?.kod_kreskowy || p.egzemplarz?.zewnetrzny_kod_kreskowy || p.egzemplarz?.zewnetrzny_qr_kod || p.egzemplarz?.qr_kod || p.egzemplarz?.sn || p.model?.kod_kreskowy || ''; }
 function issuerName(doc: any) { return [doc?.utworzyl?.imie, doc?.utworzyl?.nazwisko].filter(Boolean).join(' ') || doc?.utworzyl?.email || 'Zalogowany użytkownik'; }
 function instanceLabel(p: any) {

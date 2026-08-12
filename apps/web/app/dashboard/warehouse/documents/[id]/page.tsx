@@ -27,7 +27,17 @@ function instanceLabel(p: any) {
     .filter(Boolean)
     .join(' · ') || modelName(p);
 }
-function isCasePosition(p: any) { return p.model?.typ_sprzetu === 'opakowanie' || p.egzemplarz?.model?.typ_sprzetu === 'opakowanie'; }
+function isCasePosition(p: any) {
+  const type = String(p.model?.typ_sprzetu || p.egzemplarz?.model?.typ_sprzetu || p.typ_sprzetu || '').toLowerCase();
+  const name = String(p.nazwa || p.model?.nazwa || p.egzemplarz?.model?.nazwa || '').toLowerCase();
+  
+  // Zestawy (nawet zbudowane technicznie z opakowań) idą w całości na dokument, nie są ukrywane!
+  if (type === 'zestaw' || type === 'rack' || name.includes('zestaw') || name.includes('rack')) {
+    return false;
+  }
+  
+  return type === 'opakowanie';
+}
 function equipmentWeightKg(p: any) {
   const amount = Math.max(num(p.ilosc), 0);
   const unit = num(p.egzemplarz?.waga) || num(p.egzemplarz?.model?.waga) || num(p.model?.waga);

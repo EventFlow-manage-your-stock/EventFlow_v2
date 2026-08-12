@@ -107,7 +107,6 @@ function categoryPath(categoryId: string, byId: Map<string, any>) {
 function normalizeCode(v: any) {
   return String(v || '').trim().replace(/\s+/g, '').toLowerCase();
 }
-
 function getEquipmentCodes(row: any): string[] {
   const egz = row?.egzemplarz || row;
   const model = row?.model || egz?.model || row;
@@ -131,21 +130,17 @@ function getEquipmentText(row: any): string {
 function isQuantityOnly(row: any): boolean {
   if (!row) return false;
   const model = row?.model || row?.egzemplarz?.model || row;
-  const txt = [model?.typ, model?.rodzaj, model?.tryb_ewidencji, model?.typ_sprzetu].join(' ').toLowerCase();
   return Boolean(
     row.rowType === 'ilosciowy_model' || row.quantityOnly === true ||
-    model?.tryb_ewidencji === 'ilosciowe' || model?.typ_sprzetu === 'ilosciowe' ||
-    txt.includes('ilosciow') || model?.ilosc_magazynowa !== undefined
+    model?.tryb_ewidencji === 'ilosciowe' || model?.typ_sprzetu === 'ilosciowe'
   );
 }
 
 // Sprawdza czy sprzęt to Zestaw (Rack, Szafa Rack) - nierozerwalna całość na wyjeździe
 function isZestawRow(row: any): boolean {
   const modelType = String(row?.model?.typ_sprzetu || row?.egzemplarz?.model?.typ_sprzetu || row?.typ_sprzetu || '').toLowerCase();
-  const txt = getEquipmentText(row);
   return Boolean(
-    modelType === 'zestaw' || row?.rowType === 'zestaw' || row?.czy_zestaw === true || row?.isZestaw === true ||
-    txt.includes('zestaw') || txt.includes('rack')
+    modelType === 'zestaw' || modelType === 'rack' || row?.rowType === 'zestaw' || row?.czy_zestaw === true || row?.isZestaw === true
   );
 }
 
@@ -153,10 +148,8 @@ function isZestawRow(row: any): boolean {
 function isCaseRow(row: any): boolean {
   if (isZestawRow(row)) return false; // PRIORYTET: Zestaw absolutnie nie jest case'm!
   const modelType = String(row?.model?.typ_sprzetu || row?.egzemplarz?.model?.typ_sprzetu || row?.typ_sprzetu || '').toLowerCase();
-  const txt = getEquipmentText(row);
   return Boolean(
-    modelType === 'opakowanie' || row?.isCase === true || row?.czy_case === true || row?.rowType === 'case' ||
-    txt.includes('case') || txt.includes('opakowan') || txt.includes('skrzyn')
+    modelType === 'opakowanie' || row?.isCase === true || row?.czy_case === true || row?.rowType === 'case'
   );
 }
 
@@ -1392,22 +1385,27 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
         const meta = scannedContainer || row.system_case_scan || row.case_scan || null;
         return meta ? { ...item, system_case_scan: meta, id_zeskanowanego_case: meta.id, nazwa_zeskanowanego_case: meta.nazwa } : item;
       })
-      .filter((item: any) => item.id_egzemplarza && item.id_modelu);
+      .filter((item: any) => item.id_modelu);
 
     if (!normalized.length) {
-      setError('Nie znaleziono aktywnych egzemplarzy sprzętu do dodania na dokument.');
+      setError('Nie znaleziono poprawnych elementów sprzętu do dodania na dokument.');
       return;
     }
 
     setDocItems((prev) => {
+      // Dla fizycznych egzemplarzy zabezpieczamy przed duplikatami w koszyku
       const existingIds = new Set(prev.map((p: any) => Number(p.id_egzemplarza)).filter(Boolean));
       const toAdd: any[] = [];
+      
       for (const item of normalized) {
-        const id = Number(item.id_egzemplarza);
-        if (!id || existingIds.has(id)) continue;
-        existingIds.add(id);
+        if (item.id_egzemplarza) {
+          const id = Number(item.id_egzemplarza);
+          if (existingIds.has(id)) continue;
+          existingIds.add(id);
+        }
         toAdd.push(item);
       }
+
       const skipped = normalized.length - toAdd.length;
       if (!toAdd.length) {
         setNotice(sourceLabel ? `${sourceLabel}: wszystkie pozycje ze środka są już w koszyku.` : 'Ten sprzęt jest już w koszyku dokumentu.');
@@ -1483,22 +1481,21 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
     setError('');
     setNotice('');
     
-    // Jeśli skan jest czysto ilościowy
+    // Reguła 6: Sprzęt ilościowy
     if (isQuantityOnly(row)) { 
       addQuantityDocumentItem(row, source); 
       return; 
     }
     
-    // ZESTAWY (RACKI) - Wchodzą do koszyka WZ/PZ jako jedna zwarta pozycja!
-    // Nawet jeśli z backendu dostaniemy rozpakowany content, my traktujemy ZESTAW nierozerwalnie.
+    // Reguła 3: Zestawy (RACK). Wchodzą jako jedna pozycja.
     if (isZestawRow(row)) {
-      addDocumentItemsBulk([row], source, 'Zeskanowano zestaw jako jedną pozycję');
+      addDocumentItemsBulk([row], source, 'Zeskanowano zestaw jako spójną pozycję');
       return;
     }
 
-    // CASE / OPAKOWANIA - Rozpakowujemy i wrzucamy pojedyncze sztuki do koszyka WZ/PZ
+    // Reguła 2: Case/Opakowanie. Wyciągamy elementy ze środka.
     if (isCaseRow(row)) {
-      const contents = (row.zawartosc_case || row.contents || []).filter((child: any) => !isCaseRow(child) && !isZestawRow(child) && isEquipmentInstance(child));
+      const contents = (row.zawartosc_case || row.contents || []).filter((child: any) => !isCaseRow(child) && isEquipmentInstance(child));
       if (!contents.length) { 
         setError('Ten case jest pusty albo nie ma w nim aktywnych pojedynczych egzemplarzy sprzętu. Do dokumentów WZ/PZ trafia tylko zawartość.'); 
         return; 
@@ -1534,7 +1531,7 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
     setError('');
     setNotice('');
 
-    // Fast-path dla sprzętu ilościowego po etykiecie modelu
+    // Szybka ścieżka dla ilościówek skanowanych po kodzie modelu
     const quantityModel = findQuantityModelByCode(code);
     if (quantityModel) {
       addQuantityDocumentItem({
@@ -1555,8 +1552,7 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
 
     try {
       const response = await api.get(`/api/magazyn/skan?kod=${encodeURIComponent(code)}`);
-      const row = response.data;
-      addDocumentItem(row, 'scan');
+      addDocumentItem(response.data, 'scan');
       
       setScanCode('');
       setTimeout(focusScanInput, 0);
@@ -1568,7 +1564,7 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
 
   async function createDocument(type: 'wydanie' | 'przyjecie') {
     if (!docItems.length) {
-      return alert('Koszyk WZ/PZ jest pusty. Zeskanuj egzemplarze, skrzynie(zestawy) albo sprzęt ilościowy.');
+      return alert('Koszyk WZ/PZ jest pusty. Zeskanuj egzemplarze, skrzynie albo sprzęt ilościowy.');
     }
 
     setError('');
@@ -1728,13 +1724,13 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
         </aside>}
       </div>}
 
-      {mode !== 'plan' && <div className="grid gap-0 xl:grid-cols-[1.15fr_.85fr]">
-        <div className="p-6">
-          <div className="mb-6 rounded-2xl border border-cyan-200 dark:border-cyan-500/20 bg-cyan-50 dark:bg-cyan-500/10 p-5 shadow-sm">
+      {mode !== 'plan' && <div className="grid gap-0 xl:grid-cols-[1.15fr_.85fr] min-w-0">
+        <div className="p-6 min-w-0">
+          <div className="mb-6 rounded-2xl border border-cyan-200 dark:border-cyan-500/20 bg-cyan-50 dark:bg-cyan-500/10 p-5 shadow-sm min-w-0">
             <p className="text-sm font-bold leading-relaxed text-cyan-900 dark:text-cyan-100">{mode === 'wydanie' ? 'Skanuj egzemplarze albo kody kontenerów aby je wydać (WZ). Sprzęt ilościowy możesz zaznaczyć checkboxem by pobrać brakującą ilość sztuk bez ręcznego wpisywania w skaner.' : 'Skanuj zwracane egzemplarze i kontenery (PZ). Sprzęt ilościowy możesz zaznaczyć checkboxem by zwrócić brakującą na magazynie ilość sztuk bez skanera.'}</p>
           </div>
-          <div className="space-y-5">
-            {plannedGroups.map((group: any) => <div key={group.nazwa} className="overflow-hidden rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#08151a] shadow-sm">
+          <div className="space-y-5 min-w-0">
+            {plannedGroups.map((group: any) => <div key={group.nazwa} className="overflow-hidden rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#08151a] shadow-sm min-w-0">
               <div className="bg-slate-50 dark:bg-white/5 border-b border-slate-100 dark:border-white/5 px-5 py-3.5"><b className="text-slate-900 dark:text-white">{group.nazwa}</b></div>
               <div className="divide-y divide-slate-100 dark:divide-white/5">
                 {group.rows.map((row: any) => {
@@ -1742,82 +1738,86 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
                   const missing = missingAfterScan(row);
                   const base = mode === 'wydanie' ? row.plan : row.wydane;
                   const percent = base > 0 ? Math.min(100, Math.round((after / base) * 100)) : 100;
-                  return <div key={row.id_modelu} className="px-5 py-4">
-                    <div className="grid gap-4 lg:grid-cols-[1fr_300px] lg:items-center">
-                      <div>
-                        <p className="font-black text-slate-900 dark:text-white text-[15px]">{row.nazwa}</p>
-                        <p className="text-xs font-bold text-slate-400 dark:text-slate-500 mt-1">{mode === 'wydanie' ? `Plan: ${row.plan} szt. · Wydano na zewnątrz: ${row.wydane} szt. · Skan w koszyku: ${row.scanned} szt.` : `Wydano w teren: ${row.wydane} szt. · Przyjęto już: ${row.przyjete} szt. · Skan w koszyku: ${row.scanned} szt.`}</p>
-                        {row.quantityOnly && <label className="mt-3 inline-flex cursor-pointer items-center gap-3 rounded-xl border border-cyan-100 dark:border-cyan-500/30 bg-cyan-50 dark:bg-cyan-500/10 px-4 py-2.5 text-xs font-black text-cyan-900 dark:text-cyan-100 hover:bg-cyan-100 dark:hover:bg-cyan-500/20 transition shadow-sm">
+                  return <div key={row.id_modelu} className="px-5 py-4 min-w-0">
+                    <div className="grid gap-4 lg:grid-cols-[1fr_300px] lg:items-center min-w-0">
+                      <div className="min-w-0">
+                        <p className="font-black text-slate-900 dark:text-white text-[15px] truncate">{row.nazwa}</p>
+                        <p className="text-xs font-bold text-slate-400 dark:text-slate-500 mt-1 truncate">{mode === 'wydanie' ? `Plan: ${row.plan} szt. · Wydano na zewnątrz: ${row.wydane} szt. · Skan w koszyku: ${row.scanned} szt.` : `Wydano w teren: ${row.wydane} szt. · Przyjęto już: ${row.przyjete} szt. · Skan w koszyku: ${row.scanned} szt.`}</p>
+                        {row.quantityOnly && <label className="mt-3 inline-flex cursor-pointer items-center gap-3 rounded-xl border border-cyan-100 dark:border-cyan-500/30 bg-cyan-50 dark:bg-cyan-500/10 px-4 py-2.5 text-xs font-black text-cyan-900 dark:text-cyan-100 hover:bg-cyan-100 dark:hover:bg-cyan-500/20 transition shadow-sm max-w-full">
                           <input
                             type="checkbox"
-                            className="h-4 w-4 rounded border-slate-300 text-[#04e0ff] focus:ring-[#04e0ff] cursor-pointer"
+                            className="h-4 w-4 rounded border-slate-300 text-[#04e0ff] focus:ring-[#04e0ff] cursor-pointer shrink-0"
                             checked={quantityRowSelected(row)}
                             onChange={(e) => toggleQuantityRowWithoutScan(row, e.target.checked)}
                           />
-                          <span>{mode === 'wydanie' ? 'Wydaj brakujące na sztuki' : 'Przyjmij brakujące na sztuki'}</span>
-                          <span className="rounded-full bg-white dark:bg-black/20 border border-slate-200 dark:border-transparent px-2.5 py-1 text-cyan-700 dark:text-[#04e0ff] shadow-sm ml-auto">{quantityRowSelected(row) ? `${row.scanned} ${row.jednostka || 'szt.'}` : `${missing} ${row.jednostka || 'szt.'}`}</span>
+                          <span className="truncate">{mode === 'wydanie' ? 'Wydaj brakujące na sztuki' : 'Przyjmij brakujące na sztuki'}</span>
+                          <span className="rounded-full bg-white dark:bg-black/20 border border-slate-200 dark:border-transparent px-2.5 py-1 text-cyan-700 dark:text-[#04e0ff] shadow-sm ml-auto shrink-0">{quantityRowSelected(row) ? `${row.scanned} ${row.jednostka || 'szt.'}` : `${missing} ${row.jednostka || 'szt.'}`}</span>
                         </label>}
                       </div>
-                      <div className="rounded-2xl bg-slate-50 dark:bg-white/5 border border-slate-100 dark:border-transparent p-4 shadow-inner">
+                      <div className="rounded-2xl bg-slate-50 dark:bg-white/5 border border-slate-100 dark:border-transparent p-4 shadow-inner min-w-0">
                         <div className="mb-2.5 flex justify-between text-xs font-black"><span>{mode === 'wydanie' ? 'Status wydania' : 'Status przyjęcia'}: {after}/{base}</span><span className={missing ? 'text-orange-600 dark:text-orange-400' : 'text-emerald-600 dark:text-emerald-400'}>{missing ? `Brakuje jeszcze ${missing}` : 'Wszystko OK'}</span></div>
                         <div className="h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700 shadow-inner"><div className={`h-full rounded-full transition-all duration-1000 ${missing ? 'bg-orange-500 shadow-[0_0_8px_#f97316]' : 'bg-emerald-500 shadow-[0_0_8px_#10b981]'}`} style={{ width: `${percent}%` }} /></div>
                       </div>
                     </div>
                   </div>;
                 })}
-              </div>
-            </div>)}
-          </div>
         </div>
-        <div className="border-l border-slate-200 dark:border-white/10 bg-slate-50/70 dark:bg-black/20 p-6 shadow-inner">
-          <div className="sticky top-4 space-y-5">
-            <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#08151a] p-5 shadow-sm">
-              <Field label="Skanuj kod kreskowy / QR / SN / Case z Naklejki">
-                 <div className="flex gap-2">
-                   <input ref={scanInputRef} className={`${inputClass} py-3 text-lg font-bold shadow-inner`} autoFocus value={scanCode} onFocus={(e) => e.currentTarget.select()} onChange={(e) => setScanCode(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); scan(); } }} placeholder="Kliknij Skanuj, skanuj kod i wciśnij Enter..."/>
-                   <Button onClick={scan} className="px-6 shadow-md shadow-cyan-600/20">{scanCode.trim() ? 'Dodaj skan' : 'Skanuj'}</Button>
-                 </div>
-              </Field>
-              <p className="mt-3 text-xs font-bold text-slate-400 leading-relaxed">Zeskanowanie kontenera (Opakowanie/Case) automatycznie rozpakuje go i doda na listę ukryty w nim sprzęt. Zeskanowanie Zestawu(Racka) doda go jako spójną całość. Sprzęt ilościowy dodasz skanem modelu lub checkboxem po lewej.</p>
+      </div>)}
+    </div>
+  </div>
+  
+  <div className="border-l border-slate-200 dark:border-white/10 bg-slate-50/70 dark:bg-black/20 p-6 shadow-inner min-w-0 flex flex-col">
+    <div className="sticky top-4 space-y-5 min-w-0">
+      <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#08151a] p-5 shadow-sm min-w-0">
+        <Field label="Skanuj kod kreskowy / QR / SN / Case z Naklejki">
+           <div className="flex gap-2">
+             <input ref={scanInputRef} className={`${inputClass} py-3 text-lg font-bold shadow-inner min-w-0`} autoFocus value={scanCode} onFocus={(e) => e.currentTarget.select()} onChange={(e) => setScanCode(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); scan(); } }} placeholder="Kliknij Skanuj, skanuj kod i wciśnij Enter..."/>
+             <Button onClick={scan} className="px-6 shadow-md shadow-cyan-600/20 shrink-0">{scanCode.trim() ? 'Dodaj skan' : 'Skanuj'}</Button>
+           </div>
+        </Field>
+        <p className="mt-3 text-xs font-bold text-slate-400 leading-relaxed">Zeskanowanie kontenera (Opakowanie/Case) automatycznie rozpakuje go i doda na listę ukryty w nim sprzęt. Zeskanowanie Zestawu(Racka) doda go jako spójną całość. Sprzęt ilościowy dodasz skanem modelu lub checkboxem po lewej.</p>
+      </div>
+      
+      <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#08151a] p-5 shadow-sm min-w-0">
+        <div className="mb-4 flex items-center justify-between min-w-0"><h4 className="text-lg font-black text-slate-900 dark:text-white truncate pr-2">Koszyk Skanera (Teraz)</h4><span className="rounded-full bg-cyan-100 dark:bg-cyan-500/10 px-3 py-1 text-xs font-black text-cyan-700 dark:text-[#04e0ff] border border-cyan-200 dark:border-cyan-500/20 shrink-0">{docItems.reduce((s: number, p: any) => s + Number(p.ilosc || 1), 0)} szt.</span></div>
+        <div className="max-h-[260px] space-y-2 overflow-y-auto pr-1 custom-scrollbar min-w-0">
+          {docItems.map((p, idx) => <div key={`${p.id_egzemplarza || p.id_modelu}-${idx}`} className="rounded-xl border border-slate-100 dark:border-white/5 bg-slate-50 dark:bg-white/5 p-3 flex justify-between gap-3 group transition-colors hover:border-cyan-300 dark:hover:border-cyan-700 min-w-0">
+            <div className="min-w-0">
+               <b className="text-[13px] text-slate-900 dark:text-white block truncate">{p.nazwa}</b>
+               <p className="text-[11px] font-bold text-slate-400 mt-1 truncate">
+                  {p.kategoria} · {isQuantityOnly(p) ? <span className="text-[#04e0ff]">{p.ilosc || 1} {p.jednostka || 'szt.'}</span> : `${p.nazwa_zeskanowanego_case ? `w: ${p.nazwa_zeskanowanego_case} · ` : ''}${p.kod || '-'}` } {p.kod && isQuantityOnly(p) ? ` · kod ${p.kod}` : ''}
+               </p>
             </div>
-            
-            <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#08151a] p-5 shadow-sm">
-              <div className="mb-4 flex items-center justify-between"><h4 className="text-lg font-black text-slate-900 dark:text-white">Koszyk Skanera (Teraz)</h4><span className="rounded-full bg-cyan-100 dark:bg-cyan-500/10 px-3 py-1 text-xs font-black text-cyan-700 dark:text-[#04e0ff] border border-cyan-200 dark:border-cyan-500/20">{docItems.reduce((s: number, p: any) => s + Number(p.ilosc || 1), 0)} szt.</span></div>
-              <div className="max-h-[260px] space-y-2 overflow-y-auto pr-1 custom-scrollbar">
-                {docItems.map((p, idx) => <div key={`${p.id_egzemplarza || p.id_modelu}-${idx}`} className="rounded-xl border border-slate-100 dark:border-white/5 bg-slate-50 dark:bg-white/5 p-3 flex justify-between gap-3 group transition-colors hover:border-cyan-300 dark:hover:border-cyan-700">
-                  <div className="min-w-0">
-                     <b className="text-[13px] text-slate-900 dark:text-white block truncate">{p.nazwa}</b>
-                     <p className="text-[11px] font-bold text-slate-400 mt-1 truncate">
-                        {p.kategoria} · {isQuantityOnly(p) ? <span className="text-[#04e0ff]">{p.ilosc || 1} {p.jednostka || 'szt.'}</span> : `${p.nazwa_zeskanowanego_case ? `w: ${p.nazwa_zeskanowanego_case} · ` : ''}${p.kod || '-'}` } {p.kod && isQuantityOnly(p) ? ` · kod ${p.kod}` : ''}
-                     </p>
-                  </div>
-                  <button onClick={() => setDocItems((s) => s.filter((_, i) => i !== idx))} className="font-black text-slate-400 hover:text-red-500 bg-white dark:bg-transparent rounded-lg px-2.5 py-1.5 h-fit shadow-sm border border-slate-200 dark:border-transparent transition flex items-center gap-1.5 opacity-0 group-hover:opacity-100" title="Cofnij skan">
-                    <RotateCcw size={14}/> Cofnij
-                  </button>
-                </div>)}
-                {!docItems.length && <div className="rounded-2xl border border-dashed border-slate-200 dark:border-white/10 p-8 text-center text-sm font-bold text-slate-400 bg-white dark:bg-transparent">Rozpocznij skanowanie fizycznego sprzętu albo zaznacz checkbox przy sprzęcie ilościowym — ta lista zaktualizuje się automatycznie.</div>}
-              </div>
-            </div>
-            
-            <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#08151a] p-5 shadow-sm">
-              <Field label="Wyszukaj i dodaj egzemplarz ręcznie (Awaryjnie)"><div className="relative"><Search className="absolute left-3 top-3 text-slate-400" size={16}/><input className={`${inputClass} pl-9`} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="nazwa, numer boczny, kod kreskowy..." /></div></Field>
-              <div className="mt-4 max-h-[220px] space-y-2 overflow-y-auto pr-1 custom-scrollbar">
-                {visibleInstances.map((r: any) => <button key={r.id} type="button" onClick={() => addDocumentItem(r, 'manual')} className="w-full rounded-xl border border-slate-100 dark:border-white/5 bg-slate-50 dark:bg-white/5 p-3 text-left hover:border-cyan-300 dark:hover:border-cyan-700 transition shadow-sm"><b className="text-[13px] text-slate-900 dark:text-white block truncate">{r.model?.nazwa || r.nazwa_wiersza}</b><p className="text-[11px] font-bold text-slate-400 mt-1 truncate">{r.nazwa_wiersza} · S/N: {r.kod || '-'}</p></button>)}
-              </div>
-            </div>
-            
-            <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#08151a] p-5 shadow-sm">
-              <div className="rounded-xl border border-cyan-100 dark:border-cyan-500/20 bg-cyan-50 dark:bg-cyan-500/10 p-3.5 text-xs font-bold text-cyan-900 dark:text-cyan-100 mb-4 leading-relaxed">
-                Dokument magazynowy podpisze automatycznie w systemie aktualnie zalogowany użytkownik. Na wygenerowanym potwierdzeniu PDF będzie widoczny cyfrowy ślad audytowy transakcji.
-              </div>
-              <Field label="Dodatkowe uwagi dla magazyniera do wpisania na dokument WZ/PZ"><textarea className={`${inputClass} resize-none min-h-[80px]`} value={docForm.uwagi || ''} onChange={(e) => setDocForm({ ...docForm, uwagi: e.target.value })} placeholder="opcjonalne uwagi..."/></Field>
-              <button type="button" disabled={!docItems.length || savingDocs} onClick={() => createDocument(mode)} className={`mt-4 w-full rounded-xl px-5 py-3.5 text-sm font-black text-white disabled:opacity-50 transition shadow-lg ${mode === 'wydanie' ? 'bg-gradient-to-r from-emerald-500 to-emerald-600 shadow-emerald-500/30 hover:opacity-90' : 'bg-gradient-to-r from-[#04e0ff] to-blue-600 shadow-[#04e0ff]/30 hover:opacity-90'} flex items-center justify-center gap-2`}>
-                {savingDocs ? <Loader2 size={18} className="animate-spin"/> : <FileText size={18} />} {savingDocs ? 'Generowanie...' : mode === 'wydanie' ? 'Zatwierdź i Wystaw WZ' : 'Zatwierdź i Wystaw PZ'}
-              </button>
-            </div>
-          </div>
+            <button onClick={() => setDocItems((s) => s.filter((_, i) => i !== idx))} className="font-black text-slate-400 hover:text-red-500 bg-white dark:bg-transparent rounded-lg px-2.5 py-1.5 h-fit shadow-sm border border-slate-200 dark:border-transparent transition flex items-center gap-1.5 opacity-0 group-hover:opacity-100 shrink-0" title="Cofnij skan">
+              <RotateCcw size={14}/> Cofnij
+            </button>
+          </div>)}
+          {!docItems.length && <div className="rounded-2xl border border-dashed border-slate-200 dark:border-white/10 p-8 text-center text-sm font-bold text-slate-400 bg-white dark:bg-transparent">Rozpocznij skanowanie fizycznego sprzętu albo zaznacz checkbox przy sprzęcie ilościowym — ta lista zaktualizuje się automatycznie.</div>}
         </div>
-      </div>}
+      </div>
+      
+      <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#08151a] p-5 shadow-sm min-w-0">
+        <Field label="Wyszukaj i dodaj egzemplarz ręcznie (Awaryjnie)"><div className="relative min-w-0"><Search className="absolute left-3 top-3 text-slate-400" size={16}/><input className={`${inputClass} pl-9 min-w-0`} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="nazwa, numer boczny, kod kreskowy..." /></div></Field>
+        <div className="mt-4 max-h-[220px] space-y-2 overflow-y-auto pr-1 custom-scrollbar min-w-0">
+          {visibleInstances.map((r: any) => <button key={r.id} type="button" onClick={() => addDocumentItem(r, 'manual')} className="w-full rounded-xl border border-slate-100 dark:border-white/5 bg-slate-50 dark:bg-white/5 p-3 text-left hover:border-cyan-300 dark:hover:border-cyan-700 transition shadow-sm min-w-0">
+            <b className="text-[13px] text-slate-900 dark:text-white block truncate">{r.model?.nazwa || r.nazwa_wiersza}</b>
+            <p className="text-[11px] font-bold text-slate-400 mt-1 truncate">{r.nazwa_wiersza} · S/N: {r.kod || '-'}</p>
+          </button>)}
+        </div>
+      </div>
+      
+      <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#08151a] p-5 shadow-sm min-w-0">
+        <div className="rounded-xl border border-cyan-100 dark:border-cyan-500/20 bg-cyan-50 dark:bg-cyan-500/10 p-3.5 text-xs font-bold text-cyan-900 dark:text-cyan-100 mb-4 leading-relaxed">
+          Dokument magazynowy podpisze automatycznie w systemie aktualnie zalogowany użytkownik. Na wygenerowanym potwierdzeniu PDF będzie widoczny cyfrowy ślad audytowy transakcji.
+        </div>
+        <Field label="Dodatkowe uwagi dla magazyniera do wpisania na dokument WZ/PZ"><textarea className={`${inputClass} resize-none min-h-[80px] min-w-0`} value={docForm.uwagi || ''} onChange={(e) => setDocForm({ ...docForm, uwagi: e.target.value })} placeholder="opcjonalne uwagi..."/></Field>
+        <button type="button" disabled={!docItems.length || savingDocs} onClick={() => createDocument(mode)} className={`mt-4 w-full rounded-xl px-5 py-3.5 text-sm font-black text-white disabled:opacity-50 transition shadow-lg ${mode === 'wydanie' ? 'bg-gradient-to-r from-emerald-500 to-emerald-600 shadow-emerald-500/30 hover:opacity-90' : 'bg-gradient-to-r from-[#04e0ff] to-blue-600 shadow-[#04e0ff]/30 hover:opacity-90'} flex items-center justify-center gap-2`}>
+          {savingDocs ? <Loader2 size={18} className="animate-spin shrink-0"/> : <FileText size={18} className="shrink-0" />} <span className="truncate">{savingDocs ? 'Generowanie...' : mode === 'wydanie' ? 'Zatwierdź i Wystaw WZ' : 'Zatwierdź i Wystaw PZ'}</span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>}
     </section>
 
     <div className="rounded-3xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#08151a] p-6 shadow-sm mt-8">
