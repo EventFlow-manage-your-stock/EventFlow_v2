@@ -82,11 +82,12 @@ export function SearchableSelect({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const filtered = options.filter(o =>
-    o.label.toLowerCase().includes(query.toLowerCase())
+  const safeOptions = Array.isArray(options) ? options : [];
+  const filtered = safeOptions.filter(o =>
+    String(o.label || '').toLowerCase().includes(query.toLowerCase())
   );
 
-  const selectedOption = options.find(o => o.value === value);
+  const selectedOption = safeOptions.find(o => String(o.value) === String(value));
 
   return (
     <div ref={wrapperRef} className="relative w-full min-w-0">
@@ -96,7 +97,6 @@ export function SearchableSelect({
         onClick={() => setIsOpen(!isOpen)}
         className={`${inputClass} flex w-full min-w-0 items-center justify-between text-left ${disabled ? 'opacity-50 pointer-events-none' : ''}`}
       >
-        {/* KLUCZOWA ZMIANA: flex-1, min-w-0 i truncate wymuszają obcięcie tekstu (...) */}
         <span className="block flex-1 min-w-0 truncate pr-2 text-slate-700 dark:text-slate-200">
           {selectedOption ? selectedOption.label : placeholder}
         </span>
@@ -130,19 +130,19 @@ export function SearchableSelect({
             Brak / Wyczyść
           </button>
           
-          {filtered.map(o => (
+          {filtered.map((o, index) => (
             <button
-              key={o.value}
+              // Zabezpieczamy unikalność klucza generując go wspólnie z indexem
+              key={`searchable-option-${String(o.value || '')}-${index}`}
               type="button"
               onClick={() => {
-                onChange(o.value);
+                onChange(String(o.value));
                 setIsOpen(false);
                 setQuery('');
               }}
-              className={`flex w-full min-w-0 items-center rounded-lg px-3 py-2.5 text-left text-sm font-bold transition hover:bg-slate-50 dark:hover:bg-white/5 ${value === o.value ? 'bg-cyan-50 text-cyan-700 dark:bg-cyan-900/30' : 'text-slate-700 dark:text-slate-200'}`}
+              className={`flex w-full min-w-0 items-center rounded-lg px-3 py-2.5 text-left text-sm font-bold transition hover:bg-slate-50 dark:hover:bg-white/5 ${String(value) === String(o.value) ? 'bg-cyan-50 text-cyan-700 dark:bg-cyan-900/30' : 'text-slate-700 dark:text-slate-200'}`}
               title={o.label}
             >
-              {/* Opcjonalnie: Truncate na liście opcji, by długi tekst w dropdownie nie wymuszał scrolla poziomego */}
               <span className="block flex-1 min-w-0 truncate">{o.label}</span>
             </button>
           ))}

@@ -119,7 +119,6 @@ export function QuickAddCalendarModal({
                 <option value="wydarzenie">Wydarzenie</option>
                 <option value="wypozyczenie">Wypożyczenie</option>
                 <option value="spotkanie">Spotkanie</option>
-                <option value="prywatne">Wydarzenie prywatne</option>
                 <option value="urlop">Urlop</option>
               </select>
             </Field>
@@ -156,12 +155,16 @@ export function QuickAddCalendarModal({
               </>
             ) : (
               <>
-                <Field label="Typ wydarzenia">
-                  <select className={inputClass} value={form.id_typu_wydarzenia || ''} onChange={(e) => setForm({ ...form, id_typu_wydarzenia: e.target.value })}>
-                    <option value="">Wybierz</option>
-                    {(dict.typy || []).map((t: any) => <option key={t.id} value={t.id}>{t.nazwa}</option>)}
-                  </select>
-                </Field>
+                {typ !== 'wypozyczenie' && typ !== 'spotkanie' ?(
+                  <>
+                    <Field label="Typ wydarzenia">
+                      <select className={inputClass} value={form.id_typu_wydarzenia || ''} onChange={(e) => setForm({ ...form, id_typu_wydarzenia: e.target.value })}>
+                        <option value="">Wybierz</option>
+                        {(dict.typy || []).map((t: any) => <option key={t.id} value={t.id}>{t.nazwa}</option>)}
+                      </select>
+                    </Field>
+                  </>
+                ):(<></>)}
                 <Field label="Status">
                 <select className={inputClass} value={form.id_statusu_wydarzenia || ''} onChange={(e) => setForm({ ...form, id_statusu_wydarzenia: e.target.value })}>
                   <option value="">Wybierz</option>

@@ -1,8 +1,9 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
+import * as jwt from 'jsonwebtoken';
 import * as nodemailer from 'nodemailer';
 
 @Injectable()
@@ -15,8 +16,8 @@ export class AuthService {
   ) {
     // Inicjalizacja klienta SMTP do wysyłki maili
     this.transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST || 'smtp.ethereal.email',
-      port: Number(process.env.SMTP_PORT) || 587,
+      host: process.env.SMTP_HOST || 'localhost',
+      port: Number(process.env.SMTP_PORT) || 465,
       secure: process.env.SMTP_SECURE === 'true',
       auth: {
         user: process.env.SMTP_USER,
@@ -88,12 +89,19 @@ export class AuthService {
   }
 
   async forgotPassword(email: string) {
-    const user = await this.prisma.uzytkownik.findFirst({ where: { email, aktywny: true } });
+    const user = await this.prisma.extendedClient.uzytkownik.findFirst({ where: { email, aktywny: true } });
     
     // Niezależnie czy mail istnieje czy nie, odpowiadamy tak samo (zapobiega wyliczaniu kont przez hakerów)
     if (!user) {
       return { success: true, message: 'Jeśli adres e-mail istnieje w bazie, wysłano na niego link.' };
     }
+
+    const secret = process.env.JWT_SECRET + user.haslo;
+    const payload = { sub: user.id, email: user.email };
+    const token = jwt.sign(payload, secret, { expiresIn: '1h' });
+
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+    const resetLink = `${baseUrl}/reset-password?token=${token}`;
 
     const resetToken = crypto.randomBytes(32).toString('hex');
     const tokenExpiry = new Date(Date.now() + 3600000); // Token ważny 1 godzinę
@@ -103,64 +111,70 @@ export class AuthService {
       data: { token_resetu_hasla: resetToken, data_waznosci_tokenu: tokenExpiry }
     });
 
-    const resetLink = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/reset-password?token=${resetToken}`;
 
     // Właściwa wysyłka HTML na E-mail
     try {
       await this.transporter.sendMail({
-        from: process.env.SMTP_FROM || '"EventFlow" <no-reply@eventflow.pl>',
-        to: email,
-        subject: 'Zresetuj swoje hasło do EventFlow',
+        from: process.env.SMTP_FROM || '"EventFlow WMS" <no-reply@eventflow.pl>',
+        to: user.email,
+        subject: 'Resetowanie hasła w systemie EventFlow',
         html: `
-          <div style="font-family: Arial, sans-serif; max-w: 600px; margin: 0 auto; padding: 30px; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff;">
-            <h2 style="color: #0f172a; margin-bottom: 10px;">Utworzenie nowego hasła</h2>
-            <p style="color: #475569; font-size: 16px; line-height: 1.6;">Witaj ${user.imie},</p>
-            <p style="color: #475569; font-size: 16px; line-height: 1.6;">Otrzymaliśmy prośbę o zresetowanie lub utworzenie nowego hasła do Twojego konta pracowniczego w systemie EventFlow WMS.</p>
-            
-            <div style="text-align: center; margin: 35px 0;">
-              <a href="${resetLink}" style="display: inline-block; padding: 14px 28px; background-color: #0891B2; color: #ffffff; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px;">
-                Ustaw nowe hasło
-              </a>
+          <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <h2 style="color: #06B6D4;">Witaj, ${user.imie}!</h2>
+            <p>Otrzymaliśmy prośbę o zresetowanie hasła dla Twojego konta w systemie EventFlow.</p>
+            <p>Aby ustawić nowe hasło, kliknij w poniższy przycisk. Link jest ważny przez 1 godzinę i można go użyć tylko raz.</p>
+            <div style="text-align: center; margin: 30px 0;">
+              <a href="${resetLink}" style="display: inline-block; padding: 14px 28px; background-color: #06B6D4; color: #ffffff; text-decoration: none; border-radius: 8px; font-weight: bold;">Ustaw nowe hasło</a>
             </div>
-            
-            <p style="color: #475569; font-size: 14px;">Jeśli to nie Ty prosiłeś o zmianę, zignoruj tę wiadomość. Twój link wygaśnie za 60 minut ze względów bezpieczeństwa.</p>
-            <hr style="border: none; border-top: 1px solid #f1f5f9; margin: 30px 0;" />
-            <p style="color: #94a3b8; font-size: 12px; text-align: center;">Wiadomość wygenerowana automatycznie. Prosimy na nią nie odpowiadać.</p>
+            <p>Jeśli to nie Ty prosiłeś/aś o zmianę, zignoruj tę wiadomość. Twoje konto jest bezpieczne.</p>
+            <hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;" />
+            <p style="font-size: 11px; color: #94a3b8; text-align: center;">Wiadomość wygenerowana automatycznie przez system EventFlow.</p>
           </div>
         `,
       });
-    } catch (error) {
-      console.error('Błąd podczas wysyłki maila:', error);
-      // Nie rzucamy wyjątku celowo, aby użytkownik nie wiedział, że wystąpił problem techniczny SMTP
+    } catch (err) {
+      console.error('Błąd wysyłki SMTP:', err);
+      // Nie rzucamy wyjątku 500, żeby nie pokazywać na zewnątrz, że wysyłka e-mail nie działa
     }
 
-    return { success: true, message: 'Jeśli adres e-mail istnieje w bazie, wysłano na niego link.' };
+    return { success: true,message: 'Jeśli adres istnieje w bazie, wysłano na niego link do resetu hasła.' };
   }
 
   async resetPassword(token: string, passwordRaw: string) {
-    const user = await this.prisma.uzytkownik.findFirst({
-      where: { 
-        token_resetu_hasla: token,
-        data_waznosci_tokenu: { gt: new Date() } // Weryfikacja przydatności tokenu
+    try {
+      // Dekodujemy payload by zdobyć ID usera (bez weryfikacji podpisu, bo nie znamy jeszcze hasła)
+      const decoded: any = jwt.decode(token);
+      if (!decoded || !decoded.sub) {
+        throw new BadRequestException('Błędny lub zniekształcony link.');
       }
-    });
 
-    if (!user) {
-      throw new UnauthorizedException('Token bezpieczeństwa jest nieprawidłowy lub stracił ważność.');
+      // Pobieramy użytkownika
+      const user = await this.prisma.extendedClient.uzytkownik.findUnique({
+        where: { id: decoded.sub },
+      });
+
+      if (!user || !user.aktywny) {
+        throw new BadRequestException('Konto użytkownika jest nieaktywne.');
+      }
+
+      // Odtwarzamy ten sam secret (z aktualnym hashem usera)
+      const secret = process.env.JWT_SECRET + user.haslo;
+
+      // Terz twarda weryfikacja JWT (czy nie wygasł i czy secret się zgadza)
+      jwt.verify(token, secret);
+
+      // Skoro weryfikacja przeszła, zmieniamy hasło
+      const hashed = await bcrypt.hash(passwordRaw, 10);
+      await this.prisma.extendedClient.uzytkownik.update({
+        where: { id: user.id },
+        data: { haslo: hashed },
+      });
+
+      return { message: 'Hasło zostało zmienione. Możesz się teraz bezpiecznie zalogować.' };
+      
+    } catch (e: any) {
+      console.error('Błąd resetu hasła:', e.message);
+      throw new BadRequestException('Link wygasł lub został już użyty. Wygeneruj nowy link z poziomu logowania.');
     }
-
-    const hashedPassword = await bcrypt.hash(passwordRaw, 10);
-
-    // Zapisujemy hasło i od razu "spalamy" użyty token
-    await this.prisma.uzytkownik.update({
-      where: { id: user.id },
-      data: { 
-        haslo: hashedPassword, 
-        token_resetu_hasla: null, 
-        data_waznosci_tokenu: null 
-      }
-    });
-
-    return { success: true, message: 'Twoje nowe hasło zostało pomyślnie zapisane.' };
   }
 }

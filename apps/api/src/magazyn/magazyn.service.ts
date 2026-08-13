@@ -214,7 +214,8 @@ export class MagazynService {
       if (gotoweDoZapisu.length === 0) {
         throw new BadRequestException('Brak poprawnego sprzętu do wygenerowania dokumentu.');
       }
-
+      
+      
       // Finalne generowanie Wydania (WZ/PZ) w bazie
       const id_wydarzenia = this.cleanNumber(dto.id_wydarzenia);
       const id_wynajmu = this.cleanNumber(dto.id_wynajmu);
@@ -466,18 +467,53 @@ export class MagazynService {
         },
         egzemplarze: {
           where: { aktywny: true },
-          select: { id_statusu_egzemplarza: true, status_serwisowy: true }
+          select: { 
+            id: true, 
+            id_statusu_egzemplarza: true, 
+            status_serwisowy: true,
+            // Pobieramy podsumowanie wydań, żeby wiedzieć, czy sprzęt zjechał już na magazyn
+            pozycje_wydan: {
+              where: { aktywny: true, wydanie: { aktywny: true, typ: { in: ['wydanie', 'przyjecie'] } } },
+              select: { ilosc: true, wydanie: { select: { typ: true } } }
+            }
+          }
         }
       },
       orderBy: { nazwa: 'asc' },
     });
 
     return modele.map(model => {
-      const ilosciowy = this.isSprzetIlosciowy(model);
+      const ilosciowy = model.tryb_ewidencji === 'ilosciowe' || model.typ_sprzetu === 'ilosciowe';
+      
+      let wMagazynieCount = 0;
+      let wSerwisieCount = 0;
+      let wTerenieCount = 0;
+
+      if (!ilosciowy) {
+         model.egzemplarze.forEach((e: any) => {
+             // Jeżeli uszkodzony, od razu odrzucamy z dostępnych
+             if (e.status_serwisowy?.includes('Wymaga') || e.status_serwisowy === 'W serwisie') {
+                 wSerwisieCount++;
+                 return;
+             }
+             
+             // Badamy balans wyjazdów: WZ (minus) oraz PZ (plus)
+             let wydano = 0;
+             let przyjeto = 0;
+             (e.pozycje_wydan || []).forEach((pw: any) => {
+                 if (pw.wydanie?.typ === 'wydanie') wydano += Number(pw.ilosc || 1);
+                 if (pw.wydanie?.typ === 'przyjecie') przyjeto += Number(pw.ilosc || 1);
+             });
+             
+             if (wydano - przyjeto > 0) {
+                 wTerenieCount++; // Sprzęt leży na eventach
+             } else {
+                 wMagazynieCount++; // Sprzęt jest fizycznie dostępny na półce
+             }
+         });
+      }
+
       const totalStanie = ilosciowy ? Number(model.ilosc_magazynowa || 0) : model.egzemplarze.length;
-      const wMagazynie = ilosciowy ? Number(model.ilosc_magazynowa || 0) : model.egzemplarze.filter(e => e.status_serwisowy === 'Działa' || e.status_serwisowy === 'Naprawiony').length;
-      const wSerwisie = ilosciowy ? 0 : model.egzemplarze.filter(e => e.status_serwisowy?.includes('Wymaga') || e.status_serwisowy === 'W serwisie').length;
-      const naEventach = totalStanie - wMagazynie - wSerwisie;
 
       return {
         id: model.id,
@@ -500,12 +536,12 @@ export class MagazynService {
         _count: { egzemplarze: totalStanie },
         stan: {
           total: totalStanie,
-          magazyn: wMagazynie,
-          eventy: naEventach > 0 ? naEventach : 0,
-          serwis: wSerwisie,
+          magazyn: ilosciowy ? totalStanie : wMagazynieCount,
+          eventy: ilosciowy ? 0 : wTerenieCount,
+          serwis: wSerwisieCount,
           rack: 0 
         },
-        dostepnych: wMagazynie
+        dostepnych: ilosciowy ? totalStanie : wMagazynieCount
       };
     });
   }

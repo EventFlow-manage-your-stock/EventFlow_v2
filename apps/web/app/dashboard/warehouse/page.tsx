@@ -367,10 +367,7 @@ export default function InternalWarehousePage() {
                       <td className="p-3 font-bold text-slate-500">{model.magazyn || model.lokalizacja || model.miejsce || '-'}</td>
                       <td className="p-3">
                         <div className="flex justify-end gap-1" onClick={(e) => e.stopPropagation()}>
-                          <button title="Podgląd" onClick={() => router.push(`/dashboard/warehouse/models/${model.id}`)} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"><Eye size={16} /></button>
-                          <button title="Edytuj" onClick={() => router.push(`/dashboard/warehouse/models/${model.id}?edit=1`)} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"><Edit2 size={16} /></button>
-                          <button title="Dostępność" onClick={() => router.push(`/dashboard/warehouse/models/${model.id}?tab=availability`)} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"><CalendarDays size={16} /></button>
-                          <button title="Szczegóły" onClick={() => router.push(`/dashboard/warehouse/models/${model.id}`)} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"><FileText size={16} /></button>
+                          <button title="Edytuj" onClick={() => router.push(`/dashboard/warehouse/models/${model.id}`)} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"><Edit2 size={16} /></button>
                         </div>
                       </td>
                     </tr>

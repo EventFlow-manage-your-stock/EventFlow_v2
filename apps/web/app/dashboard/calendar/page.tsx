@@ -130,6 +130,20 @@ function CalendarContent() {
   const [dict, setDict] = useState<any>({ typy: [], statusy: [], kontrahenci: [], miejsca: [], uzytkownicy: [] });
 
   const dateInputRef = useRef<HTMLInputElement>(null);
+  
+  // Pobierz zalogowanego usera, aby ukryć obce "prywatne" wydarzenia
+  const [currentUserId, setCurrentUserId] = useState<number | null>(null);
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('user') || JSON.parse(localStorage.getItem('wms-auth-storage') || '{}')?.state?.user;
+      if (stored) {
+        try {
+          const parsed = typeof stored === 'string' ? JSON.parse(stored) : stored;
+          setCurrentUserId(parsed.id);
+        } catch (e) {}
+      }
+    }
+  }, []);
 
   // Stan i logika tooltipa
   const [tooltip, setTooltip] = useState<{ show: boolean; item: CalendarItem | null; x: number; y: number }>({ show: false, item: null, x: 0, y: 0 });
@@ -214,7 +228,15 @@ function CalendarContent() {
         api.get('/api/slowniki/miejsca').catch(() => ({ data: [] })),
         api.get('/api/slowniki/uzytkownicy').catch(() => ({ data: [] })),
       ]);
-      setItems((cal.data.items || cal.data || []).map((i: any) => ({ ...i, typ: normalizeType(i.typ) })));
+      const fetchedItems = (cal.data.items || cal.data || []).map((i: any) => ({ ...i, typ: normalizeType(i.typ) }));
+      
+      // Ukryj wydarzenia prywatne, jeśli użytkownik nie jest ich twórcą
+      setItems(fetchedItems.filter((item: any) => {
+         if (item.typ === 'Wydarzenie prywatne' || item.typ?.toLowerCase() === 'wydarzenie prywatne') {
+            return item.sourceId_creator === currentUserId; // wymaga aby backend API przesyłał id twórcy, w przeciwnym razie odrzuć
+         }
+         return true;
+      }));
       setDict({ typy: typy.data || [], statusy: statusy.data || [], kontrahenci: kontrahenci.data || [], miejsca: miejsca.data || [], uzytkownicy: uzytkownicy.data || [] });
     } catch (e: any) {
       setItems([]);
@@ -551,8 +573,14 @@ function WeekStrip({ week, cursor, view, items, onDayClick, onBarEnter, onBarLea
 
 function buildBars(items: CalendarItem[], weekStart: Date, weekEnd: Date, columns: number) {
   const today = startOfDay(new Date());
-  const rows: number[] = [];
+  
+  // Rzędy są śledzone jako lista zarezerwowanych "endCol" w danym rzędzie.
+  // By zapobiec skakaniu pasków 1 eventu w różne wiersze na 1 widoku, musimy śledzić je po "item.id".
+  const rows: number[] = []; 
   const out: any[] = [];
+  
+  // Mapa przydziałów wiersza dla danego ID eventu w tym renderingu widoku
+  const itemRowAssignments = new Map<string, number>();
 
   const segments = items.flatMap((item) => {
     const start = startOfDay(new Date(item.start));
@@ -607,17 +635,29 @@ function buildBars(items: CalendarItem[], weekStart: Date, weekEnd: Date, column
     }
     return parts;
   }).sort((a, b) => {
-    const d = dayDiff(a.start, weekStart) - dayDiff(b.start, weekStart);
+    // Główne sortowanie, które upewnia się, że te najwcześniejsze lub najdłuższe paski alokują wiersze pierwsze.
+    const d = dayDiff(a.item.start ? new Date(a.item.start) : a.start, weekStart) - dayDiff(b.item.start ? new Date(b.item.start) : b.start, weekStart);
     if (d !== 0) return d;
-    return dayDiff(b.end, b.start) - dayDiff(a.end, a.start);
+    return dayDiff(b.item.koniec ? new Date(b.item.koniec) : b.end, b.item.start ? new Date(b.item.start) : b.start) - dayDiff(a.item.koniec ? new Date(a.item.koniec) : a.end, a.item.start ? new Date(a.item.start) : a.start);
   });
 
   for (const seg of segments) {
     const startCol = Math.max(0, Math.min(columns - 1, dayDiff(seg.start, weekStart)));
     const endCol = Math.max(startCol, Math.min(columns - 1, dayDiff(seg.end, weekStart)));
-    let row = rows.findIndex((lastEnd) => lastEnd < startCol);
-    if (row === -1) { row = rows.length; rows.push(endCol); }
-    else rows[row] = endCol;
+    
+    // Używamy globalnego ID eventu, aby jeśli segment jest częścią tego samego wydarzenia (np. pół przeszłe/pół dzisiejsze), trzymał wiersz.
+    let row = itemRowAssignments.get(seg.item.id);
+    
+    if (row === undefined) {
+       row = rows.findIndex((lastEndCol) => lastEndCol < startCol);
+       if (row === -1) { 
+          row = rows.length; 
+       }
+       itemRowAssignments.set(seg.item.id, row);
+    }
+    
+    rows[row] = Math.max(rows[row] || 0, endCol);
+
     out.push({
       key: `${seg.item.id}-${iso(seg.start)}-${iso(seg.end)}-${seg.past ? 'past' : 'now'}`,
       item: seg.item,

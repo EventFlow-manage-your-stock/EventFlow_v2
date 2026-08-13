@@ -7,10 +7,16 @@ export class UzytkownicyService {
   constructor(private prisma: PrismaService) {}
 
   async findAll(id_organizacji: number) {
-    return this.prisma.extendedClient.uzytkownik.findMany({
+    const users = await this.prisma.extendedClient.uzytkownik.findMany({
       where: { id_organizacji, aktywny: true },
       include: { role: { include: { rola: true } } },
       orderBy: { nazwisko: 'asc' },
+    });
+
+    // Usuwamy hash hasła z wyników, aby uniknąć podwójnego hashowania przy edycji
+    return users.map(user => {
+      const { haslo, ...safeUser } = user;
+      return safeUser;
     });
   }
 
@@ -19,8 +25,12 @@ export class UzytkownicyService {
       where: { id, id_organizacji, aktywny: true },
       include: { role: { include: { rola: true } } },
     });
+
     if (!user) throw new NotFoundException('Nie znaleziono użytkownika');
-    return user;
+
+    // Usuwamy hash hasła z wyników
+    const { haslo, ...safeUser } = user;
+    return safeUser;
   }
 
   async create(dto: any, id_organizacji: number) {

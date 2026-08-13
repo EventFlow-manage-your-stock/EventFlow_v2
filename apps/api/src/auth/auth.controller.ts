@@ -1,4 +1,4 @@
-import { Controller, Post, Body, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Post, Body, HttpCode, HttpStatus, BadRequestException } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { Public } from './decorators/public.decorator';
 
@@ -25,14 +25,19 @@ export class AuthController {
   }
 
   @Public()
+  @HttpCode(HttpStatus.OK)
   @Post('forgot-password')
-  async forgotPassword(@Body() body: { email: string }) {
-    return this.authService.forgotPassword(body.email);
+  async forgotPassword(@Body('email') email: string) {
+    if (!email) throw new BadRequestException('Brak adresu e-mail');
+    return this.authService.forgotPassword(email);
   }
 
   @Public()
+  @HttpCode(HttpStatus.OK)
   @Post('reset-password')
   async resetPassword(@Body() body: { token: string; passwordRaw: string }) {
+    if (!body.token || !body.passwordRaw) throw new BadRequestException('Brak wymaganych danych');
     return this.authService.resetPassword(body.token, body.passwordRaw);
   }
+  
 }

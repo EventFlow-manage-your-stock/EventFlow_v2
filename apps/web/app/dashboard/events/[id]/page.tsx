@@ -1697,7 +1697,7 @@ function EquipmentPanel({ eventId, eventName }: { eventId: number; eventName: st
                     <div className="min-w-0 flex-1 pr-2">
                       <p className="truncate font-black text-slate-900 dark:text-white leading-tight">{model.nazwa}</p>
                       <p className="truncate text-[11px] font-bold text-slate-400 mt-1">{model.kategoria_nazwa}</p>
-                      <p className="mt-1.5 text-[11px] font-black text-[#04e0ff]">Dostępne w magazynie: <span className="text-slate-800 dark:text-slate-200 ml-1">{model.dostepne ?? model.ilosc_dostepna ?? model.na_stanie ?? 0}</span></p>
+                      <p className="mt-1.5 text-[11px] font-black text-[#04e0ff]">Dostępne w magazynie: <span className="text-slate-800 dark:text-slate-200 ml-1">{model.dostepnych ?? model.dostepne ?? model.ilosc_dostepna ?? model.na_stanie ?? 0}</span></p>
                     </div>
                   </div>
                   <div className="mt-4 grid grid-cols-[44px_1fr_44px] gap-2 pt-4 border-t border-slate-100 dark:border-white/5">
