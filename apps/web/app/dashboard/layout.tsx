@@ -24,12 +24,12 @@ type MenuItem = {
 // Mapowanie linków do wymaganych uprawnień (ACL z permissions.enum.ts)
 const menuConfig: MenuItem[] = [
   { icon: Home, label: 'Kokpit', href: '/dashboard' },
-  { icon: CheckSquare, label: 'Zadania', href: '/dashboard/tasks' },
   { icon: Calendar, label: 'Kalendarz', href: '/dashboard/calendar' },
   { icon: Star, label: 'Wydarzenia', requiredPermission: 'events:view', children: [
     { label: 'Lista wydarzeń', href: '/dashboard/events', icon: Star },
     { label: 'Wypożyczenia', href: '/dashboard/rentals', icon: Truck },
     { label: 'Urlopy', href: '/dashboard/leaves', icon: Palmtree },
+    { label: 'Przeniesienia', href: '/dashboard/warehouse/transfers', icon: ArrowRight, requiredPermission: 'events:manage' },
   ]},
   { icon: Users, label: 'Kontrahenci', requiredPermission: 'crm:view', children: [
     { label: 'Lista kontrahentów', href: '/dashboard/crm', icon: Users },
@@ -37,15 +37,16 @@ const menuConfig: MenuItem[] = [
   ]},
   { icon: Box, label: 'Magazyn', requiredPermission: 'warehouse:view', children: [
     { label: 'Magazyn wewnętrzny', href: '/dashboard/warehouse', icon: Box },
-    { label: 'Ceny', href: '/dashboard/warehouse/pricing', icon: Tags, requiredPermission: 'warehouse:manage' },
-    { label: 'Wydania i przyjęcia', href: '/dashboard/warehouse/receiving', icon: Truck },
-    { label: 'Niezwrócony sprzęt', href: '/dashboard/warehouse/unreturned', icon: Truck },
     { label: 'Modele', href: '/dashboard/warehouse/models', icon: Box },
     { label: 'Egzemplarze', href: '/dashboard/warehouse/items', icon: Box },
     { label: 'Opakowania', href: '/dashboard/warehouse/packages', icon: Box },
     { label: 'Pakiety Ofertowe', href: '/dashboard/warehouse/bundles', icon: Layers },
+    { label: 'Ceny', href: '/dashboard/warehouse/pricing', icon: Tags, requiredPermission: 'warehouse:manage' },
+    { label: 'Wydania i przyjęcia', href: '/dashboard/warehouse/receiving', icon: Truck },
+    { label: 'Niezwrócony sprzęt', href: '/dashboard/warehouse/unreturned', icon: Truck },
     { label: 'Kategorie', href: '/dashboard/warehouse/categories', icon: Tags },
   ]},
+  { icon: CheckSquare, label: 'Zadania', href: '/dashboard/tasks' },
   { icon: Wrench, label: 'Serwis', requiredPermission: 'service:view', children: [
     { label: 'Zgłoszenia', href: '/dashboard/service', icon: Wrench },
     { label: 'Statusy serwisowe', href: '/dashboard/service/statuses', icon: Tags, requiredPermission: 'settings:view' },

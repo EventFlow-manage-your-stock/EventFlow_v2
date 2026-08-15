@@ -18,6 +18,7 @@ export type EntityField = {
   optionValue?: (row: any) => string | number;
   placeholder?: string;
   colSpan?: 'full';
+  defaultValue?: any;
 };
 
 export type EntityEditorConfig = {
@@ -27,6 +28,7 @@ export type EntityEditorConfig = {
   getEndpoint: (id: string) => string;
   updateEndpoint: (id: string) => string;
   deleteEndpoint?: (id: string) => string;
+  createEndpoint?: string; 
   fields: EntityField[];
   tabs?: { id: string; label: string; icon?: any; render?: (record: any) => any }[];
   dictionaries?: Record<string, string>;
@@ -91,8 +93,8 @@ export function EntityEditorPage({ config }: { config: EntityEditorConfig }) {
   const params = useParams();
   const router = useRouter();
   const id = String(params.id);
+  const isNew = id === 'new';
 
-  // 1. Najpierw określamy dostępne zakładki (z konfiguracji lub domyślne)
   const tabs = config.tabs?.length ? config.tabs : DEFAULT_TABS;
 
   const [record, setRecord] = useState<any>(null);
@@ -101,8 +103,6 @@ export function EntityEditorPage({ config }: { config: EntityEditorConfig }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  
-  // 2. Domyślnie ustawiamy ID pierwszej dostępnej zakładki dla danej podstrony
   const [activeTab, setActiveTab] = useState(tabs[0]?.id || 'szczegoly');
 
   async function load() {
@@ -110,16 +110,31 @@ export function EntityEditorPage({ config }: { config: EntityEditorConfig }) {
     setError('');
     try {
       const dictEntries = Object.entries(config.dictionaries || {});
-      const [main, ...dictionaryResponses] = await Promise.all([
-        api.get(config.getEndpoint(id)),
-        ...dictEntries.map(([, endpoint]) => api.get(endpoint).catch(() => ({ data: [] }))),
-      ]);
-      const rec = main.data;
+      const dictPromises = dictEntries.map(([, endpoint]) => api.get(endpoint).catch(() => ({ data: [] })));
+      
+      let rec: any = null;
+      let dictResponses: any[] = [];
+
+      // Unikamy rzucenia błędu ParseIntPipe w API poprzez odcięcie metody strzału dla "new"
+      if (isNew) {
+        dictResponses = await Promise.all(dictPromises);
+        rec = {};
+      } else {
+        const [main, ...rest] = await Promise.all([
+          api.get(config.getEndpoint(id)),
+          ...dictPromises,
+        ]);
+        rec = main.data;
+        dictResponses = rest;
+      }
+
       setRecord(rec);
       const nextForm: any = {};
-      for (const field of config.fields) nextForm[field.key] = toInputValue(rec?.[field.key], field.type);
+      for (const field of config.fields) {
+        nextForm[field.key] = toInputValue(rec?.[field.key] ?? field.defaultValue, field.type);
+      }
       setForm(nextForm);
-      setDict(Object.fromEntries(dictEntries.map(([key], index) => [key, dictionaryResponses[index]?.data || []])));
+      setDict(Object.fromEntries(dictEntries.map(([key], index) => [key, dictResponses[index]?.data || []])));
     } catch (err: any) {
       setError(err?.response?.data?.message || err.message || 'Nie udało się wczytać rekordu.');
     } finally {
@@ -141,26 +156,36 @@ export function EntityEditorPage({ config }: { config: EntityEditorConfig }) {
     setError('');
     try {
       const payload = config.normalizePayload ? config.normalizePayload(form) : cleanPayload(form, fields);
-      const res = await api.put(config.updateEndpoint(id), payload);
-      setRecord(res.data || { ...record, ...payload });
-      config.afterSave?.(res.data);
-      await load();
+      
+      if (isNew) {
+        // Oblicz endpoint dla POST na podstawie podanych konfigów
+        const createUrl = config.createEndpoint || config.updateEndpoint('new').replace(/\/new$/, '');
+        const res = await api.post(createUrl, payload);
+        config.afterSave?.(res.data);
+        router.push(`${config.listHref}/${res.data.id}`);
+        return; // Zatrzymujemy flow na czas nawigacji
+      } else {
+        const res = await api.put(config.updateEndpoint(id), payload);
+        setRecord(res.data || { ...record, ...payload });
+        config.afterSave?.(res.data);
+        await load();
+      }
     } catch (err: any) {
       setError(err?.response?.data?.message || err.message || 'Nie udało się zapisać zmian.');
     } finally {
-      setSaving(false);
+      if (!isNew) setSaving(false);
     }
   }
 
   async function remove() {
-    if (!config.deleteEndpoint) return;
+    if (!config.deleteEndpoint || isNew) return;
     if (!confirm('Na pewno usunąć ten rekord?')) return;
     await api.delete(config.deleteEndpoint(id));
     router.push(config.listHref);
   }
 
-  const title = record ? (config.titleFromRecord?.(record) || record.nazwa || record.tytul || record.numer || `#${record.id}`) : config.title;
-  const subtitle = record ? (config.subtitleFromRecord?.(record) || `ID ${record.id}`) : '';
+  const title = isNew ? `Dodaj nowy rekord` : (record ? (config.titleFromRecord?.(record) || record.nazwa || record.tytul || record.numer || `#${record.id}`) : config.title);
+  const subtitle = isNew ? '' : (record ? (config.subtitleFromRecord?.(record) || `ID ${record.id}`) : '');
 
   if (loading) {
     return <div className="flex h-96 items-center justify-center"><Loader2 className="animate-spin text-cyan-600" /> <span className="ml-3 font-bold text-slate-500">Ładowanie modułu edycji...</span></div>;
@@ -179,7 +204,7 @@ export function EntityEditorPage({ config }: { config: EntityEditorConfig }) {
         <div className="flex flex-wrap gap-2">
           {config.extraActions}
           <Button variant="secondary" onClick={() => { if (window.history.length > 1) router.back(); else router.push(config.listHref); }}><ArrowLeft size={16} className="inline" /> Powrót</Button>
-          {config.deleteEndpoint && <Button variant="danger" onClick={remove}><Trash2 size={16} className="inline" /> Usuń</Button>}
+          {!isNew && config.deleteEndpoint && <Button variant="danger" onClick={remove}><Trash2 size={16} className="inline" /> Usuń</Button>}
           <Button onClick={submit} disabled={saving}><Save size={16} className="inline" /> {saving ? 'Zapisywanie...' : 'Zapisz'}</Button>
         </div>
       </div>
@@ -187,10 +212,10 @@ export function EntityEditorPage({ config }: { config: EntityEditorConfig }) {
       {error && <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-700">{error}</div>}
 
       <div className="grid gap-3 md:grid-cols-4">
-        <Metric label="Numer / ID" value={record?.numer || `#${record?.id}`} />
-        <Metric label="Status" value={formatValue(record?.status || record?.status_serwisowy || record?.aktywny)} />
-        <Metric label="Utworzono" value={record?.data_utworzenia ? new Date(record.data_utworzenia).toLocaleString('pl-PL') : '-'} />
-        <Metric label="Zmieniono" value={record?.data_aktualizacji ? new Date(record.data_aktualizacji).toLocaleString('pl-PL') : '-'} />
+        <Metric label="Numer / ID" value={isNew ? 'Nowy' : (record?.numer || `#${record?.id}`)} />
+        <Metric label="Status" value={isNew ? 'Szkic' : formatValue(record?.status || record?.status_serwisowy || record?.aktywny)} />
+        <Metric label="Utworzono" value={isNew ? '-' : (record?.data_utworzenia ? new Date(record.data_utworzenia).toLocaleString('pl-PL') : '-')} />
+        <Metric label="Zmieniono" value={isNew ? '-' : (record?.data_aktualizacji ? new Date(record.data_aktualizacji).toLocaleString('pl-PL') : '-')} />
       </div>
 
       <form onSubmit={submit} className="grid gap-5 xl:grid-cols-[1.25fr_.75fr]">
@@ -249,7 +274,7 @@ export function EntityEditorPage({ config }: { config: EntityEditorConfig }) {
         <Card className="space-y-4">
           <div className="flex items-center gap-4">
             <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-cyan-100 text-xl font-black text-cyan-700 shadow-inner">
-              {form.zdjecie ? <img src={form.zdjecie} className="h-full w-full object-cover"/> : initials(record)}
+              {form.zdjecie ? <img src={form.zdjecie} className="h-full w-full object-cover"/> : initials(record || form)}
             </div>
             <div>
               <p className="font-black text-slate-900 leading-tight">{title}</p>
@@ -257,10 +282,9 @@ export function EntityEditorPage({ config }: { config: EntityEditorConfig }) {
             </div>
           </div>
           <div className="grid gap-3">
-            <Info label="ID rekordu" value={`#${record?.id}`} />
+            <Info label="ID rekordu" value={isNew ? 'Nowy' : `#${record?.id}`} />
             <Info label="Aktywny" value={record?.aktywny === false ? 'Nie' : 'Tak'} />
-            <InfoImage label="Źródło" value={<Image src="/eve_nt_primary_transparent.png" alt="EVE-nt" width={160} height={60} className="mt-2" priority/>} />
-            
+            <InfoImage label="Źródło" value={<Image src="/eventflow-logo-dark.svg" alt="EventFlow" width={120} height={40} className="mt-2" priority/>} />
           </div>
         </Card>
       </form>
@@ -274,7 +298,11 @@ export function EntityEditorPage({ config }: { config: EntityEditorConfig }) {
           })}
         </div>
         <div className="p-5">
-          {tabs.find((t) => t.id === activeTab)?.render ? tabs.find((t) => t.id === activeTab)?.render?.(record) : <DefaultTab id={activeTab} record={record} />}
+          {isNew ? (
+            <p className="font-bold text-slate-500">Zapisz najpierw nowy rekord górnym przyciskiem "Zapisz", aby móc przeglądać dodatkowe informacje i powiązania w zakładkach.</p>
+          ) : (
+            tabs.find((t) => t.id === activeTab)?.render ? tabs.find((t) => t.id === activeTab)?.render?.(record) : <DefaultTab id={activeTab} record={record} />
+          )}
         </div>
       </Card>
     </div>
@@ -288,8 +316,9 @@ function Metric({ label, value }: { label: string; value: any }) {
 function Info({ label, value }: { label: string; value: any }) {
   return <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3"><p className="text-[11px] font-black uppercase tracking-wider text-slate-400">{label}</p><p className="mt-1 text-sm font-black text-slate-800">{formatValue(value)}</p></div>;
 }
+
 function InfoImage({ label, value }: { label: string; value: any }) {
-  return <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3"><p className="text-[11px] font-black uppercase tracking-wider text-slate-400">{label}</p><p className="mt-1 text-sm font-black text-slate-800">{value}</p></div>;
+  return <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3"><p className="text-[11px] font-black uppercase tracking-wider text-slate-400">{label}</p><div className="mt-1">{value}</div></div>;
 }
 
 function DefaultTab({ id, record }: { id: string; record: any }) {

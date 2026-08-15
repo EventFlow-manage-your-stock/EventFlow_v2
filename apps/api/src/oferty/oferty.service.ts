@@ -78,7 +78,11 @@ export class OfertyService {
       const wersja = await tx.wersjaOferty.create({
         data: { id_organizacji, id_oferty: oferta.id, numer_wersji: 1, nazwa: oferta.nazwa, id_uzytkownika_utworzyl: id_uzytkownika },
       });
-      await tx.sekcjaOferty.create({ data: { id_organizacji, id_wersji_oferty: wersja.id, nazwa: 'Grupa główna', kolejnosc: 1 } });
+      
+      await tx.sekcjaOferty.create({ data: { id_organizacji, id_wersji_oferty: wersja.id, nazwa: 'Sprzęt', kolejnosc: 1 } });
+      await tx.sekcjaOferty.create({ data: { id_organizacji, id_wersji_oferty: wersja.id, nazwa: 'Usługi', kolejnosc: 2 } });
+      await tx.sekcjaOferty.create({ data: { id_organizacji, id_wersji_oferty: wersja.id, nazwa: 'Transport', kolejnosc: 3 } });
+
       return oferta;
     });
   }

@@ -653,7 +653,7 @@ function OffersPanel({ offers, mainOfferId, setMainOfferId, offerName, setOfferN
 
   return <div className="space-y-6">
     <div className="grid gap-4 rounded-[24px] border border-cyan-100 dark:border-white/10 bg-cyan-50/50 dark:bg-white/5 p-5 lg:grid-cols-[1fr_1fr_auto] lg:items-end">
-      <Field label="Wybierz Główną Ofertę">
+      <Field label="Wybierz Ofertę Bazową">
         <SearchableSelect value={mainOfferId || ''} onChange={(v) => setMainOfferId(v)} options={offers.map((o: any) => ({ value: String(o.id), label: `${o.numer || `#${o.id}`} · ${o.nazwa}` }))} placeholder="Brak" />
       </Field>
       <Field label="Nazwa nowej oferty"><input className={inputClass} value={offerName} onChange={(e) => setOfferName(e.target.value)} /></Field>

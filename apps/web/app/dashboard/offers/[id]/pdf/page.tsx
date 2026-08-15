@@ -35,17 +35,22 @@ function asNumber(value: any, fallback = 0) {
   return Number.isFinite(n) ? n : fallback;
 }
 
-function calcNetto(p: any) {
+function lineWeight(p: any) {
+  const unitWeight = asNumber(p.model?.waga, 0);
+  return unitWeight * asNumber(p.ilosc, 1);
+}
+function formatKg(val: number) {
+  return val > 0 ? `${val.toFixed(2)} kg` : '-';
+}
+
+function lineNetto(p: any) {
+  const saved = asNumber(p.razem_netto, 0);
+  if (saved > 0) return saved;
   const cena = asNumber(p.cena_netto, 0);
   const ilosc = asNumber(p.ilosc, 1);
   const dni = asNumber(p.dni_pracy, 1);
   const rabat = asNumber(p.rabat_proc, 0);
   return cena * ilosc * dni * (1 - rabat / 100);
-}
-
-function lineNetto(p: any) {
-  const saved = asNumber(p.razem_netto, 0);
-  return saved > 0 ? saved : calcNetto(p);
 }
 
 function lineVat(p: any) {
@@ -78,12 +83,17 @@ export default function OfferPdfPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  // Konfiguracja widoku z parametrów URL (przesłanych z Modala opcji)
+  // Konfiguracja widoku z parametrów URL przysłanych z okna drukowania na ofercie
   const showUnitPrices = searchParams.get('showUnitPrices') !== 'false';
   const showDiscounts = searchParams.get('showDiscounts') !== 'false';
   const showDays = searchParams.get('showDays') !== 'false';
   const showSectionSummary = searchParams.get('showSectionSummary') !== 'false';
   const showThumbnails = searchParams.get('showThumbnails') === 'true';
+  const showWeight = searchParams.get('showWeight') === 'true';
+  const showVat = searchParams.get('showVat') === 'true';
+  const showSummaryNetto = searchParams.get('showSummaryNetto') !== 'false';
+  const showSummaryVat = searchParams.get('showSummaryVat') !== 'false';
+  const showSummaryBrutto = searchParams.get('showSummaryBrutto') !== 'false';
 
   useEffect(() => {
     if (!id) return;
@@ -113,7 +123,6 @@ export default function OfferPdfPage() {
     return { netto, vat, brutto };
   }, [sections]);
 
-  // Inteligentne ukrywanie kolumny z rabatami, jeżeli żaden wpis na ofercie nie posiada zniżki
   const hasAnyDiscount = useMemo(() => {
     return sections.some((s: any) => s.pozycje.some((p: any) => Number(p.rabat_proc) > 0 || Number(p.rabat_netto) > 0));
   }, [sections]);
@@ -453,7 +462,6 @@ export default function OfferPdfPage() {
           letter-spacing: -0.04em;
         }
 
-
         .pdf-footer {
           display: flex;
           justify-content: space-between;
@@ -480,28 +488,23 @@ export default function OfferPdfPage() {
           body {
             background: white !important;
           }
-
           .pdf-toolbar {
             display: none !important;
           }
-
           .pdf-page {
             width: auto;
             min-height: auto;
             margin: 0;
             box-shadow: none;
           }
-
           .pdf-sheet {
             padding: 0;
           }
-
           .pdf-section,
           .pdf-card,
           .pdf-summary {
             break-inside: avoid;
           }
-
           .pdf-hero,
           .pdf-section-header,
           .pdf-totals,
@@ -522,7 +525,7 @@ export default function OfferPdfPage() {
         <div className="pdf-sheet">
           <header className="pdf-hero">
             <div>
-              <img className="pdf-logo" src="/eventflow-logo-sidebar.svg" alt="EventFlow" />
+              <img className="pdf-logo" src="/eve_nt_primary_with_symbol_reverse_transparent.png" alt="EVE-nt" />
               <p className="pdf-kicker">Oferta dla klienta</p>
               <h1>{text(offer.nazwa, 'Oferta')}</h1>
               <p className="pdf-subtitle">
@@ -586,10 +589,12 @@ export default function OfferPdfPage() {
                     {showThumbnails && <th style={{ width: '50px' }}>Foto</th>}
                     <th style={{ width: showThumbnails ? '32%' : '40%' }}>Pozycja</th>
                     <th>Opis</th>
+                    {showWeight && <th className="pdf-text-right">Waga</th>}
                     {showUnitPrices && <th className="pdf-text-right">Cena</th>}
                     <th className="pdf-text-right">Ilość</th>
                     {showDays && <th className="pdf-text-right">Dni</th>}
                     {actuallyShowDiscounts && <th className="pdf-text-right">Rabat</th>}
+                    {showVat && <th className="pdf-text-right">VAT%</th>}
                     <th className="pdf-text-right">Netto</th>
                   </tr>
                 </thead>
@@ -610,12 +615,14 @@ export default function OfferPdfPage() {
                         </div>
                       </td>
                       <td>{text(p.opis || p.uwagi, '')}</td>
+                      {showWeight && <td className="pdf-text-right">{formatKg(lineWeight(p))}</td>}
                       {showUnitPrices && <td className="pdf-text-right">{money(p.cena_netto)}</td>}
                       <td className="pdf-text-right font-bold">{asNumber(p.ilosc, 1)} {p.model?.jednostka || 'szt.'}</td>
                       {showDays && <td className="pdf-text-right">{asNumber(p.dni_pracy, 1)}</td>}
                       {actuallyShowDiscounts && (
                          <td className="pdf-text-right">{asNumber(p.rabat_proc, 0) > 0 ? `${asNumber(p.rabat_proc, 0)}%` : '-'}</td>
                       )}
+                      {showVat && <td className="pdf-text-right">{asNumber(p.vat, 23)}%</td>}
                       <td className="pdf-text-right"><strong>{money(lineNetto(p))}</strong></td>
                     </tr>
                   ))}
@@ -645,14 +652,14 @@ export default function OfferPdfPage() {
             </div>
 
             <div className="pdf-totals">
-              <div className="pdf-total-row"><span>Razem netto</span><strong>{money(summary.netto)}</strong></div>
-              <div className="pdf-total-row"><span>VAT</span><strong>{money(summary.vat)}</strong></div>
-              <div className="pdf-grand"><span>Razem brutto</span><span>{money(summary.brutto)}</span></div>
+              {showSummaryNetto && <div className="pdf-total-row"><span>Razem netto</span><strong>{money(summary.netto)}</strong></div>}
+              {showSummaryVat && <div className="pdf-total-row"><span>VAT</span><strong>{money(summary.vat)}</strong></div>}
+              {showSummaryBrutto && <div className="pdf-grand"><span>Razem brutto</span><span>{money(summary.brutto)}</span></div>}
             </div>
           </section>
 
           <footer className="pdf-footer">
-            <span>Ofertę wygenerowano w systemie EventFlow</span>
+            <span>Ofertę wygenerowano w systemie EVE-nt</span>
             <span>{text(offer.numer)} · {date(new Date())}</span>
           </footer>
         </div>

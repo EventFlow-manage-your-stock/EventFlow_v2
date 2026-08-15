@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { ArrowLeft, ArrowUp, ArrowDown, Box, Calculator, CheckCircle2, Copy, FileText, Layers, Link as LinkIcon, Mail, PackagePlus, Pencil, Plus, Save, Search, Trash2, Printer, Calendar, MapPin, Loader2 } from 'lucide-react';
+import { ArrowLeft, Box, Calculator, CheckCircle2, Copy, FileText, Layers, Link as LinkIcon, Mail, PackagePlus, Pencil, Plus, Save, Search, Trash2, Printer, Calendar, MapPin, Loader2 } from 'lucide-react';
 import { api } from '../../../../lib/api';
 import { Button, Card, Field, inputClass, PageTitle, SearchableSelect } from '../../../../components/ProductUI';
 import { SimpleModal } from '../../../../components/SimpleModal';
@@ -32,7 +32,6 @@ const positionTypes = [
   { value: 'usluga', label: 'Usługa' },
 ];
 
-// --- HELPERY KATEGORII ---
 function numberOrZero(value: any) { return Number.isFinite(Number(value)) ? Number(value) : 0; }
 function modelCategoryId(model: any) { return String(model?.kategoria?.id || model?.id_kategorii || model?.kategoria_id || ''); }
 function getCategoryParentId(cat: any) { return cat?.id_rodzica || cat?.id_kategorii_glownej || cat?.parent_id || null; }
@@ -88,12 +87,8 @@ function categoryPath(categoryId: string, byId: Map<string, any>) {
   return parts.join(' / ');
 }
 
-// Styl dla inputów wewnątrz tabeli (Spreadsheet-like)
 const tableInputClass = "w-full border border-transparent bg-transparent hover:border-slate-300 focus:border-cyan-500 focus:bg-white rounded-lg px-2 py-1.5 outline-none transition font-semibold text-slate-800 placeholder-slate-300";
 
-// ============================================================================
-// KOMPONENT WYSZUKIWARKI INLINE (Szybkie dodawanie)
-// ============================================================================
 function InlineEquipmentAdder({ sectionId, models, onAdd }: { sectionId: number, models: any[], onAdd: (model: any) => void }) {
   const [query, setQuery] = useState('');
   const [isFocused, setIsFocused] = useState(false);
@@ -139,15 +134,11 @@ function InlineEquipmentAdder({ sectionId, models, onAdd }: { sectionId: number,
   );
 }
 
-// ============================================================================
-// GŁÓWNY KOMPONENT OFERTY
-// ============================================================================
 export default function OfferDetailsPage() {
   const params = useParams();
   const router = useRouter();
   const id = Array.isArray(params.id) ? params.id[0] : params.id;
   
-  // Dane z API
   const [offer, setOffer] = useState<any>(null);
   const [localSections, setLocalSections] = useState<any[]>([]);
   const [models, setModels] = useState<any[]>([]);
@@ -155,25 +146,21 @@ export default function OfferDetailsPage() {
   const [bundles, setBundles] = useState<any[]>([]);
   const [dict, setDict] = useState<any>({ kontrahenci: [], statusy: [] });
   
-  // Stany formularzy / modali
   const [offerMetaForm, setOfferMetaForm] = useState<any>({});
   const [metaDirty, setMetaDirty] = useState(false);
   const [showSection, setShowSection] = useState(false);
   const [showSectionEdit, setShowSectionEdit] = useState<any>(null);
   const [showEquipment, setShowEquipment] = useState<any>(null);
-  const [showItem, setShowItem] = useState<any>(null);
   const [showBudget, setShowBudget] = useState(false);
   const [showBundle, setShowBundle] = useState<any>(null);
   const [form, setForm] = useState<any>({});
   const [budgetForm, setBudgetForm] = useState<any>({ budzet_netto: '', algorytm: '', pomin_sekcje_ids: [] });
   
-  // Magazyn Picker
   const [equipmentSearch, setEquipmentSearch] = useState('');
   const [equipmentRoot, setEquipmentRoot] = useState('all');
   const [equipmentSub, setEquipmentSub] = useState('');
   const [equipmentQuickQty, setEquipmentQuickQty] = useState<Record<string, string>>({});
   
-  // Auto-Zapis i Status
   const [savingId, setSavingId] = useState<number | null>(null);
   const [autoSaveStatus, setAutoSaveStatus] = useState<'idle'|'saving'|'saved'>('idle');
   const [error, setError] = useState('');
@@ -181,9 +168,20 @@ export default function OfferDetailsPage() {
   const [dirtyItems, setDirtyItems] = useState<Record<number, any>>({});
   const [notice, setNotice] = useState('');
 
-  // Opcje PDF
+  // NOWE CHECKBOXY DO PDF
   const [showPdfSettings, setShowPdfSettings] = useState(false);
-  const [pdfConfig, setPdfConfig] = useState({ showUnitPrices: true, showDiscounts: true, showDays: true, showSectionSummary: true, showThumbnails: false });
+  const [pdfConfig, setPdfConfig] = useState({ 
+    showUnitPrices: true, 
+    showDiscounts: true, 
+    showDays: true, 
+    showSectionSummary: true, 
+    showThumbnails: false,
+    showWeight: false,
+    showVat: false,
+    showSummaryNetto: true,
+    showSummaryVat: true,
+    showSummaryBrutto: true 
+  });
 
   async function load() {
     const [o, m, k, b, kon, stat] = await Promise.all([
@@ -215,15 +213,11 @@ export default function OfferDetailsPage() {
 
   useEffect(() => { load(); }, [id]);
 
-  // ==========================================================================
-  // OBLICZENIA I PODSUMOWANIA (Dynamiczne, uwzględniające Dirty Items)
-  // ==========================================================================
   const summary = useMemo(() => {
-    let sprzet = 0, transport = 0, obsluga = 0, nocleg = 0, inne = 0;
+    let sprzet = 0, transport = 0, obsluga = 0, nocleg = 0, usluga = 0, inne = 0;
     const positions = localSections.flatMap((s: any) => s.pozycje || []);
     
     positions.forEach((p: any) => {
-      // Bierzemy pod uwagę niezatwierdzone zmiany z Auto-Save
       const current = dirtyItems[p.id] ? { ...p, ...dirtyItems[p.id] } : p;
       const total = current.razem_netto !== undefined && !dirtyItems[p.id] ? Number(current.razem_netto) : calc(current);
       
@@ -231,16 +225,14 @@ export default function OfferDetailsPage() {
       else if (current.typ_pozycji === 'transport') transport += total;
       else if (current.typ_pozycji === 'obsluga') obsluga += total;
       else if (current.typ_pozycji === 'nocleg') nocleg += total;
+      else if (current.typ_pozycji === 'usluga') usluga += total;
       else inne += total;
     });
 
-    const netto = sprzet + transport + obsluga + nocleg + inne;
-    return { sprzet, transport, obsluga, nocleg, inne, netto, vat: netto * 0.23, brutto: netto * 1.23 };
+    const netto = sprzet + transport + obsluga + nocleg + usluga + inne;
+    return { sprzet, transport, obsluga, nocleg, usluga, inne, netto, vat: netto * 0.23, brutto: netto * 1.23 };
   }, [localSections, dirtyItems]);
 
-  // ==========================================================================
-  // AUTO-SAVE MECHANIZM
-  // ==========================================================================
   const dirtyCount = Object.keys(dirtyItems).length;
 
   const registerDirtyItem = useCallback((itemId: number, patch: any | null) => {
@@ -257,13 +249,10 @@ export default function OfferDetailsPage() {
     setMetaDirty(true);
   }
 
-  // Automatyczny zapis po 1.5 sekundy od ostatniej zmiany
   useEffect(() => {
     if (dirtyCount === 0 && !metaDirty) return;
     setAutoSaveStatus('saving');
-    const timer = setTimeout(() => {
-      saveAllChanges();
-    }, 1500);
+    const timer = setTimeout(() => { saveAllChanges(); }, 1500);
     return () => clearTimeout(timer);
   }, [dirtyItems, offerMetaForm, metaDirty]);
 
@@ -274,8 +263,6 @@ export default function OfferDetailsPage() {
     setError('');
     try {
       const promises: Promise<any>[] = [];
-      
-      // 1. Zapis metadanych oferty
       if (metaDirty) {
         promises.push(api.put(`/api/oferty/${id}`, {
           nazwa: offerMetaForm.nazwa,
@@ -284,22 +271,17 @@ export default function OfferDetailsPage() {
           termin_platnosci_dni: Number(offerMetaForm.termin_platnosci_dni),
         }));
       }
-
-      // 2. Zapis pozycji
       const entries = Object.entries(dirtyItems);
       if (entries.length > 0) {
         entries.forEach(([itemId, patch]) => {
           promises.push(api.put(`/api/oferty/${id}/pozycje/${itemId}`, patch));
         });
       }
-
       await Promise.all(promises);
       setDirtyItems({});
       setMetaDirty(false);
       setAutoSaveStatus('saved');
       setTimeout(() => setAutoSaveStatus('idle'), 3000);
-      
-      // Przelicz bez przeładowania całej domeny (żeby nie psuć focusu)
       api.get(`/api/oferty/${id}/przelicz`).catch(() => {});
     } catch (err: any) {
       setError('Błąd zapisu. Sprawdź połączenie.');
@@ -309,10 +291,6 @@ export default function OfferDetailsPage() {
     }
   }
 
-  // ==========================================================================
-  // AKCJE SEKCJ I POZYCJI
-  // ==========================================================================
-  
   async function addSection(e: any) {
     e.preventDefault();
     await api.post(`/api/oferty/${id}/sekcje`, form);
@@ -329,10 +307,8 @@ export default function OfferDetailsPage() {
   async function saveSectionEdit(e: any) {
     e.preventDefault();
     if (!showSectionEdit) return;
-    try {
-      await api.put(`/api/oferty/${id}/sekcje/${showSectionEdit.id}`, form);
-      setShowSectionEdit(null); setForm({}); await load();
-    } catch (err: any) { setError(err?.message || 'Błąd zapisu grupy.'); }
+    try { await api.put(`/api/oferty/${id}/sekcje/${showSectionEdit.id}`, form); setShowSectionEdit(null); setForm({}); await load(); } 
+    catch (err: any) { setError(err?.message || 'Błąd zapisu grupy.'); }
   }
 
   async function deleteSection(section: any) {
@@ -341,36 +317,22 @@ export default function OfferDetailsPage() {
     catch (err: any) { setError('Błąd usuwania grupy.'); }
   }
 
-  // Funkcja Drop dla przeciąganych sekcji w nagłówku
   async function handleSummaryDrop(e: React.DragEvent, targetIdx: number) {
     e.preventDefault();
     const srcIdx = Number(e.dataTransfer.getData('sectionIndex'));
     if (isNaN(srcIdx) || srcIdx === targetIdx) return;
-    
     const newSections = [...localSections];
     const [moved] = newSections.splice(srcIdx, 1);
     newSections.splice(targetIdx, 0, moved);
     setLocalSections(newSections);
-
     setSavingId(-999999);
     try {
-      // Wykonujemy serię szybkich strzałów aby zaktualizować całą kolejność
-      await Promise.all(newSections.map((sec, i) => 
-        api.put(`/api/oferty/${id}/sekcje/${sec.id}`, { kolejnosc: i + 1 })
-      ));
+      await Promise.all(newSections.map((sec, i) => api.put(`/api/oferty/${id}/sekcje/${sec.id}`, { kolejnosc: i + 1 })));
       await load();
     } catch (err) {
       setError('Nie udało się zmienić kolejności.');
-      await load(); // cofnij w przypadku błędu
-    } finally {
-      setSavingId(null);
-    }
-  }
-
-  async function updateSectionColor(section: any, color: string) {
-    const newSections = localSections.map(s => s.id === section.id ? { ...s, kolor: color } : s);
-    setLocalSections(newSections);
-    await api.put(`/api/oferty/${id}/sekcje/${section.id}`, { kolor: color });
+      await load();
+    } finally { setSavingId(null); }
   }
 
   async function applySectionPatch(section: any, patch: any) {
@@ -389,9 +351,6 @@ export default function OfferDetailsPage() {
     await applySectionPatch(section, { rabat_proc: Number(value) });
   }
 
-  // ==========================================================================
-  // INLINE & SZYBKIE DODAWANIE SPRZĘTU
-  // ==========================================================================
   async function handleInlineAdd(sectionId: number, model: any) {
     const price = model.cena_podstawowa || model.cena_netto || model.wartosc_domyslna_egzemplarza || 0;
     try {
@@ -408,10 +367,8 @@ export default function OfferDetailsPage() {
         vat: 23,
         widoczna_w_pdf: true,
       });
-      load(); // Przeładowanie nowo dodanej pozycji
-    } catch (err) {
-      console.error(err);
-    }
+      load();
+    } catch (err) { console.error(err); }
   }
 
   async function deleteItem(item: any) {
@@ -421,9 +378,6 @@ export default function OfferDetailsPage() {
     load();
   }
 
-  // ==========================================================================
-  // FUNKCJE POMOCNICZE (Budżet, Sync)
-  // ==========================================================================
   async function sync(direction: 'event-to-offer' | 'offer-to-event') {
     setError(''); setNotice('');
     try {
@@ -435,12 +389,10 @@ export default function OfferDetailsPage() {
   }
   
   async function applyBudget(e: any) {
-    e.preventDefault();
-    setError('');
+    e.preventDefault(); setError('');
     try {
       await api.post(`/api/oferty/${id}/budzet`, budgetForm);
-      setShowBudget(false);
-      load();
+      setShowBudget(false); load();
     } catch (err: any) { setError(err?.response?.data?.message || 'Nie udało się zastosować budżetu.'); }
   }
 
@@ -458,20 +410,18 @@ export default function OfferDetailsPage() {
     setShowPdfSettings(false);
   }
 
-  // --- Reszta Picker'a Głównego (do skomplikowanych operacji) ---
   const { roots: equipmentCategoryRoots, byId: equipmentCategoryById } = useMemo(() => buildCategoryTree(equipmentCategories), [equipmentCategories]);
-  const equipmentRootObj = equipmentRoot !== 'all' ? equipmentCategoryById.get(equipmentRoot) : null;
-  function ef10ShouldShowOfferModel(model: any) { return true; } 
+  const activeEquipmentRootObj = equipmentRoot !== 'all' ? equipmentCategoryById.get(equipmentRoot) : null;
   function totalForEquipmentCategory(categoryId: string) {
-    if (categoryId === 'all') return models.filter((m: any) => ef10ShouldShowOfferModel(m)).length;
+    if (categoryId === 'all') return models.length;
     const ids = descendantsOf(categoryId, equipmentCategoryById);
-    return models.filter((m: any) => ef10ShouldShowOfferModel(m) && ids.has(modelCategoryId(m))).length;
+    return models.filter((m: any) => ids.has(modelCategoryId(m))).length;
   }
   const equipmentModels = useMemo(() => {
     const q = equipmentSearch.trim().toLowerCase();
     const selectedCategoryId = equipmentSub || (equipmentRoot === 'all' ? '' : equipmentRoot);
     const selectedIds = selectedCategoryId ? descendantsOf(selectedCategoryId, equipmentCategoryById) : null;
-    return models.filter((m: any) => ef10ShouldShowOfferModel(m)).filter((m: any) => {
+    return models.filter((m: any) => {
         const catId = modelCategoryId(m);
         const matchesCategory = !selectedIds || selectedIds.has(catId);
         const matchesQuery = !q || m.nazwa.toLowerCase().includes(q) || m.kod_kreskowy?.toLowerCase().includes(q);
@@ -488,25 +438,22 @@ export default function OfferDetailsPage() {
     } catch (err: any) {}
   }
 
-
   if (!offer) return <div className="flex justify-center p-20"><Loader2 className="animate-spin text-cyan-600 w-10 h-10"/></div>;
 
   return <div className="mx-auto max-w-[1900px] space-y-6 animate-fade-in-up">
-    {/* NAGŁÓWEK OFERTY Z PRZYCISKAMI */}
+    {/* NAGŁÓWEK OFERTY */}
     <PageTitle
       eyebrow="Sprzedaż / Oferty"
       title={offerMetaForm.nazwa || 'Oferta'}
-      description={`${offer.numer || ''} · ${offer.kontrahent?.nazwa || 'Brak powiązanego klienta'} · Powiązanie operacyjne: ${offer.wydarzenie?.nazwa || (offer.wynajem ? `Wynajem #${offer.wynajem.numer}` : 'Brak')}`}
+      description={`${offer.numer || ''} · ${offer.kontrahent?.nazwa || 'Brak powiązanego klienta'} · Powiązanie: ${offer.wydarzenie?.nazwa || (offer.wynajem ? `Wynajem #${offer.wynajem.numer}` : 'Brak')}`}
       action={
         <div className="flex flex-wrap items-center gap-3">
           {autoSaveStatus === 'saving' && <span className="text-sm font-bold text-slate-400 flex items-center gap-2"><Loader2 size={14} className="animate-spin"/> Zapisywanie...</span>}
           {autoSaveStatus === 'saved' && <span className="text-sm font-bold text-emerald-600 flex items-center gap-2"><CheckCircle2 size={14}/> Zapisano</span>}
-          
           <Button variant="secondary" onClick={() => router.back()}><ArrowLeft size={16} className="inline mr-2" /> Powrót</Button>
           <Button onClick={saveAllChanges} disabled={autoSaveStatus === 'saving' || (dirtyCount === 0 && !metaDirty)}><Save size={16} className="inline mr-2" /> Zapisz</Button>
           <Button variant="secondary" onClick={() => setDuplicateTarget(offer)}><Copy size={16} className="inline mr-2" /> Duplikuj</Button>
-          
-          <Button variant="secondary" onClick={() => setShowPdfSettings(true)}><Printer size={16} className="inline mr-2" /> Drukuj / Zapisz PDF</Button>
+          <Button variant="secondary" onClick={() => setShowPdfSettings(true)}><Printer size={16} className="inline mr-2" /> Drukuj PDF</Button>
         </div>
       }
     />
@@ -514,14 +461,9 @@ export default function OfferDetailsPage() {
     {error && <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-700">{error}</div>}
     {notice && <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-bold text-emerald-700">{notice}</div>}
 
-    {/* GÓRNE KARTY METADANYCH (Edytowalne) */}
     <div className="grid gap-6 xl:grid-cols-[1fr_0.8fr_0.8fr]">
-      
       <Card className="flex flex-col h-full">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-black text-slate-800">Dane oferty</h2>
-          
-        </div>
+        <h2 className="text-lg font-black text-slate-800 mb-4">Dane oferty</h2>
         <div className="grid grid-cols-2 gap-4 flex-1">
           <Field label="Nazwa oferty">
             <input className={inputClass} value={offerMetaForm.nazwa} onChange={e => handleMetaChange('nazwa', e.target.value)} />
@@ -537,7 +479,6 @@ export default function OfferDetailsPage() {
               value={offerMetaForm.id_kontrahenta} 
               onChange={val => handleMetaChange('id_kontrahenta', val)} 
               options={dict.kontrahenci.map((k:any) => ({ value: String(k.id), label: k.nazwa }))} 
-              placeholder="Wybierz..." 
             />
           </Field>
           <Field label="Termin płatności (Dni)">
@@ -553,25 +494,30 @@ export default function OfferDetailsPage() {
             <Calculator size={14} className="inline mr-1" /> Ustal Budżet
           </Button>
         </div>
-        <div className="grid grid-cols-2 gap-3 text-sm flex-1">
-          <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 flex flex-col justify-center">
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-0.5">Sprzęt & Transport</p>
-            <p className="text-lg font-black text-slate-800 leading-none">{money(summary.sprzet + summary.transport)}</p>
+        <div className="flex-1 space-y-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-2 text-sm font-medium text-slate-600 bg-slate-50 p-3 rounded-xl border border-slate-100">
+            <div className="flex justify-between"><span>Sprzęt:</span><b className="text-slate-900">{money(summary.sprzet)}</b></div>
+            <div className="flex justify-between"><span>Obsługa:</span><b className="text-slate-900">{money(summary.obsluga)}</b></div>
+            <div className="flex justify-between"><span>Transport:</span><b className="text-slate-900">{money(summary.transport)}</b></div>
+            <div className="flex justify-between"><span>Nocleg:</span><b className="text-slate-900">{money(summary.nocleg)}</b></div>
+            <div className="flex justify-between"><span>Usługa:</span><b className="text-slate-900">{money(summary.usluga)}</b></div>
+            {summary.inne > 0 && <div className="flex justify-between"><span>Inne:</span><b className="text-slate-900">{money(summary.inne)}</b></div>}
           </div>
-          <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 flex flex-col justify-center">
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-0.5">Obsługa & Inne</p>
-            <p className="text-lg font-black text-slate-800 leading-none">{money(summary.obsluga + summary.nocleg + summary.inne)}</p>
+          <div className="pt-2 border-t border-slate-100">
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-2">Wg grup na ofercie:</p>
+            <div className="space-y-1">
+              {localSections.map((s: any) => (
+                <div key={s.id} className="flex justify-between text-xs">
+                  <span className="text-slate-500 truncate pr-2">{s.nazwa}</span>
+                  <b className="text-slate-800">{money((s.pozycje || []).reduce((a: number, p: any) => a + Number(p.razem_netto || calc(p)), 0))}</b>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
         <div className="mt-4 flex items-end justify-between border-t border-slate-100 pt-3">
-          <div>
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-0.5">Razem netto</p>
-            <p className="text-3xl font-black text-cyan-600 leading-none">{money(summary.netto)}</p>
-          </div>
-          <div className="text-right">
-             <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-0.5">Brutto</p>
-             <p className="text-base font-bold text-slate-600 leading-none">{money(summary.brutto)}</p>
-          </div>
+          <div><p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-0.5">Razem netto</p><p className="text-3xl font-black text-cyan-600 leading-none">{money(summary.netto)}</p></div>
+          <div className="text-right"><p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-0.5">Brutto</p><p className="text-base font-bold text-slate-600 leading-none">{money(summary.brutto)}</p></div>
         </div>
         {Number(offer.rabat_budzetowy_netto || 0) > 0 && <p className="mt-3 rounded-xl bg-emerald-50 border border-emerald-100 p-2.5 text-xs font-black text-emerald-700 text-center">Rabat z nałożonego budżetu: {money(offer.rabat_budzetowy_netto)} (-{Number(offer.rabat_budzetowy_proc || 0).toFixed(2)}%)</p>}
       </Card>
@@ -588,48 +534,35 @@ export default function OfferDetailsPage() {
                 <p className="flex items-center gap-1.5"><Calendar size={13} className="text-slate-400"/> {offer.wydarzenie.data_start ? new Date(offer.wydarzenie.data_start).toLocaleDateString('pl-PL') : 'Brak daty'}</p>
                 <p className="flex items-center gap-1.5"><MapPin size={13} className="text-slate-400"/> {offer.wydarzenie.miejsce_reczne || offer.wydarzenie.miejsce?.nazwa || 'Brak lokalizacji'}</p>
               </div>
-              <Button variant="secondary" onClick={() => window.open(`/dashboard/events/${offer.wydarzenie.id}`, '_blank')} className="mt-3 w-full text-xs">
-                Otwórz wydarzenie w nowej karcie
-              </Button>
+              <Button variant="secondary" onClick={() => window.open(`/dashboard/events/${offer.wydarzenie.id}`, '_blank')} className="mt-3 w-full text-xs">Otwórz wydarzenie</Button>
             </div>
           ) : offer.wynajem ? (
             <div className="p-4 bg-slate-50 border border-slate-100 rounded-xl relative overflow-hidden group">
               <div className="absolute top-0 right-0 w-16 h-16 bg-orange-500/10 rounded-bl-full -mr-4 -mt-4 transition-transform group-hover:scale-110" />
               <p className="text-[10px] font-black uppercase text-slate-400 mb-1">Wynajem samodzielny</p>
               <p className="font-black text-slate-800 text-lg leading-tight truncate pr-4">{offer.wynajem.numer || `Wynajem #${offer.wynajem.id}`}</p>
-              <div className="mt-2 text-xs font-bold text-slate-500 space-y-1">
-                <p className="flex items-center gap-1.5"><Calendar size={13} className="text-slate-400"/> {offer.wynajem.data_wydania ? new Date(offer.wynajem.data_wydania).toLocaleDateString('pl-PL') : 'Brak daty'}</p>
-              </div>
-              <Button variant="secondary" onClick={() => window.open(`/dashboard/rentals/${offer.wynajem.id}`, '_blank')} className="mt-3 w-full text-xs">
-                Otwórz wynajem w nowej karcie
-              </Button>
+              <Button variant="secondary" onClick={() => window.open(`/dashboard/rentals/${offer.wynajem.id}`, '_blank')} className="mt-3 w-full text-xs">Otwórz wynajem</Button>
             </div>
           ) : (
-            <p className="text-sm font-bold text-slate-400 text-center p-4 border border-dashed border-slate-200 rounded-xl">Oferta nie jest powiązana z żadnym wydarzeniem ani wynajmem.</p>
+            <p className="text-sm font-bold text-slate-400 text-center p-4 border border-dashed border-slate-200 rounded-xl">Oferta wolna, nie powiązana z operacjami.</p>
           )}
         </div>
-
         <div className="mt-4 pt-4 border-t border-slate-100 flex flex-col gap-2">
-          <Button variant="secondary" onClick={() => sync('event-to-offer')} disabled={!offer.wydarzenie && !offer.wynajem}><LinkIcon size={14} className="inline mr-2 text-cyan-600" /> Zaciągnij plan sprzętu z operacji</Button>
+          <Button variant="secondary" onClick={() => sync('event-to-offer')} disabled={!offer.wydarzenie && !offer.wynajem}><LinkIcon size={14} className="inline mr-2 text-cyan-600" /> Zaciągnij plan z operacji</Button>
           <Button variant="secondary" onClick={() => sync('offer-to-event')} disabled={!offer.wydarzenie && !offer.wynajem}><Save size={14} className="inline mr-2 text-emerald-600" /> Wyślij plan na wydarzenie</Button>
         </div>
       </Card>
     </div>
 
-    {/* LISTA GRUP SPRZĘTOWYCH (SPREADSHEET + DRAG N DROP GÓRNEJ BELKI) */}
+    {/* LISTA GRUP SPRZĘTOWYCH */}
     <Card className="!p-0 border-transparent shadow-none bg-transparent mt-8">
       <div className="mb-4 flex flex-wrap items-center gap-3 bg-white p-3 rounded-2xl shadow-sm border border-slate-200">
-        <p className="text-[11px] font-black uppercase tracking-[0.2em] text-cyan-600 mr-2 ml-2">Przeciągaj, by zamienić:</p>
+        <p className="text-[11px] font-black uppercase tracking-[0.2em] text-cyan-600 mr-2 ml-2">Przeciągaj grupy:</p>
         <div className="flex flex-wrap gap-2 flex-1">
           {localSections.map((s: any, idx: number) => 
             <div 
-              key={s.id} 
-              draggable
-              onDragStart={(e) => { e.dataTransfer.setData('sectionIndex', String(idx)); e.dataTransfer.effectAllowed = 'move'; }}
-              onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }}
-              onDrop={(e) => handleSummaryDrop(e, idx)}
+              key={s.id} draggable onDragStart={(e) => { e.dataTransfer.setData('sectionIndex', String(idx)); e.dataTransfer.effectAllowed = 'move'; }} onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }} onDrop={(e) => handleSummaryDrop(e, idx)}
               className="rounded-xl border border-slate-200 bg-white shadow-sm px-4 py-2 text-sm font-black flex items-center gap-2 cursor-grab active:cursor-grabbing hover:border-cyan-400 transition"
-              title="Złap i przeciągnij, aby zmienić kolejność na ofercie"
             >
               <span className="inline-block h-3 w-3 rounded-full shrink-0" style={{ background: s.kolor || '#0891B2' }} />
               <span className="truncate max-w-[150px]">{s.nazwa}</span>
@@ -643,32 +576,24 @@ export default function OfferDetailsPage() {
       <div className="space-y-6">
         {localSections.map((section: any) => (
           <div key={section.id} className="rounded-2xl border border-slate-200 shadow-sm bg-white overflow-hidden flex flex-col">
-            
-            {/* Nagłówek Grupy Sprzętowej */}
             <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 text-white relative overflow-hidden" style={{ backgroundColor: section.kolor || '#0891B2' }}>
-              {/* Ozdobny gradient w tle */}
               <div className="absolute inset-0 bg-gradient-to-r from-black/10 to-transparent pointer-events-none" />
-              
               <div className="flex items-center gap-4 z-10">
                 <div>
                   <h3 className="text-xl font-black">{section.nazwa}</h3>
                   {section.opis && <p className="text-xs font-medium text-white/80 mt-0.5">{section.opis}</p>}
                 </div>
               </div>
-              
               <div className="flex items-center gap-2 z-10">
-                <div className="font-black text-lg mr-4 bg-black/20 px-3 py-1 rounded-lg">
-                  {money((section.pozycje || []).reduce((a: number, p: any) => a + Number(p.razem_netto || calc(p)), 0))}
-                </div>
-                <button onClick={() => openEditSection(section)} className="rounded-lg bg-white/20 px-3 py-2 text-xs font-bold hover:bg-white/30 transition shadow-sm" title="Edytuj nazwę i kolor grupy"><Pencil size={14} /></button>
+                <div className="font-black text-lg mr-4 bg-black/20 px-3 py-1 rounded-lg">{money((section.pozycje || []).reduce((a: number, p: any) => a + Number(p.razem_netto || calc(p)), 0))}</div>
+                <button onClick={() => openEditSection(section)} className="rounded-lg bg-white/20 px-3 py-2 text-xs font-bold hover:bg-white/30 transition shadow-sm"><Pencil size={14} /></button>
                 <button onClick={() => promptSectionDiscount(section)} className="rounded-lg bg-white/20 px-3 py-2 text-xs font-bold hover:bg-white/30 transition shadow-sm">% Rabat grupy</button>
-                <button onClick={() => { setShowBundle(section); setForm({ ilosc_pakietow: 1, dni_pracy: 1 }); }} className="rounded-lg bg-white/20 px-3 py-2 text-xs font-bold hover:bg-white/30 transition shadow-sm flex items-center gap-1.5"><Layers size={14}/> Pakiet</button>
-                <button onClick={() => setShowEquipment(section)} className="rounded-lg bg-white/30 px-3 py-2 text-xs font-black hover:bg-white/40 transition shadow-sm flex items-center gap-1.5"><Search size={14}/> Baza sprzętu</button>
+                <button onClick={() => { setShowBundle(section); setForm({ ilosc_pakietow: 1, dni_pracy: 1 }); }} className="rounded-lg bg-white/20 px-3 py-2 text-xs font-bold hover:bg-white/30 transition flex items-center gap-1.5"><Layers size={14}/> Pakiet</button>
+                <button onClick={() => setShowEquipment(section)} className="rounded-lg bg-white/30 px-3 py-2 text-xs font-black hover:bg-white/40 transition flex items-center gap-1.5"><Search size={14}/> Baza sprzętu</button>
                 <button onClick={() => deleteSection(section)} className="rounded-lg bg-red-500/80 px-3 py-2 text-xs font-black hover:bg-red-600 transition shadow-sm ml-2"><Trash2 size={14} /></button>
               </div>
             </div>
 
-            {/* Tabela Zawartości Grupy */}
             <div className="overflow-x-auto bg-white">
               <table className="w-full min-w-[950px] text-sm text-left">
                 <thead className="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500 border-b border-slate-200">
@@ -680,7 +605,7 @@ export default function OfferDetailsPage() {
                     <th className="px-3 py-3 w-[9%] text-center">Dni</th>
                     <th className="px-3 py-3 w-[8%] text-center">Rabat %</th>
                     <th className="px-3 py-3 w-[7%] text-center">VAT %</th>
-                    <th className="px-2 py-3 w-[5%] text-center" title="Widoczna na wygenerowanym pliku PDF"><FileText size={14} className="mx-auto"/></th>
+                    <th className="px-2 py-3 w-[5%] text-center"><FileText size={14} className="mx-auto"/></th>
                     <th className="px-3 py-3 text-right w-[10%]">Razem netto</th>
                     <th className="px-3 py-3 w-[4%]"></th>
                   </tr>
@@ -691,14 +616,9 @@ export default function OfferDetailsPage() {
                   ))}
                 </tbody>
               </table>
-              
-              {/* Inline sprzęt adder na końcu każdej grupy */}
               <InlineEquipmentAdder sectionId={section.id} models={models} onAdd={(m) => handleInlineAdd(section.id, m)} />
-              
               {(!section.pozycje || section.pozycje.length === 0) && (
-                <div className="p-8 text-center text-sm font-bold text-slate-400 bg-slate-50/30">
-                  Ta grupa jest pusta. Użyj wyszukiwarki powyżej lub przycisków w nagłówku, aby dodać sprzęt.
-                </div>
+                <div className="p-8 text-center text-sm font-bold text-slate-400 bg-slate-50/30">Ta grupa jest pusta.</div>
               )}
             </div>
           </div>
@@ -706,137 +626,115 @@ export default function OfferDetailsPage() {
       </div>
     </Card>
 
-    {duplicateTarget && <OfferDuplicateTargetModal offer={duplicateTarget} defaultEventId={offer?.id_wydarzenia} defaultRentalId={offer?.id_wynajmu} onClose={() => setDuplicateTarget(null)} onDone={(o) => router.push(`/dashboard/offers/${o.id}`)} />}
-
     {/* MODAL USTAWIEN PDF */}
     {showPdfSettings && (
       <SimpleModal title="Opcje wydruku (PDF)" onClose={() => setShowPdfSettings(false)}>
         <div className="space-y-5">
-          <p className="text-sm font-bold text-slate-500 mb-2">Wybierz, jakie informacje mają być widoczne dla klienta na wygenerowanej ofercie.</p>
-          
-          <div className="grid gap-3">
-            <label className="flex items-center gap-3 cursor-pointer p-4 rounded-xl border border-slate-200 hover:border-cyan-300 hover:bg-cyan-50 transition bg-white shadow-sm">
-              <input type="checkbox" className="w-5 h-5 rounded border-slate-300 text-cyan-600 focus:ring-cyan-500 cursor-pointer" checked={pdfConfig.showUnitPrices} onChange={(e) => setPdfConfig({...pdfConfig, showUnitPrices: e.target.checked})} />
-              <div>
-                <span className="font-bold text-slate-800 block">Pokaż ceny jednostkowe</span>
-                <span className="text-xs font-semibold text-slate-500">Wyświetla kolumnę z bazową ceną za pojedynczą sztukę.</span>
-              </div>
+          <p className="text-sm font-bold text-slate-500 mb-2">Wybierz, jakie informacje mają być widoczne na PDF:</p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="flex items-center gap-3 cursor-pointer p-4 rounded-xl border border-slate-200 hover:border-cyan-300 hover:bg-cyan-50 transition shadow-sm">
+              <input type="checkbox" className="w-5 h-5 rounded border-slate-300 text-cyan-600" checked={pdfConfig.showUnitPrices} onChange={(e) => setPdfConfig({...pdfConfig, showUnitPrices: e.target.checked})} />
+              <div><span className="font-bold text-slate-800 block">Pokaż ceny jednostkowe</span><span className="text-xs text-slate-500">Wyświetla bazową cenę.</span></div>
             </label>
-
-            <label className="flex items-center gap-3 cursor-pointer p-4 rounded-xl border border-slate-200 hover:border-cyan-300 hover:bg-cyan-50 transition bg-white shadow-sm">
-              <input type="checkbox" className="w-5 h-5 rounded border-slate-300 text-cyan-600 focus:ring-cyan-500 cursor-pointer" checked={pdfConfig.showDiscounts} onChange={(e) => setPdfConfig({...pdfConfig, showDiscounts: e.target.checked})} />
-              <div>
-                <span className="font-bold text-slate-800 block">Pokaż przydzielone rabaty</span>
-                <span className="text-xs font-semibold text-slate-500">Wyświetla kolumnę z wartością udzielonego rabatu w procentach.</span>
-              </div>
+            <label className="flex items-center gap-3 cursor-pointer p-4 rounded-xl border border-slate-200 hover:border-cyan-300 hover:bg-cyan-50 transition shadow-sm">
+              <input type="checkbox" className="w-5 h-5 rounded border-slate-300 text-cyan-600" checked={pdfConfig.showDiscounts} onChange={(e) => setPdfConfig({...pdfConfig, showDiscounts: e.target.checked})} />
+              <div><span className="font-bold text-slate-800 block">Pokaż przydzielone rabaty</span><span className="text-xs text-slate-500">Pokazuje kolumnę z udzielonym rabatem (%).</span></div>
             </label>
-
-            <label className="flex items-center gap-3 cursor-pointer p-4 rounded-xl border border-slate-200 hover:border-cyan-300 hover:bg-cyan-50 transition bg-white shadow-sm">
-              <input type="checkbox" className="w-5 h-5 rounded border-slate-300 text-cyan-600 focus:ring-cyan-500 cursor-pointer" checked={pdfConfig.showDays} onChange={(e) => setPdfConfig({...pdfConfig, showDays: e.target.checked})} />
-              <div>
-                <span className="font-bold text-slate-800 block">Pokaż kolumnę "Dni pracy"</span>
-                <span className="text-xs font-semibold text-slate-500">Wyświetla mnożnik dni (niezbędne przy ofertach wielodniowych).</span>
-              </div>
+            <label className="flex items-center gap-3 cursor-pointer p-4 rounded-xl border border-slate-200 hover:border-cyan-300 hover:bg-cyan-50 transition shadow-sm">
+              <input type="checkbox" className="w-5 h-5 rounded border-slate-300 text-cyan-600" checked={pdfConfig.showDays} onChange={(e) => setPdfConfig({...pdfConfig, showDays: e.target.checked})} />
+              <div><span className="font-bold text-slate-800 block">Pokaż Dni pracy</span><span className="text-xs text-slate-500">Wyświetla mnożnik dni.</span></div>
             </label>
-
-            <label className="flex items-center gap-3 cursor-pointer p-4 rounded-xl border border-slate-200 hover:border-cyan-300 hover:bg-cyan-50 transition bg-white shadow-sm">
-              <input type="checkbox" className="w-5 h-5 rounded border-slate-300 text-cyan-600 focus:ring-cyan-500 cursor-pointer" checked={pdfConfig.showThumbnails} onChange={(e) => setPdfConfig({...pdfConfig, showThumbnails: e.target.checked})} />
-              <div>
-                <span className="font-bold text-slate-800 block">Pokaż miniatury zdjęć sprzętu</span>
-                <span className="text-xs font-semibold text-slate-500">Uatrakcyjnia wizualnie ofertę dodając zdjęcie modelu obok nazwy pozycji.</span>
-              </div>
+            <label className="flex items-center gap-3 cursor-pointer p-4 rounded-xl border border-slate-200 hover:border-cyan-300 hover:bg-cyan-50 transition shadow-sm">
+              <input type="checkbox" className="w-5 h-5 rounded border-slate-300 text-cyan-600" checked={pdfConfig.showThumbnails} onChange={(e) => setPdfConfig({...pdfConfig, showThumbnails: e.target.checked})} />
+              <div><span className="font-bold text-slate-800 block">Pokaż miniatury zdjęć</span><span className="text-xs text-slate-500">Dodaje zdjęcie na ofercie.</span></div>
             </label>
-
-            <label className="flex items-center gap-3 cursor-pointer p-4 rounded-xl border border-slate-200 hover:border-cyan-300 hover:bg-cyan-50 transition bg-white shadow-sm">
-              <input type="checkbox" className="w-5 h-5 rounded border-slate-300 text-cyan-600 focus:ring-cyan-500 cursor-pointer" checked={pdfConfig.showSectionSummary} onChange={(e) => setPdfConfig({...pdfConfig, showSectionSummary: e.target.checked})} />
-              <div>
-                <span className="font-bold text-slate-800 block">Pokaż podsumowania finansowe w nagłówkach grup</span>
-                <span className="text-xs font-semibold text-slate-500">Wyświetla zsumowaną kwotę po prawej stronie na kolorowym nagłówku każdej sekcji na dokumencie.</span>
-              </div>
+            <label className="flex items-center gap-3 cursor-pointer p-4 rounded-xl border border-slate-200 hover:border-cyan-300 hover:bg-cyan-50 transition shadow-sm">
+              <input type="checkbox" className="w-5 h-5 rounded border-slate-300 text-cyan-600" checked={pdfConfig.showWeight} onChange={(e) => setPdfConfig({...pdfConfig, showWeight: e.target.checked})} />
+              <div><span className="font-bold text-slate-800 block">Pokaż wagę sprzętu</span><span className="text-xs text-slate-500">Wylicza wagę kg x ilość.</span></div>
+            </label>
+            <label className="flex items-center gap-3 cursor-pointer p-4 rounded-xl border border-slate-200 hover:border-cyan-300 hover:bg-cyan-50 transition shadow-sm">
+              <input type="checkbox" className="w-5 h-5 rounded border-slate-300 text-cyan-600" checked={pdfConfig.showVat} onChange={(e) => setPdfConfig({...pdfConfig, showVat: e.target.checked})} />
+              <div><span className="font-bold text-slate-800 block">Pokaż stawkę VAT</span><span className="text-xs text-slate-500">Procentowa stawka podatku dla klienta.</span></div>
+            </label>
+            <label className="flex items-center gap-3 cursor-pointer p-4 rounded-xl border border-slate-200 hover:border-cyan-300 hover:bg-cyan-50 transition shadow-sm sm:col-span-2">
+              <input type="checkbox" className="w-5 h-5 rounded border-slate-300 text-cyan-600" checked={pdfConfig.showSectionSummary} onChange={(e) => setPdfConfig({...pdfConfig, showSectionSummary: e.target.checked})} />
+              <div><span className="font-bold text-slate-800 block">Pokaż podsumowania grup</span><span className="text-xs text-slate-500">Dodaje kwoty na nagłówku grupy na PDF.</span></div>
             </label>
           </div>
-
-          <div className="flex justify-end gap-2 pt-4 border-t border-slate-100">
+          <div className="pt-2 border-t mt-4">
+            <p className="text-sm font-bold text-slate-500 mb-3">Podsumowanie końcowe (stopka):</p>
+            <div className="flex flex-wrap gap-5">
+              <label className="flex items-center gap-2 text-sm font-bold cursor-pointer"><input type="checkbox" checked={pdfConfig.showSummaryNetto} onChange={e => setPdfConfig({...pdfConfig, showSummaryNetto: e.target.checked})} className="w-4 h-4 text-cyan-600 rounded"/> Razem Netto</label>
+              <label className="flex items-center gap-2 text-sm font-bold cursor-pointer"><input type="checkbox" checked={pdfConfig.showSummaryVat} onChange={e => setPdfConfig({...pdfConfig, showSummaryVat: e.target.checked})} className="w-4 h-4 text-cyan-600 rounded"/> Wartość VAT</label>
+              <label className="flex items-center gap-2 text-sm font-bold cursor-pointer"><input type="checkbox" checked={pdfConfig.showSummaryBrutto} onChange={e => setPdfConfig({...pdfConfig, showSummaryBrutto: e.target.checked})} className="w-4 h-4 text-cyan-600 rounded"/> Razem Brutto</label>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 pt-4 border-t">
             <Button variant="secondary" onClick={() => setShowPdfSettings(false)}>Anuluj</Button>
-            <Button onClick={generatePdf}><Printer size={16} className="inline mr-2" /> Drukuj / Zapisz PDF</Button>
+            <Button onClick={generatePdf}><Printer size={16} className="inline mr-2" /> Przejdź do PDF</Button>
           </div>
         </div>
       </SimpleModal>
     )}
 
-    {/* MODAL BUDŻETU */}
-    {showBudget && <SimpleModal title="Dostosuj ofertę do budżetu klienta" onClose={() => setShowBudget(false)}>
+    {duplicateTarget && <OfferDuplicateTargetModal offer={duplicateTarget} defaultEventId={offer?.id_wydarzenia} defaultRentalId={offer?.id_wynajmu} onClose={() => setDuplicateTarget(null)} onDone={(o) => router.push(`/dashboard/offers/${o.id}`)} />}
+    {showBudget && <SimpleModal title="Dostosuj ofertę do budżetu" onClose={() => setShowBudget(false)}>
       {error && <div className="mb-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-bold text-red-700">{error}</div>}
       <form onSubmit={applyBudget} className="space-y-4">
         <div className="grid grid-cols-2 gap-4">
-          <Field label="Założony budżet netto (PLN)">
-            <input type="number" step="0.01" className={inputClass} value={budgetForm.budzet_netto || ''} onChange={e => setBudgetForm({ ...budgetForm, budzet_netto: e.target.value })} required />
-          </Field>
-          <Field label="Algorytm pomniejszania kwot">
-            <select className={inputClass} value={budgetForm.algorytm} onChange={e => setBudgetForm({ ...budgetForm, algorytm: e.target.value })}>
-               <option value="proporcjonalnie_sprzet">Tylko pozycje sprzętowe (Domyślny)</option>
-               <option value="brak">Tylko zapisz kwotę w systemie (Bez obniżania)</option>
-            </select>
-          </Field>
+          <Field label="Budżet netto (PLN)"><input type="number" step="0.01" className={inputClass} value={budgetForm.budzet_netto || ''} onChange={e => setBudgetForm({ ...budgetForm, budzet_netto: e.target.value })} required /></Field>
+          <Field label="Algorytm pomniejszania"><select className={inputClass} value={budgetForm.algorytm} onChange={e => setBudgetForm({ ...budgetForm, algorytm: e.target.value })}><option value="proporcjonalnie_sprzet">Tylko pozycje sprzętowe</option><option value="brak">Tylko zapisz kwotę w systemie</option></select></Field>
         </div>
         <div className="rounded-2xl bg-slate-50 p-4 border border-slate-200">
-          <p className="mb-3 text-sm font-black text-slate-700">Zaznacz grupy całkowicie wyłączone z obniżki (Zamrożenie cen):</p>
+          <p className="mb-3 text-sm font-black text-slate-700">Zamrożenie cen (grupy wyłączone z obniżki):</p>
           <div className="grid gap-2 md:grid-cols-2">
             {localSections.map((s: any) => 
-              <label key={s.id} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 text-sm font-bold shadow-sm cursor-pointer hover:bg-slate-50 transition">
-                <input type="checkbox" className="w-4 h-4 rounded border-slate-300 text-cyan-600 focus:ring-cyan-500 cursor-pointer" checked={(budgetForm.pomin_sekcje_ids || []).includes(s.id)} onChange={() => toggleSectionLock(s.id)} />
-                <span className="flex items-center gap-2 truncate">
-                  <span className="inline-block h-3 w-3 rounded-full shrink-0" style={{ background: s.kolor || '#0891B2' }} /> 
-                  <span className="truncate">{s.nazwa}</span>
-                </span>
+              <label key={s.id} className="flex items-center gap-3 rounded-xl border bg-white p-3 text-sm font-bold shadow-sm cursor-pointer hover:bg-slate-50 transition">
+                <input type="checkbox" className="w-4 h-4 rounded text-cyan-600 focus:ring-cyan-500 cursor-pointer" checked={(budgetForm.pomin_sekcje_ids || []).includes(s.id)} onChange={() => toggleSectionLock(s.id)} />
+                <span className="flex items-center gap-2 truncate"><span className="inline-block h-3 w-3 rounded-full shrink-0" style={{ background: s.kolor || '#0891B2' }} /> <span className="truncate">{s.nazwa}</span></span>
               </label>
             )}
           </div>
         </div>
-        <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
-          <Button variant="secondary" onClick={() => setShowBudget(false)}>Anuluj</Button>
-          <Button type="submit">Zastosuj budżet w ofercie</Button>
-        </div>
+        <div className="flex justify-end gap-2 pt-2 border-t"><Button variant="secondary" onClick={() => setShowBudget(false)}>Anuluj</Button><Button type="submit">Zastosuj budżet</Button></div>
       </form>
     </SimpleModal>}
 
-    {/* Inne modale */}
-    {showSection && <SimpleModal title="Dodaj grupę / sekcję" onClose={() => setShowSection(false)}><form onSubmit={addSection} className="space-y-4"><div className="grid gap-4 md:grid-cols-2"><Field label="Nazwa (Kategoria)"><input className={inputClass} value={form.nazwa || ''} onChange={e => setForm({ ...form, nazwa: e.target.value })} required /></Field><Field label="Kolor grupy"><input type="color" className={inputClass} value={form.kolor || '#0891B2'} onChange={e => setForm({ ...form, kolor: e.target.value })} /></Field></div><Field label="Opis dodatkowy (widoczny na wydruku)"><textarea className={inputClass} value={form.opis || ''} onChange={e => setForm({ ...form, opis: e.target.value })} /></Field><div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setShowSection(false)}>Anuluj</Button><Button type="submit">Zapisz</Button></div></form></SimpleModal>}
+    {showSection && <SimpleModal title="Dodaj grupę / sekcję" onClose={() => setShowSection(false)}><form onSubmit={addSection} className="space-y-4"><div className="grid gap-4 md:grid-cols-2"><Field label="Nazwa"><input className={inputClass} value={form.nazwa || ''} onChange={e => setForm({ ...form, nazwa: e.target.value })} required /></Field><Field label="Kolor grupy"><input type="color" className={inputClass} value={form.kolor || '#0891B2'} onChange={e => setForm({ ...form, kolor: e.target.value })} /></Field></div><Field label="Opis dodatkowy"><textarea className={inputClass} value={form.opis || ''} onChange={e => setForm({ ...form, opis: e.target.value })} /></Field><div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setShowSection(false)}>Anuluj</Button><Button type="submit">Zapisz</Button></div></form></SimpleModal>}
     {showSectionEdit && <SimpleModal title={`Edytuj grupę: ${showSectionEdit.nazwa}`} onClose={() => setShowSectionEdit(null)}><form onSubmit={saveSectionEdit} className="space-y-4"><div className="grid gap-4 md:grid-cols-2"><Field label="Nazwa grupy"><input className={inputClass} value={form.nazwa || ''} onChange={e => setForm({ ...form, nazwa: e.target.value })} required /></Field><Field label="Kolor grupy"><input type="color" className={inputClass} value={form.kolor || '#0891B2'} onChange={e => setForm({ ...form, kolor: e.target.value })} /></Field></div><Field label="Opis"><textarea className={inputClass} value={form.opis || ''} onChange={e => setForm({ ...form, opis: e.target.value })} /></Field><div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setShowSectionEdit(null)}>Anuluj</Button><Button type="submit">Zapisz</Button></div></form></SimpleModal>}
     {showBundle && (
       <SimpleModal title={`Dodaj z szablonu do: ${showBundle.nazwa}`} onClose={() => setShowBundle(null)}>
         <form onSubmit={addBundle} className="space-y-4">
-          <div className="rounded-2xl border border-cyan-200 bg-cyan-50 p-4 text-sm font-bold text-cyan-800">
-            Zdefiniowany pakiet modeli zostanie rozbity na poszczególne wiersze na ofercie. Możesz później manipulować każdą pozycją niezależnie.
-          </div>
           <Field label="Wybierz szablon pakietu">
             <select className={inputClass} required value={form.id_pakietu || ''} onChange={e => setForm({ ...form, id_pakietu: e.target.value })}>
               <option value="">Wybierz...</option>
-              {bundles.map((b: any) => <option key={b.id} value={b.id}>{b.nazwa} ({b._count?.pozycje || 0} sztuk sprzętu)</option>)}
+              {bundles.map((b: any) => <option key={b.id} value={b.id}>{b.nazwa}</option>)}
             </select>
           </Field>
           <div className="grid grid-cols-2 gap-4">
             <Field label="Wielokrotność (Sztuki)"><input type="number" min="1" className={inputClass} value={form.ilosc_pakietow || 1} onChange={e => setForm({ ...form, ilosc_pakietow: e.target.value })} /></Field>
             <Field label="Ilość dni pracy"><input type="number" min="0" step="0.01" className={inputClass} value={form.dni_pracy || 1} onChange={e => setForm({ ...form, dni_pracy: e.target.value })} /></Field>
           </div>
-          <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
-            <Button variant="secondary" onClick={() => setShowBundle(null)}>Anuluj</Button>
-            <Button type="submit">Rozbij i dodaj zawartość</Button>
-          </div>
+          <div className="flex justify-end gap-2 pt-2 border-t"><Button variant="secondary" onClick={() => setShowBundle(null)}>Anuluj</Button><Button type="submit">Dodaj pakiet</Button></div>
         </form>
       </SimpleModal>
     )}
     
-    {/* Zaawansowany picker modeli sprzętu */}
-    {showEquipment && <SimpleModal className="max-w-[1500px]" title={`Wyszukiwarka bazy sprzętowej (Grupa: ${showEquipment.nazwa})`} onClose={() => setShowEquipment(null)}>
-      <form onSubmit={(e) => { e.preventDefault(); if(form.id_modelu) { api.post(`/api/oferty/${id}/pozycje`, { ...form, id_sekcji: showEquipment.id, typ_pozycji: 'sprzet' }).then(() => { setShowEquipment(null); load(); }) } }} className="space-y-5">
+    {showEquipment && <SimpleModal className="max-w-[1500px]" title={`Wyszukiwarka sprzętu i pozycji ręcznych`} onClose={() => setShowEquipment(null)}>
+      <form onSubmit={(e) => { 
+        e.preventDefault(); 
+        if(!form.id_modelu && !form.nazwa) {
+           alert("Wybierz model sprzętu lub wpisz nazwę ręczną!"); return; 
+        }
+        api.post(`/api/oferty/${id}/pozycje`, { ...form, id_sekcji: showEquipment.id, typ_pozycji: form.typ_pozycji || 'sprzet' }).then(() => { setShowEquipment(null); load(); }) 
+      }} className="space-y-5">
         <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm">
           <div className="grid gap-0 xl:grid-cols-[380px_1fr_320px]">
             <aside className="border-b border-slate-200 bg-slate-50/40 p-5 xl:border-b-0 xl:border-r">
-              <Field label="Szukaj po nazwie">
+              <Field label="Szukaj w bazie sprzętowej">
                 <div className="relative">
                   <Search className="absolute left-3 top-3 text-slate-400" size={17}/>
-                  <input className={`${inputClass} pl-10`} value={equipmentSearch} onChange={(e) => setEquipmentSearch(e.target.value)} placeholder="Wpisz np. ledbar..." />
+                  <input className={`${inputClass} pl-10`} value={equipmentSearch} onChange={(e) => setEquipmentSearch(e.target.value)} placeholder="Wpisz np. projektor..." />
                 </div>
               </Field>
               <div className="mt-4 rounded-xl bg-white border border-slate-200 p-3">
@@ -855,7 +753,7 @@ export default function OfferDetailsPage() {
                   return <div key={m.id} className={`flex items-center justify-between p-3 rounded-xl border transition ${active ? 'border-cyan-400 bg-cyan-50' : 'border-slate-200 hover:border-cyan-200'}`}>
                     <div className="flex gap-3 items-center">
                       <div className="h-10 w-10 bg-slate-100 rounded-lg flex items-center justify-center shrink-0 border border-slate-200 overflow-hidden">{m.zdjecie ? <img src={m.zdjecie} className="w-full h-full object-cover" alt="img"/> : <Box size={16} className="text-slate-400"/>}</div>
-                      <div><b className="text-sm cursor-pointer hover:underline" onClick={() => setForm({...form, id_modelu: m.id, nazwa: m.nazwa, cena_netto: price})}>{m.nazwa}</b><p className="text-xs text-slate-500">{money(price)} · Dost.: {m.dostepnych || '-'}</p></div>
+                      <div><b className="text-sm cursor-pointer hover:underline" onClick={() => setForm({...form, id_modelu: m.id, nazwa: m.nazwa, typ_pozycji: 'sprzet', cena_netto: price})}>{m.nazwa}</b><p className="text-xs text-slate-500">{money(price)} · Dost.: {m.dostepnych || '-'}</p></div>
                     </div>
                   </div>;
                 })}
@@ -864,12 +762,17 @@ export default function OfferDetailsPage() {
             <aside className="bg-slate-50/40 p-5">
                <p className="text-xs font-black uppercase text-slate-400 mb-4">Manualne parametry dodawania</p>
                <div className="space-y-3">
+                 <Field label="Typ pozycji">
+                   <select className={inputClass} value={form.typ_pozycji || 'sprzet'} onChange={e => setForm({...form, typ_pozycji: e.target.value})}>
+                     {positionTypes.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                   </select>
+                 </Field>
                  <Field label="Nazwa (edytowana na ofercie)"><input className={inputClass} value={form.nazwa || ''} onChange={e => setForm({...form, nazwa: e.target.value})} /></Field>
                  <Field label="Cena za 1 sztukę (PLN)"><input type="number" step="0.01" className={inputClass} value={form.cena_netto || 0} onChange={e => setForm({...form, cena_netto: e.target.value})} /></Field>
                  <Field label="Domyślna liczba sztuk"><input type="number" className={inputClass} value={form.ilosc || 1} onChange={e => setForm({...form, ilosc: e.target.value})} /></Field>
                </div>
                <div className="mt-6 pt-4 border-t border-slate-200">
-                  <Button type="submit" className="w-full">Dodaj z parametrami</Button>
+                  <Button type="submit" className="w-full">Dodaj na dokument</Button>
                </div>
             </aside>
           </div>
@@ -879,9 +782,6 @@ export default function OfferDetailsPage() {
   </div>;
 }
 
-// ============================================================================
-// KOMPONENT WIERSZA W TABELI (Spreadsheet Logic)
-// ============================================================================
 function OfferPositionRow({ item, onDraftChange, onDelete }: { item: any; onDraftChange: (itemId: number, patch: any | null) => void; onDelete: () => void }) {
   const [draft, setDraft] = useState<any>(item);
   useEffect(() => setDraft(item), [item]);
